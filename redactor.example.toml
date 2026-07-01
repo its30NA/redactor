@@ -38,3 +38,12 @@ patterns = [
     "AKIAIOSFODNN7EXAMPLE",   # AWS's own documentation key
     "sk-xxxx",                # common placeholder style
 ]
+
+# Optional local-LLM pass — a best-effort second sweep for ambiguous secrets the
+# regexes miss. Off by default. Local host only; nothing leaves your machine. Requires
+# a running Ollama (https://ollama.com) with the model pulled: `ollama pull qwen2.5:3b`.
+# [llm]
+# enabled = true
+# model = "qwen2.5:3b"          # or "llama3.2:3b" — both ~2 GB, run on a laptop
+# host = "http://127.0.0.1:11434"
+# timeout = 30.0

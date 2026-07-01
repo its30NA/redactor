@@ -64,6 +64,18 @@ class Pipeline:
             )
             for rule in config.custom_rules
         ]
+        # Optional local-LLM pass. Imported lazily so the core never pulls in the
+        # llm subpackage unless it's actually turned on.
+        if config.llm.enabled:
+            from redactor.detectors.llm import LLMSecretDetector
+            from redactor.llm.backend import OllamaBackend
+
+            backend = OllamaBackend(
+                model=config.llm.model,
+                host=config.llm.host,
+                timeout=config.llm.timeout,
+            )
+            detectors.append(LLMSecretDetector(backend))
         return cls(
             detectors=detectors,
             allowlist=Allowlist(config.allowlist_patterns),

@@ -15,7 +15,7 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 - **Extensible by design.** Add a detector = add one small class.
 
-> Status: **Milestone 3** — + PII group, user-defined rules, and `--preview`. See the [roadmap](#roadmap).
+> Status: **Milestone 4** — + optional local-LLM pass (off by default). See the [roadmap](#roadmap).
 
 ## Install
 
@@ -102,6 +102,29 @@ group = 0   # optional: which capture group is the secret
 
 Custom rules run through the same resolver and redactor as everything else.
 
+### Optional local-LLM pass (M4, off by default)
+
+A best-effort second sweep for ambiguous secrets with no fixed shape (a password in
+prose, an internal hostname). It runs **entirely locally** via [Ollama](https://ollama.com)
+— nothing leaves your machine — and is strictly additive to the deterministic layer:
+
+- **Verbatim only** — the model's proposals are accepted only if they appear *literally*
+  in the input, so it can't hallucinate a redaction into existence.
+- **Fails open** — if the model isn't running or misbehaves, sanitization proceeds with
+  the deterministic results, unharmed.
+
+```bash
+ollama pull qwen2.5:3b      # ~2 GB; llama3.2:3b also works
+```
+```toml
+[llm]
+enabled = true
+model = "qwen2.5:3b"
+```
+
+The backend is a one-method protocol (`complete(prompt) -> str`), so swapping Ollama for
+llama.cpp or a test double is trivial — the detector never knows the difference.
+
 ### Audit log
 
 `--audit PATH` writes a JSON record of *what* was redacted — kind, label, offset, length,
@@ -157,8 +180,8 @@ ruff check .  # lint
 - **M0 — Deterministic CLI core** ✅
 - **M1 — Full structural suite** ✅ — 25 detectors across AI/VCS/cloud/SaaS/crypto/HTTP/connection strings
 - **M2 — Heuristic detection + audit log** ✅ — assignment & entropy detectors, salted-fingerprint audit trail
-- **M3 — Config maturity** ✅ *(this release)* — PII group + toggle, user-defined rule patterns, `--preview` report
-- **M4** — *Optional* local-LLM pass for ambiguous cases (off by default)
+- **M3 — Config maturity** ✅ — PII group + toggle, user-defined rule patterns, `--preview` report
+- **M4 — Optional local-LLM pass** ✅ *(this release)* — Ollama-backed, verbatim-only, fails open
 - **M5** — Integrations: clipboard watch, git pre-commit hook, folder scan, IDE
 
 ## License

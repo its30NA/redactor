@@ -38,6 +38,16 @@ CONFIG_FILENAMES = ("redactor.toml", ".redactor.toml")
 
 
 @dataclass(frozen=True, slots=True)
+class LlmConfig:
+    """Optional local-LLM pass. Off unless ``enabled`` is set; local host only."""
+
+    enabled: bool = False
+    model: str = "qwen2.5:3b"
+    host: str = "http://127.0.0.1:11434"
+    timeout: float = 30.0
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     disabled_detectors: frozenset[str] = frozenset()
     enabled_detectors: frozenset[str] = frozenset()
@@ -46,10 +56,12 @@ class Config:
     allowlist_patterns: tuple[str, ...] = ()
     placeholder_template: str = DEFAULT_TEMPLATE
     stable_numbering: bool = True
+    llm: LlmConfig = field(default_factory=LlmConfig)
 
     @classmethod
     def from_dict(cls, data: dict) -> Config:
         allowlist = data.get("allowlist", {})
+        llm_data = data.get("llm", {})
         rules = tuple(
             CustomRule(
                 name=r["name"],
@@ -68,6 +80,12 @@ class Config:
             allowlist_patterns=tuple(allowlist.get("patterns", [])),
             placeholder_template=data.get("placeholder_template", DEFAULT_TEMPLATE),
             stable_numbering=bool(data.get("stable_numbering", True)),
+            llm=LlmConfig(
+                enabled=bool(llm_data.get("enabled", False)),
+                model=llm_data.get("model", "qwen2.5:3b"),
+                host=llm_data.get("host", "http://127.0.0.1:11434"),
+                timeout=float(llm_data.get("timeout", 30.0)),
+            ),
         )
 
     @classmethod
