@@ -24,7 +24,10 @@ class ConnectionStringPasswordDetector(RegexDetector):
     name = "connection_string_password"
     kind = "connection_string_password"
     label = "Connection String Password"
-    confidence = 0.9
+    # Above the email detector (0.95): when a password like "p4ss@word" makes the
+    # email regex bleed into the host, the merged redaction should still be labeled
+    # (and driven by) the connection-string detector, not mislabeled as an email.
+    confidence = 0.96
     group = 1
     pattern = re.compile(
         rf"(?i)\b(?:{_DB_SCHEMES})://[^\s:@/]+:([^\s@/]+)@",
