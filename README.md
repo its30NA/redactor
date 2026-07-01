@@ -15,7 +15,7 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 - **Extensible by design.** Add a detector = add one small class.
 
-> Status: **Milestone 0** — deterministic CLI core. See the [roadmap](#roadmap).
+> Status: **Milestone 1** — full structural detector suite (25 detectors). See the [roadmap](#roadmap).
 
 ## Install
 
@@ -48,13 +48,25 @@ print(result.text)            # OPENAI_API_KEY=[REDACTED: OpenAI API Key]
 print(result.redaction_count) # 1
 ```
 
-## What it detects (M0)
+## What it detects (M1)
 
-High-precision, structural formats plus one contextual case: OpenAI, Anthropic, and
-GitHub tokens; AWS access key IDs; Slack tokens; JWTs; PEM/OpenSSH private-key blocks;
-and `Authorization: Bearer` tokens. Heuristic detectors (assignment patterns,
-high-entropy strings) land in a later milestone so this first suite stays trustworthy —
-almost everything it flags is a real credential.
+High-precision, structural formats grouped by domain — 25 detectors in all:
+
+| Domain | Detectors |
+|---|---|
+| **AI providers** | OpenAI, Anthropic, Hugging Face |
+| **Version control** | GitHub (classic + fine-grained), GitLab |
+| **Cloud** | AWS access key ID, AWS secret key *(contextual)*, Azure storage key, Google API key, Google OAuth token |
+| **SaaS** | Slack token, Slack webhook, Discord webhook, Stripe, SendGrid, Twilio, npm, PyPI |
+| **Crypto** | PEM/OpenSSH private keys, JWTs |
+| **HTTP layer** | `Bearer` / `Basic` auth, cookies, session IDs |
+| **Connection strings** | password inside `scheme://user:pass@host/db` (context preserved) |
+
+Heuristic detectors (assignment patterns, high-entropy strings) land in M2 so this
+structural suite stays trustworthy — almost everything it flags is a real credential.
+*Contextual* detectors (marked above) only fire next to their tell-tale key name,
+because the value alone (e.g. a bare 40-char AWS secret) is indistinguishable from
+ordinary data.
 
 ## How it works
 
@@ -81,16 +93,16 @@ allowlist, or change the placeholder template. Config is optional.
 ## Add a detector
 
 ```python
-# src/redactor/detectors/builtins.py
-class StripeKeyDetector(RegexDetector):
-    name = "stripe_secret_key"
-    kind = "stripe_secret_key"
-    label = "Stripe Secret Key"
-    pattern = re.compile(r"\bsk_live_[A-Za-z0-9]{24,}\b")
+# src/redactor/detectors/saas.py  (or the themed module that fits)
+class LinearApiKeyDetector(RegexDetector):
+    name = "linear_api_key"
+    kind = "linear_api_key"
+    label = "Linear API Key"
+    pattern = re.compile(r"\blin_api_[A-Za-z0-9]{40,}\b")
 ```
 
-Then add it to `default_detectors()` in `detectors/__init__.py`. Add a match case and a
-false-positive case to `tests/test_detectors.py`. Done.
+Then list it in `_DEFAULT_DETECTOR_CLASSES` in `detectors/__init__.py`, and add a match
+case + a false-positive case to `tests/test_detectors.py`. Done — nothing else changes.
 
 ## Test
 
@@ -101,8 +113,8 @@ ruff check .  # lint
 
 ## Roadmap
 
-- **M0 — Deterministic CLI core** ✅ *(this release)*
-- **M1** — Full structural suite (all provider keys, connection strings, cloud creds, cookies, webhooks)
+- **M0 — Deterministic CLI core** ✅
+- **M1 — Full structural suite** ✅ *(this release)* — 25 detectors across AI/VCS/cloud/SaaS/crypto/HTTP/connection strings
 - **M2** — Heuristic detectors (assignment patterns, entropy), audit log
 - **M3** — Config maturity: user rules, PII toggle, richer preview/diff UX
 - **M4** — *Optional* local-LLM pass for ambiguous cases (off by default)
