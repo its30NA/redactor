@@ -15,7 +15,8 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 - **Extensible by design.** Add a detector = add one small class.
 
-> Status: **Milestone 4** — + optional local-LLM pass (off by default). See the [roadmap](#roadmap).
+> Status: **Milestone 5 — feature-complete** — filter, folder scan, git pre-commit hook,
+> and clipboard sanitization. See the [roadmap](#roadmap).
 
 ## Install
 
@@ -26,6 +27,8 @@ pip install -e ".[dev]"
 ```
 
 ## Use
+
+**Sanitize** a file or stream (the default command):
 
 ```bash
 scrub secrets.env                 # sanitized text to stdout
@@ -39,6 +42,18 @@ scrub app.log -c redactor.toml    # explicit config
 
 Sanitized text goes to **stdout**; summaries/warnings go to **stderr**, so `scrub`
 composes cleanly in pipes.
+
+**Integrations** (M5):
+
+```bash
+scrub scan .                 # scan a tree; report findings, exit 1 if any (CI-friendly)
+scrub scan . --write         # rewrite files in place, sanitized
+scrub install-hook           # add a git pre-commit hook that blocks committing secrets
+scrub clipboard              # sanitize the clipboard in place (WSL/macOS/Linux)
+```
+
+The pre-commit hook runs `scrub check` against staged files and blocks the commit if
+anything sensitive is found (bypass with `git commit --no-verify`).
 
 As a library:
 
@@ -181,8 +196,10 @@ ruff check .  # lint
 - **M1 — Full structural suite** ✅ — 25 detectors across AI/VCS/cloud/SaaS/crypto/HTTP/connection strings
 - **M2 — Heuristic detection + audit log** ✅ — assignment & entropy detectors, salted-fingerprint audit trail
 - **M3 — Config maturity** ✅ — PII group + toggle, user-defined rule patterns, `--preview` report
-- **M4 — Optional local-LLM pass** ✅ *(this release)* — Ollama-backed, verbatim-only, fails open
-- **M5** — Integrations: clipboard watch, git pre-commit hook, folder scan, IDE
+- **M4 — Optional local-LLM pass** ✅ — Ollama-backed, verbatim-only, fails open
+- **M5 — Integrations** ✅ *(this release)* — folder scan, git pre-commit hook, clipboard, CI exit codes
+
+_Feature-complete._ Future ideas: IDE extension, richer PII models, per-project rule packs.
 
 ## License
 
