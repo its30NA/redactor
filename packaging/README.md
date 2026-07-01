@@ -1,0 +1,38 @@
+# Packaging & launchers
+
+Convenience wrappers so you don't have to activate a venv or type long commands.
+
+## Global `scrub` command
+
+Expose the CLI everywhere without activating the virtualenv, by symlinking the venv's
+entry point onto your `PATH`:
+
+```bash
+ln -sf /ABS/PATH/TO/redactor/.venv/bin/scrub ~/.local/bin/scrub
+# ensure ~/.local/bin is on PATH (most shells already do this)
+scrub ui        # now works from any directory
+```
+
+Alternatively, install it in its own isolated environment with
+[pipx](https://pipx.pypa.io): `pipx install /ABS/PATH/TO/redactor`.
+
+## Windows desktop shortcut (WSL)
+
+For a double-click "open the UI in my browser" experience:
+
+1. Copy [`windows/Redactor.bat`](windows/Redactor.bat) to your Windows Desktop and
+   replace the two placeholders:
+   - `__WSL_DISTRO__` — your distro name (`wsl -l -q`, e.g. `Ubuntu`)
+   - `__SCRUB_PATH__` — absolute Linux path to the venv's `scrub`
+     (e.g. `/home/you/code/redactor/.venv/bin/scrub`)
+2. (Optional, for a clean name + icon) copy [`windows/make-shortcut.vbs`](windows/make-shortcut.vbs)
+   next to it and run, from that folder:
+   ```
+   cscript //nologo make-shortcut.vbs
+   ```
+   This creates `Redactor.lnk` (custom icon, starts minimized). You can then pin it to
+   the Start menu or taskbar.
+
+Double-clicking **Redactor** starts the local server and opens
+`http://localhost:8765`. Closing the console window stops the server. Nothing leaves
+your machine — the server binds to loopback only.

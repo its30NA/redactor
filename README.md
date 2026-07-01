@@ -52,6 +52,9 @@ scrub ui                     # opens http://127.0.0.1:8765 in your browser
 Runs a stdlib-only local server bound to loopback — nothing leaves your machine. Live
 redaction as you type, a toggle for personal data, and highlighted placeholders.
 
+> Want a global `scrub` command (no venv activation) or a **double-click desktop
+> shortcut** on Windows/WSL? See [`packaging/`](packaging/README.md).
+
 **Integrations** (M5):
 
 ```bash
