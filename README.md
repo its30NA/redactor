@@ -12,13 +12,10 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 ## Screenshots
 
-The local web UI (`scrub ui`) — paste on the left, safe-to-share text on the right:
+The local web UI (`scrub ui`) — paste on the left, safe-to-share text on the right,
+highlighted placeholders, and a live per-type count:
 
-<!-- To add: run `scrub ui`, screenshot the browser, save it as assets/ui.png, and
-     uncomment the line below. -->
-<!-- ![redactor web UI](assets/ui.png) -->
-
-_Screenshot slot — drop `assets/ui.png` here._
+![redactor web UI](assets/ui.png)
 
 - **Runs entirely offline.** Zero runtime dependencies; the deterministic core is
   stdlib-only. Nothing is ever sent anywhere — there is no networking code to send it.
