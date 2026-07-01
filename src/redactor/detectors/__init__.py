@@ -33,6 +33,13 @@ from redactor.detectors.heuristics import (
     AssignmentSecretDetector,
     HighEntropyStringDetector,
 )
+from redactor.detectors.pii import (
+    CreditCardDetector,
+    EmailDetector,
+    IPv4Detector,
+    PhoneNumberDetector,
+    UsSsnDetector,
+)
 from redactor.detectors.saas import (
     DiscordWebhookDetector,
     NpmTokenDetector,
@@ -57,6 +64,7 @@ __all__ = [
     "all_detector_classes",
     "build_detectors",
     "default_detectors",
+    "pii_detector_names",
 ]
 
 # Every detector the tool knows about. Order is irrelevant to correctness — the
@@ -100,12 +108,23 @@ _ALL_DETECTOR_CLASSES: tuple[type[Detector], ...] = (
     # Heuristics (assignment ships on; entropy ships off — see default_enabled)
     AssignmentSecretDetector,
     HighEntropyStringDetector,
+    # PII (whole group ships off — gated behind Config.redact_pii)
+    EmailDetector,
+    IPv4Detector,
+    UsSsnDetector,
+    PhoneNumberDetector,
+    CreditCardDetector,
 )
 
 
 def all_detector_classes() -> tuple[type[Detector], ...]:
     """Every known detector class, regardless of default-enabled state."""
     return _ALL_DETECTOR_CLASSES
+
+
+def pii_detector_names() -> frozenset[str]:
+    """Names of every detector in the ``pii`` category."""
+    return frozenset(c.name for c in _ALL_DETECTOR_CLASSES if c.category == "pii")
 
 
 def default_detectors() -> list[Detector]:

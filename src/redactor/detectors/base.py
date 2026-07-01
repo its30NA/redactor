@@ -30,6 +30,9 @@ class Detector(ABC):
 
     name: str = "detector"
     default_enabled: bool = True
+    # Coarse grouping used by config toggles. "secret" detectors are the core set;
+    # "pii" detectors are gated behind an explicit opt-in (see Config.redact_pii).
+    category: str = "secret"
 
     @abstractmethod
     def detect(self, text: str) -> Iterator[Match]:

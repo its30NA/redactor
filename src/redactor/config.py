@@ -17,10 +17,21 @@ Example ``redactor.toml``::
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from redactor.redaction import DEFAULT_TEMPLATE
+
+
+@dataclass(frozen=True, slots=True)
+class CustomRule:
+    """A user-defined detector declared in config (see ``[[rules]]``)."""
+
+    name: str
+    label: str
+    pattern: str
+    confidence: float = 0.9
+    group: int = 0
 
 # Filenames searched, in order, when no explicit config path is given.
 CONFIG_FILENAMES = ("redactor.toml", ".redactor.toml")
@@ -30,6 +41,8 @@ CONFIG_FILENAMES = ("redactor.toml", ".redactor.toml")
 class Config:
     disabled_detectors: frozenset[str] = frozenset()
     enabled_detectors: frozenset[str] = frozenset()
+    redact_pii: bool = False
+    custom_rules: tuple[CustomRule, ...] = field(default_factory=tuple)
     allowlist_patterns: tuple[str, ...] = ()
     placeholder_template: str = DEFAULT_TEMPLATE
     stable_numbering: bool = True
@@ -37,9 +50,21 @@ class Config:
     @classmethod
     def from_dict(cls, data: dict) -> Config:
         allowlist = data.get("allowlist", {})
+        rules = tuple(
+            CustomRule(
+                name=r["name"],
+                label=r["label"],
+                pattern=r["pattern"],
+                confidence=float(r.get("confidence", 0.9)),
+                group=int(r.get("group", 0)),
+            )
+            for r in data.get("rules", [])
+        )
         return cls(
             disabled_detectors=frozenset(data.get("disabled_detectors", [])),
             enabled_detectors=frozenset(data.get("enabled_detectors", [])),
+            redact_pii=bool(data.get("redact_pii", False)),
+            custom_rules=rules,
             allowlist_patterns=tuple(allowlist.get("patterns", [])),
             placeholder_template=data.get("placeholder_template", DEFAULT_TEMPLATE),
             stable_numbering=bool(data.get("stable_numbering", True)),

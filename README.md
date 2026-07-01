@@ -15,7 +15,7 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 - **Extensible by design.** Add a detector = add one small class.
 
-> Status: **Milestone 2** — structural suite + heuristic detection + audit log. See the [roadmap](#roadmap).
+> Status: **Milestone 3** — + PII group, user-defined rules, and `--preview`. See the [roadmap](#roadmap).
 
 ## Install
 
@@ -32,6 +32,7 @@ scrub secrets.env                 # sanitized text to stdout
 cat app.log | scrub               # read from stdin
 scrub app.log --summary           # + per-kind counts on stderr
 scrub app.log --diff              # unified diff of what changed
+scrub app.log --preview           # per-redaction report (line, label, context)
 scrub app.log --audit audit.json  # write a redaction audit log (no raw values)
 scrub app.log -c redactor.toml    # explicit config
 ```
@@ -79,6 +80,27 @@ Two detectors cover secrets with no fixed vendor shape:
   recognizable prefix. This is the noisiest detector, so it's opt-in via config
   (`enabled_detectors = ["high_entropy_string"]`). Enable it when you value recall over
   precision.
+
+### PII (M3, opt-in)
+
+Email, IPv4, US SSN, phone numbers, and credit-card numbers (Luhn-validated). The whole
+group ships **off** — PII is often legitimately part of the text you want the AI to reason
+about — and is enabled with `redact_pii = true` in config, or per-detector via
+`enabled_detectors`.
+
+### User-defined rules (M3)
+
+Any pattern the built-ins miss can be added from config, no code required:
+
+```toml
+[[rules]]
+name = "acme_internal_token"
+label = "ACME Internal Token"
+pattern = "\\bACME-[A-Z0-9]{20}\\b"
+group = 0   # optional: which capture group is the secret
+```
+
+Custom rules run through the same resolver and redactor as everything else.
 
 ### Audit log
 
@@ -134,8 +156,8 @@ ruff check .  # lint
 
 - **M0 — Deterministic CLI core** ✅
 - **M1 — Full structural suite** ✅ — 25 detectors across AI/VCS/cloud/SaaS/crypto/HTTP/connection strings
-- **M2 — Heuristic detection + audit log** ✅ *(this release)* — assignment & entropy detectors, salted-fingerprint audit trail
-- **M3** — Config maturity: user-defined rule patterns, PII toggle, richer preview/diff UX
+- **M2 — Heuristic detection + audit log** ✅ — assignment & entropy detectors, salted-fingerprint audit trail
+- **M3 — Config maturity** ✅ *(this release)* — PII group + toggle, user-defined rule patterns, `--preview` report
 - **M4** — *Optional* local-LLM pass for ambiguous cases (off by default)
 - **M5** — Integrations: clipboard watch, git pre-commit hook, folder scan, IDE
 

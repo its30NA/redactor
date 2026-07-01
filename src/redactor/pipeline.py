@@ -11,7 +11,13 @@ from dataclasses import dataclass
 
 from redactor.allowlist import Allowlist
 from redactor.config import Config
-from redactor.detectors import Detector, build_detectors, default_detectors
+from redactor.detectors import (
+    Detector,
+    build_detectors,
+    default_detectors,
+    pii_detector_names,
+)
+from redactor.detectors.custom import CustomRegexDetector
 from redactor.models import Match
 from redactor.redaction import Redactor
 from redactor.resolver import resolve
@@ -43,10 +49,21 @@ class Pipeline:
     @classmethod
     def from_config(cls, config: Config) -> Pipeline:
         """Build a pipeline honoring a loaded :class:`~redactor.config.Config`."""
-        detectors = build_detectors(
-            disabled=config.disabled_detectors,
-            enabled=config.enabled_detectors,
-        )
+        enabled = config.enabled_detectors
+        if config.redact_pii:
+            enabled = enabled | pii_detector_names()
+        detectors = build_detectors(disabled=config.disabled_detectors, enabled=enabled)
+        # User-defined rules are always active and run alongside the built-ins.
+        detectors += [
+            CustomRegexDetector(
+                name=rule.name,
+                label=rule.label,
+                pattern=rule.pattern,
+                confidence=rule.confidence,
+                group=rule.group,
+            )
+            for rule in config.custom_rules
+        ]
         return cls(
             detectors=detectors,
             allowlist=Allowlist(config.allowlist_patterns),

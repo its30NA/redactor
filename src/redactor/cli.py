@@ -40,6 +40,44 @@ def _summary(result: SanitizeResult) -> str:
     return "\n".join(lines)
 
 
+def _preview(original: str, result: SanitizeResult, width: int = 72) -> str:
+    """A per-redaction report: line number, label, and masked context.
+
+    Lets you eyeball exactly what would be replaced, in situ, before trusting the
+    output. Context shows the placeholder spliced into the original line.
+    """
+    if not result.matches:
+        return "No sensitive data detected."
+
+    lines = [f"Preview — {result.redaction_count} redaction(s):"]
+    label_col = min(max((len(m.label) for m in result.matches), default=0), 28)
+    for m in result.matches:
+        line_no = original.count("\n", 0, m.start) + 1
+        line_start = original.rfind("\n", 0, m.start) + 1
+        line_end = original.find("\n", m.end)
+        if line_end == -1:
+            line_end = len(original)
+        line = original[line_start:line_end]
+        rel_s, rel_e = m.start - line_start, m.end - line_start
+        masked = f"{line[:rel_s]}[{m.label}]{line[rel_e:]}"
+        snippet = _window(masked, rel_s, width)
+        lines.append(f"  Ln {line_no:<4} {m.label:<{label_col}}  {snippet}")
+    return "\n".join(lines)
+
+
+def _window(text: str, focus: int, width: int) -> str:
+    """Trim ``text`` to ~``width`` chars centered on ``focus`` with ellipses."""
+    if len(text) <= width:
+        return text
+    half = width // 2
+    start = max(0, focus - half)
+    end = min(len(text), start + width)
+    start = max(0, end - width)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return f"{prefix}{text[start:end]}{suffix}"
+
+
 def _diff(original: str, sanitized: str, name: str) -> str:
     return "".join(
         difflib.unified_diff(
@@ -73,6 +111,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Emit a unified diff instead of the full sanitized text.",
     )
     parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Print a per-redaction report (line, label, masked context) to stderr.",
+    )
+    parser.add_argument(
         "--audit",
         metavar="PATH",
         help="Write a JSON audit log (kinds, offsets, salted fingerprints — never "
@@ -98,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(_diff(text, result.text, name))
     else:
         sys.stdout.write(result.text)
+
+    if args.preview:
+        print(_preview(text, result), file=sys.stderr)
 
     if args.audit:
         audit_json = audit_mod.dumps(audit_mod.build_audit(result.matches))

@@ -17,6 +17,19 @@
 # Whether repeated/distinct secrets get stable " #N" numbering. Default: true.
 # stable_numbering = true
 
+# Redact personally identifiable information (email, IPv4, phone, SSN, credit card).
+# Off by default because PII is often legitimately part of the text. Default: false.
+# redact_pii = true
+
+# User-defined detectors. Each rule is an ordinary regex; `group` (optional) selects
+# which capture group is the secret so surrounding context can be preserved.
+# [[rules]]
+# name = "acme_internal_token"
+# label = "ACME Internal Token"
+# pattern = "\\bACME-[A-Z0-9]{20}\\b"
+# confidence = 0.95
+# group = 0
+
 [allowlist]
 # Regex patterns tested against each detected value. Anything that matches is
 # left untouched — use for documentation placeholders and known-safe examples.
