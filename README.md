@@ -15,7 +15,7 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 - **Extensible by design.** Add a detector = add one small class.
 
-> Status: **Milestone 1** — full structural detector suite (25 detectors). See the [roadmap](#roadmap).
+> Status: **Milestone 2** — structural suite + heuristic detection + audit log. See the [roadmap](#roadmap).
 
 ## Install
 
@@ -32,6 +32,7 @@ scrub secrets.env                 # sanitized text to stdout
 cat app.log | scrub               # read from stdin
 scrub app.log --summary           # + per-kind counts on stderr
 scrub app.log --diff              # unified diff of what changed
+scrub app.log --audit audit.json  # write a redaction audit log (no raw values)
 scrub app.log -c redactor.toml    # explicit config
 ```
 
@@ -62,11 +63,29 @@ High-precision, structural formats grouped by domain — 25 detectors in all:
 | **HTTP layer** | `Bearer` / `Basic` auth, cookies, session IDs |
 | **Connection strings** | password inside `scheme://user:pass@host/db` (context preserved) |
 
-Heuristic detectors (assignment patterns, high-entropy strings) land in M2 so this
-structural suite stays trustworthy — almost everything it flags is a real credential.
 *Contextual* detectors (marked above) only fire next to their tell-tale key name,
 because the value alone (e.g. a bare 40-char AWS secret) is indistinguishable from
 ordinary data.
+
+### Heuristic detection (M2)
+
+Two detectors cover secrets with no fixed vendor shape:
+
+- **Assignment** *(on by default)* — a value assigned to a suspiciously-named variable
+  (`MYAPP_DB_PASSWORD=…`, `SERVICE_API_KEY=…`). Fires only when the key name signals a
+  secret and the value survives a placeholder guard (`changeme`, `${VAR}`, `true`, … are
+  ignored). Labeled by keyword: `Password`, `API Key`, `Token`, …
+- **High-entropy string** *(off by default)* — long, random-looking blobs with no
+  recognizable prefix. This is the noisiest detector, so it's opt-in via config
+  (`enabled_detectors = ["high_entropy_string"]`). Enable it when you value recall over
+  precision.
+
+### Audit log
+
+`--audit PATH` writes a JSON record of *what* was redacted — kind, label, offset, length,
+and a **salted fingerprint** of each value — but never the raw secret. A fresh random salt
+per run lets you spot duplicate values *within* a run (identical fingerprints) while making
+the log useless as a hash oracle for confirming guessed secrets across runs.
 
 ## How it works
 
@@ -114,9 +133,9 @@ ruff check .  # lint
 ## Roadmap
 
 - **M0 — Deterministic CLI core** ✅
-- **M1 — Full structural suite** ✅ *(this release)* — 25 detectors across AI/VCS/cloud/SaaS/crypto/HTTP/connection strings
-- **M2** — Heuristic detectors (assignment patterns, entropy), audit log
-- **M3** — Config maturity: user rules, PII toggle, richer preview/diff UX
+- **M1 — Full structural suite** ✅ — 25 detectors across AI/VCS/cloud/SaaS/crypto/HTTP/connection strings
+- **M2 — Heuristic detection + audit log** ✅ *(this release)* — assignment & entropy detectors, salted-fingerprint audit trail
+- **M3** — Config maturity: user-defined rule patterns, PII toggle, richer preview/diff UX
 - **M4** — *Optional* local-LLM pass for ambiguous cases (off by default)
 - **M5** — Integrations: clipboard watch, git pre-commit hook, folder scan, IDE
 

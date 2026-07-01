@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from redactor.allowlist import Allowlist
 from redactor.config import Config
-from redactor.detectors import Detector, default_detectors
+from redactor.detectors import Detector, build_detectors, default_detectors
 from redactor.models import Match
 from redactor.redaction import Redactor
 from redactor.resolver import resolve
@@ -43,9 +43,10 @@ class Pipeline:
     @classmethod
     def from_config(cls, config: Config) -> Pipeline:
         """Build a pipeline honoring a loaded :class:`~redactor.config.Config`."""
-        detectors = [
-            d for d in default_detectors() if d.name not in config.disabled_detectors
-        ]
+        detectors = build_detectors(
+            disabled=config.disabled_detectors,
+            enabled=config.enabled_detectors,
+        )
         return cls(
             detectors=detectors,
             allowlist=Allowlist(config.allowlist_patterns),

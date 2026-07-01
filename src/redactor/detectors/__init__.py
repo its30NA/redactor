@@ -29,6 +29,10 @@ from redactor.detectors.connection import (
     UrlBasicAuthPasswordDetector,
 )
 from redactor.detectors.crypto import JwtDetector, PrivateKeyBlockDetector
+from redactor.detectors.heuristics import (
+    AssignmentSecretDetector,
+    HighEntropyStringDetector,
+)
 from redactor.detectors.saas import (
     DiscordWebhookDetector,
     NpmTokenDetector,
@@ -47,12 +51,19 @@ from redactor.detectors.web import (
     SessionIdDetector,
 )
 
-__all__ = ["Detector", "RegexDetector", "default_detectors"]
+__all__ = [
+    "Detector",
+    "RegexDetector",
+    "all_detector_classes",
+    "build_detectors",
+    "default_detectors",
+]
 
-# Detector classes enabled by default. Order is irrelevant to correctness — the
+# Every detector the tool knows about. Order is irrelevant to correctness — the
 # resolver arbitrates overlaps by confidence, not by position — but we group them
-# by domain for readability.
-_DEFAULT_DETECTOR_CLASSES: tuple[type[Detector], ...] = (
+# by domain for readability. Whether each one is *on* by default is governed by its
+# ``default_enabled`` flag, not by presence in this tuple.
+_ALL_DETECTOR_CLASSES: tuple[type[Detector], ...] = (
     # Cryptographic material
     PrivateKeyBlockDetector,
     JwtDetector,
@@ -86,9 +97,36 @@ _DEFAULT_DETECTOR_CLASSES: tuple[type[Detector], ...] = (
     # Connection strings
     ConnectionStringPasswordDetector,
     UrlBasicAuthPasswordDetector,
+    # Heuristics (assignment ships on; entropy ships off — see default_enabled)
+    AssignmentSecretDetector,
+    HighEntropyStringDetector,
 )
+
+
+def all_detector_classes() -> tuple[type[Detector], ...]:
+    """Every known detector class, regardless of default-enabled state."""
+    return _ALL_DETECTOR_CLASSES
 
 
 def default_detectors() -> list[Detector]:
     """Return a fresh list of every detector enabled by default."""
-    return [cls() for cls in _DEFAULT_DETECTOR_CLASSES]
+    return [cls() for cls in _ALL_DETECTOR_CLASSES if cls.default_enabled]
+
+
+def build_detectors(
+    disabled: frozenset[str] = frozenset(),
+    enabled: frozenset[str] = frozenset(),
+) -> list[Detector]:
+    """Resolve the active detector set from config.
+
+    A detector is active when it is on by default (and not in ``disabled``) or when
+    it is explicitly named in ``enabled``. ``enabled`` wins over ``default_enabled``
+    but not over an explicit ``disabled`` entry.
+    """
+    active: list[Detector] = []
+    for cls in _ALL_DETECTOR_CLASSES:
+        if cls.name in disabled:
+            continue
+        if cls.default_enabled or cls.name in enabled:
+            active.append(cls())
+    return active

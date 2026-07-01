@@ -22,9 +22,14 @@ class Detector(ABC):
     Subclasses set ``name`` and implement :meth:`detect`. Detectors must be
     pure functions of their input text — no I/O, no shared state — which is what
     makes them cheap to test and safe to run in any order.
+
+    ``default_enabled`` controls whether a detector ships on out of the box. High-
+    precision structural detectors are ``True``; noisier heuristic ones (entropy)
+    default to ``False`` and must be opted into via config.
     """
 
     name: str = "detector"
+    default_enabled: bool = True
 
     @abstractmethod
     def detect(self, text: str) -> Iterator[Match]:

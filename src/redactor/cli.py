@@ -20,6 +20,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from redactor import audit as audit_mod
 from redactor.config import Config
 from redactor.pipeline import Pipeline, SanitizeResult
 
@@ -71,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit a unified diff instead of the full sanitized text.",
     )
+    parser.add_argument(
+        "--audit",
+        metavar="PATH",
+        help="Write a JSON audit log (kinds, offsets, salted fingerprints — never "
+        "the raw values) to PATH. Use '-' for stderr.",
+    )
     return parser
 
 
@@ -91,6 +98,13 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(_diff(text, result.text, name))
     else:
         sys.stdout.write(result.text)
+
+    if args.audit:
+        audit_json = audit_mod.dumps(audit_mod.build_audit(result.matches))
+        if args.audit == "-":
+            print(audit_json, file=sys.stderr)
+        else:
+            Path(args.audit).write_text(audit_json + "\n", encoding="utf-8")
 
     if args.summary:
         print(_summary(result), file=sys.stderr)

@@ -29,6 +29,7 @@ CONFIG_FILENAMES = ("redactor.toml", ".redactor.toml")
 @dataclass(frozen=True, slots=True)
 class Config:
     disabled_detectors: frozenset[str] = frozenset()
+    enabled_detectors: frozenset[str] = frozenset()
     allowlist_patterns: tuple[str, ...] = ()
     placeholder_template: str = DEFAULT_TEMPLATE
     stable_numbering: bool = True
@@ -38,6 +39,7 @@ class Config:
         allowlist = data.get("allowlist", {})
         return cls(
             disabled_detectors=frozenset(data.get("disabled_detectors", [])),
+            enabled_detectors=frozenset(data.get("enabled_detectors", [])),
             allowlist_patterns=tuple(allowlist.get("patterns", [])),
             placeholder_template=data.get("placeholder_template", DEFAULT_TEMPLATE),
             stable_numbering=bool(data.get("stable_numbering", True)),

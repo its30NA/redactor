@@ -3,8 +3,12 @@
 # directory. Every field is optional — delete what you don't need. The tool works
 # with zero config.
 
-# Turn specific detectors off by their `name` (see `default_detectors()`).
+# Turn specific detectors off by their `name`.
 # disabled_detectors = ["bearer_token"]
+
+# Turn on detectors that ship disabled by default. The high-entropy detector is the
+# noisiest one, so it's opt-in here. (An explicit `disabled_detectors` entry still wins.)
+# enabled_detectors = ["high_entropy_string"]
 
 # Change how placeholders look. `{label}` is the human name; `{suffix}` is the
 # stable " #N" number (empty when a secret kind appears only once).
