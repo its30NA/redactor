@@ -7,8 +7,9 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 <br clear="left">
 
-> 📖 Full user guide, command reference, and [harsh test cases](docs/HARSH_TESTS.md) —
-> paste those into `scrub ui` to see it handle deliberately confusing input.
+> 📖 [User guide](docs/GUIDE.md) · [harsh test cases](docs/HARSH_TESTS.md) ·
+> [project status / handoff](docs/PROJECT_STATUS.md) — paste the harsh tests into
+> `scrub ui` to see it handle deliberately confusing input.
 
 ## Screenshots
 
