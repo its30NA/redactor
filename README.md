@@ -15,8 +15,8 @@ terminal output *before* you paste them into an external AI assistant (ChatGPT, 
 
 - **Extensible by design.** Add a detector = add one small class.
 
-> Status: **Milestone 5 — feature-complete** — filter, folder scan, git pre-commit hook,
-> and clipboard sanitization. See the [roadmap](#roadmap).
+> Status: **Milestone 6** — local web UI (`scrub ui`), on top of the full CLI, folder
+> scan, git hook, and clipboard tooling. See the [roadmap](#roadmap).
 
 ## Install
 
@@ -42,6 +42,15 @@ scrub app.log -c redactor.toml    # explicit config
 
 Sanitized text goes to **stdout**; summaries/warnings go to **stderr**, so `scrub`
 composes cleanly in pipes.
+
+**Web UI** (M6) — the friendliest way in; paste-in, sanitized-out, one Copy button:
+
+```bash
+scrub ui                     # opens http://127.0.0.1:8765 in your browser
+```
+
+Runs a stdlib-only local server bound to loopback — nothing leaves your machine. Live
+redaction as you type, a toggle for personal data, and highlighted placeholders.
 
 **Integrations** (M5):
 
@@ -197,9 +206,10 @@ ruff check .  # lint
 - **M2 — Heuristic detection + audit log** ✅ — assignment & entropy detectors, salted-fingerprint audit trail
 - **M3 — Config maturity** ✅ — PII group + toggle, user-defined rule patterns, `--preview` report
 - **M4 — Optional local-LLM pass** ✅ — Ollama-backed, verbatim-only, fails open
-- **M5 — Integrations** ✅ *(this release)* — folder scan, git pre-commit hook, clipboard, CI exit codes
+- **M5 — Integrations** ✅ — folder scan, git pre-commit hook, clipboard, CI exit codes
+- **M6 — Local web UI** ✅ *(this release)* — `scrub ui`: stdlib-only loopback server, live redaction, PII toggle
 
-_Feature-complete._ Future ideas: IDE extension, richer PII models, per-project rule packs.
+Future ideas: IDE extension, richer PII models, per-project rule packs.
 
 ## License
 

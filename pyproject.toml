@@ -34,6 +34,8 @@ Homepage = "https://github.com/its30NA/redactor"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/redactor"]
+# Ship the web UI's HTML alongside the Python package.
+artifacts = ["src/redactor/webui/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

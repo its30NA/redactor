@@ -25,7 +25,7 @@ from redactor import audit as audit_mod
 from redactor.config import Config
 from redactor.pipeline import Pipeline, SanitizeResult
 
-_SUBCOMMANDS = frozenset({"sanitize", "scan", "check", "install-hook", "clipboard"})
+_SUBCOMMANDS = frozenset({"sanitize", "scan", "check", "install-hook", "clipboard", "ui"})
 
 
 # --------------------------------------------------------------------------- #
@@ -182,6 +182,17 @@ def cmd_install_hook(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ui(args: argparse.Namespace) -> int:
+    from redactor.webui.server import serve
+
+    return serve(
+        host=args.host,
+        port=args.port,
+        config_path=args.config,
+        open_browser=not args.no_browser,
+    )
+
+
 def cmd_clipboard(args: argparse.Namespace) -> int:
     from redactor.clipboard import ClipboardUnavailable, copy, paste
 
@@ -235,6 +246,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_clip = sub.add_parser("clipboard", help="Sanitize the clipboard in place.")
     p_clip.add_argument("-c", "--config", help="Path to a redactor.toml config file.")
     p_clip.set_defaults(func=cmd_clipboard)
+
+    p_ui = sub.add_parser("ui", help="Launch the local web UI in your browser.")
+    p_ui.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1).")
+    p_ui.add_argument("--port", type=int, default=8765, help="Port (default: 8765).")
+    p_ui.add_argument("-c", "--config", help="Path to a redactor.toml config file.")
+    p_ui.add_argument("--no-browser", action="store_true", help="Do not auto-open a browser.")
+    p_ui.set_defaults(func=cmd_ui)
 
     return parser
 
