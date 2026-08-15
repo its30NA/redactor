@@ -62,3 +62,11 @@ class GoogleOAuthTokenDetector(RegexDetector):
     label = "Google OAuth Access Token"
     confidence = 0.95
     pattern = re.compile(r"\bya29\.[0-9A-Za-z_-]{20,}\b")
+
+
+class DigitalOceanTokenDetector(RegexDetector):
+    name = "digitalocean_token"
+    kind = "digitalocean_token"
+    label = "DigitalOcean API Token"
+    confidence = 0.99
+    pattern = re.compile(r"\bdop_v1_[a-f0-9]{64}\b")

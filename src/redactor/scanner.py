@@ -77,10 +77,19 @@ def scan_paths(
 
 
 def sanitize_file(path: Path, pipeline: Pipeline) -> FileReport:
-    """Rewrite ``path`` in place with sanitized content. Returns what was redacted."""
+    """Rewrite ``path`` in place with sanitized content. Returns what was redacted.
+
+    Non-UTF-8 text files are **skipped, never rewritten**: decoding with
+    ``errors="replace"`` and writing back would silently corrupt any byte that is
+    not valid UTF-8 (e.g. latin-1 ``é`` becomes ``�``). A security tool must not
+    damage the very files it is asked to clean.
+    """
     report = scan_file(path, pipeline)
     if report.skipped or not report.has_findings:
         return report
-    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return FileReport(path, skipped="not valid UTF-8")
     path.write_text(pipeline.sanitize(text).text, encoding="utf-8")
     return report

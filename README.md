@@ -53,6 +53,7 @@ scrub app.log --diff              # unified diff of what changed
 scrub app.log --preview           # per-redaction report (line, label, context)
 scrub app.log --audit audit.json  # write a redaction audit log (no raw values)
 scrub app.log -c redactor.toml    # explicit config
+scrub --version                   # print version and exit
 ```
 
 Sanitized text goes to **stdout**; summaries/warnings go to **stderr**, so `scrub`
@@ -94,15 +95,16 @@ print(result.redaction_count) # 1
 
 ## What it detects (M1)
 
-High-precision, structural formats grouped by domain — 25 detectors in all:
+High-precision, structural formats grouped by domain — **39 detectors in all (33 on
+by default)**:
 
 | Domain | Detectors |
 |---|---|
 | **AI providers** | OpenAI, Anthropic, Hugging Face |
 | **Version control** | GitHub (classic + fine-grained), GitLab |
-| **Cloud** | AWS access key ID, AWS secret key *(contextual)*, Azure storage key, Google API key, Google OAuth token |
-| **SaaS** | Slack token, Slack webhook, Discord webhook, Stripe, SendGrid, Twilio, npm, PyPI |
-| **Crypto** | PEM/OpenSSH private keys, JWTs |
+| **Cloud** | AWS access key ID, AWS secret key *(contextual)*, Azure storage key, DigitalOcean, Google API key, Google OAuth token |
+| **SaaS** | Slack token, Slack webhook, Discord webhook, Stripe, SendGrid, Twilio, npm, PyPI, Linear, Telegram bot, Shopify, Grafana service account |
+| **Crypto** | PEM/OpenSSH private keys, JWTs, HashiCorp Vault tokens |
 | **HTTP layer** | `Bearer` / `Basic` auth, cookies, session IDs |
 | **Connection strings** | password inside `scheme://user:pass@host/db` (context preserved) |
 
@@ -204,11 +206,13 @@ class LinearApiKeyDetector(RegexDetector):
     name = "linear_api_key"
     kind = "linear_api_key"
     label = "Linear API Key"
-    pattern = re.compile(r"\blin_api_[A-Za-z0-9]{40,}\b")
+    pattern = re.compile(r"\blin_api_[A-Za-z0-9]{40}\b")
 ```
 
 Then list it in `_DEFAULT_DETECTOR_CLASSES` in `detectors/__init__.py`, and add a match
 case + a false-positive case to `tests/test_detectors.py`. Done — nothing else changes.
+(`LinearApiKeyDetector` and friends in `detectors/saas.py` are the shipped examples
+of this exact recipe.)
 
 ## Test
 

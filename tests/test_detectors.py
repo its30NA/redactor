@@ -41,9 +41,16 @@ MATCH_CASES = [
     ("sendgrid_api_key", "SG." + "a" * 22 + "." + "b" * 43),
     ("npm_token", "npm_" + "a" * 36),
     ("pypi_token", "pypi-" + "a" * 20),
+    ("linear_api_key", "lin_api_" + "a" * 40),
+    ("telegram_bot_token", "123456789:" + "A" * 35),
+    ("shopify_token", "shpat_" + "a" * 32),
+    ("grafana_service_account_token", "glsa_" + "a" * 40),
     # Crypto
     ("jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVP-mB92K27uhbUJU1p"),
+    ("vault_token", "hvs." + "a" * 24),
     ("private_key_block", PEM),
+    # Cloud
+    ("digitalocean_token", "dop_v1_" + "a" * 64),
     # HTTP layer
     ("bearer_token", "Authorization: Bearer abc123DEF456ghi789"),
     ("basic_auth", "Authorization: Basic dXNlcjpwYXNzd29yZA=="),
@@ -61,6 +68,12 @@ NON_MATCH_TEXTS = [
     "https://example.com:8080/health",  # host:port, not user:pass
     "postgres://admin@db.internal:5432/app",  # no password present
     "the word bearer appears but no token follows.",
+    "lin_api_toolong",  # linear key needs exactly 40 alnum chars after prefix
+    "hvs." + "a" * 23,  # vault token needs exactly 24 chars after hvs.
+    "dop_v1_" + "g" * 64,  # digitalocean needs hex chars only
+    "12345678:tooshortforatelegramtoken",  # telegram needs 35 chars after colon
+    "shpat_zz" + "0" * 30,  # shopify needs exactly 32 hex after shpat_
+    "glsa_notquite",  # grafana SA token needs 20+ chars
 ]
 
 

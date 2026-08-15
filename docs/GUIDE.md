@@ -45,10 +45,11 @@ scrub file.log --audit log.json# audit record (no raw secrets)
 | `scrub FILE` | Sanitize a file (or stdin), print the safe version. **Never edits the file.** |
 | `scrub ui` | Launch the local web UI. |
 | `scrub scan PATH` | Scan files/folders and **report** findings. Read-only. Exits non-zero if any found. |
-| `scrub scan PATH --write` | Rewrite files in place, sanitized. The **only** command that edits files. |
+| `scrub scan PATH --write` | Rewrite files in place, sanitized. The **only** command that edits files. Files that aren't valid UTF-8 are skipped untouched (rewriting would corrupt them). |
 | `scrub check` | Scan git-staged files (used by the pre-commit hook). |
 | `scrub install-hook` | Install a git pre-commit hook that blocks commits with secrets. |
 | `scrub clipboard` | Sanitize the clipboard in place. |
+| `scrub --version` / `-V` | Print the version and exit. |
 
 ### Common flags
 
@@ -66,9 +67,11 @@ scrub file.log --audit log.json# audit record (no raw secrets)
 ## What it detects
 
 **Always on (high-precision):** OpenAI, Anthropic, Hugging Face keys; GitHub & GitLab
-tokens; AWS access + secret keys; Azure storage key; Google API key & OAuth token; Slack
-token & webhook; Discord webhook; Stripe; SendGrid; Twilio; npm; PyPI; JWTs; PEM/OpenSSH
-private keys; Bearer/Basic auth; cookies; session IDs; connection-string passwords.
+tokens; AWS access + secret keys; Azure storage key; DigitalOcean; Google API key &
+OAuth token; Slack token & webhook; Discord webhook; Stripe; SendGrid; Twilio; npm;
+PyPI; Linear; Telegram bot; Shopify; Grafana service account; JWTs; PEM/OpenSSH
+private keys; Vault tokens; Bearer/Basic auth; cookies; session IDs; connection-string
+passwords.
 
 **Heuristic (on):** any value assigned to a suspiciously-named variable (`DB_PASSWORD=`,
 `SERVICE_API_KEY=`), even with no vendor prefix.

@@ -16,11 +16,16 @@ Example ``redactor.toml``::
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from redactor.redaction import DEFAULT_TEMPLATE
+
+
+class ConfigError(ValueError):
+    """Raised when a config file is present but unusable (bad TOML, bad rule)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +37,45 @@ class CustomRule:
     pattern: str
     confidence: float = 0.9
     group: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ConfigError("custom rule is missing a non-empty `name`")
+        if not self.label.strip():
+            raise ConfigError(f"custom rule {self.name!r} is missing a non-empty `label`")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ConfigError(
+                f"custom rule {self.name!r}: confidence must be in [0.0, 1.0], "
+                f"got {self.confidence}"
+            )
+        if self.group < 0:
+            raise ConfigError(f"custom rule {self.name!r}: group must be >= 0")
+        try:
+            re.compile(self.pattern)
+        except re.error as exc:
+            raise ConfigError(
+                f"custom rule {self.name!r}: invalid regex {self.pattern!r}: {exc}"
+            ) from exc
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> CustomRule:
+        try:
+            return cls(
+                name=raw["name"],
+                label=raw["label"],
+                pattern=raw["pattern"],
+                confidence=float(raw.get("confidence", 0.9)),
+                group=int(raw.get("group", 0)),
+            )
+        except KeyError as exc:
+            raise ConfigError(
+                f"custom rule is missing required key {exc.args[0]!r}; "
+                "each [[rules]] entry needs `name`, `label`, and `pattern`"
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(
+                f"custom rule {raw.get('name', '<unnamed>')!r}: bad value: {exc}"
+            ) from exc
 
 # Filenames searched, in order, when no explicit config path is given.
 CONFIG_FILENAMES = ("redactor.toml", ".redactor.toml")
@@ -62,16 +106,7 @@ class Config:
     def from_dict(cls, data: dict) -> Config:
         allowlist = data.get("allowlist", {})
         llm_data = data.get("llm", {})
-        rules = tuple(
-            CustomRule(
-                name=r["name"],
-                label=r["label"],
-                pattern=r["pattern"],
-                confidence=float(r.get("confidence", 0.9)),
-                group=int(r.get("group", 0)),
-            )
-            for r in data.get("rules", [])
-        )
+        rules = tuple(CustomRule.from_dict(r) for r in data.get("rules", []))
         return cls(
             disabled_detectors=frozenset(data.get("disabled_detectors", [])),
             enabled_detectors=frozenset(data.get("enabled_detectors", [])),
@@ -94,8 +129,14 @@ class Config:
         resolved = Path(path) if path else _discover()
         if resolved is None:
             return cls()
-        with resolved.open("rb") as fh:
-            return cls.from_dict(tomllib.load(fh))
+        try:
+            with resolved.open("rb") as fh:
+                data = tomllib.load(fh)
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"{resolved}: invalid TOML: {exc}") from exc
+        except OSError as exc:
+            raise ConfigError(f"{resolved}: cannot read config: {exc}") from exc
+        return cls.from_dict(data)
 
 
 def _discover(start: Path | None = None) -> Path | None:

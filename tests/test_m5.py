@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from redactor.cli import main
-from redactor.githook import HOOK_SCRIPT, install_hook
+from redactor.githook import HOOK_SCRIPT, install_hook, resolve_scrub_command
 from redactor.pipeline import Pipeline
 from redactor.scanner import iter_files, looks_binary, sanitize_file, scan_file, scan_paths
 
@@ -59,6 +59,17 @@ def test_scan_paths_and_sanitize_file(tmp_path: Path) -> None:
     assert "plain line" in rewritten
 
 
+def test_sanitize_file_never_corrupts_non_utf8(tmp_path: Path) -> None:
+    # Regression: latin-1 files with a secret must be skipped, NOT rewritten —
+    # decoding with errors="replace" and writing back would silently turn the
+    # non-UTF-8 byte (é) into U+FFFD (�).
+    f = tmp_path / "cfg.conf"
+    f.write_bytes(b"password=sekrit123\nname=Andr\xe9\n")
+    report = sanitize_file(f, Pipeline())
+    assert report.skipped == "not valid UTF-8"
+    assert f.read_bytes() == b"password=sekrit123\nname=Andr\xe9\n"  # untouched
+
+
 # --- CLI dispatch -----------------------------------------------------------
 
 
@@ -82,6 +93,32 @@ def test_cli_scan_clean_tree(tmp_path: Path) -> None:
     assert main(["scan", str(tmp_path)]) == 0
 
 
+def test_cli_version_flag(capsys) -> None:
+    from redactor import __version__
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"scrub {__version__}"
+
+    with pytest.raises(SystemExit) as exc:
+        main(["-V"])
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"scrub {__version__}"
+
+
+def test_cli_bad_config_exits_cleanly(tmp_path: Path, capsys) -> None:
+    bad = tmp_path / "bad.toml"
+    bad.write_text("not [valid toml")
+    input_file = tmp_path / "input.txt"
+    input_file.write_text("hello")
+    with pytest.raises(SystemExit) as exc:
+        main(["sanitize", str(input_file), "-c", str(bad)])
+    assert exc.value.code == 2  # clean error, not a traceback
+    err = capsys.readouterr().err
+    assert "invalid TOML" in err
+
+
 # --- Git hook ---------------------------------------------------------------
 
 
@@ -95,7 +132,9 @@ def test_install_hook(tmp_path: Path) -> None:
         os.chdir(tmp_path)
         path = install_hook()
         assert path.exists()
-        assert path.read_text() == HOOK_SCRIPT
+        rendered = path.read_text()
+        assert rendered == HOOK_SCRIPT.format(scrub=resolve_scrub_command())
+        assert " check || {" in rendered  # hook still shells into scrub check
         assert path.stat().st_mode & 0o111  # executable
         with pytest.raises(FileExistsError):
             install_hook()
