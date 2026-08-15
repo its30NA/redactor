@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from redactor.allowlist import Allowlist
 from redactor.config import Config
 from redactor.models import Match
@@ -86,7 +88,41 @@ def test_email_password_overlap_never_leaks_password() -> None:
 
 def test_config_custom_template() -> None:
     redactor = Redactor(template="<<{label}{suffix}>>")
-    key = "sk-abcdEFGH1234ijklMNOP5678"
+    key = "sk-abcDEFGH1234ijklMNOP5678"
     matches = [Match(0, len(key), "openai_api_key", "OpenAI API Key", key, 0.97, "d")]
     out = redactor.apply(key, matches)
     assert out == "<<OpenAI API Key>>"
+
+
+def test_config_rule_missing_keys_raises_clear_error() -> None:
+    from redactor.config import ConfigError
+
+    with pytest.raises(ConfigError, match="missing required key 'pattern'"):
+        Config.from_dict({"rules": [{"name": "x", "label": "X"}]})
+
+
+def test_config_rule_invalid_regex_raises_clear_error() -> None:
+    from redactor.config import ConfigError
+
+    with pytest.raises(ConfigError, match="invalid regex"):
+        Config.from_dict(
+            {"rules": [{"name": "x", "label": "X", "pattern": "([unclosed"}]}
+        )
+
+
+def test_config_rule_bad_confidence_raises_clear_error() -> None:
+    from redactor.config import ConfigError
+
+    with pytest.raises(ConfigError, match="confidence"):
+        Config.from_dict(
+            {"rules": [{"name": "x", "label": "X", "pattern": "abc", "confidence": 7}]}
+        )
+
+
+def test_config_invalid_toml_raises_clear_error(tmp_path) -> None:
+    from redactor.config import ConfigError
+
+    bad = tmp_path / "bad.toml"
+    bad.write_text("this is [not valid toml")
+    with pytest.raises(ConfigError, match="invalid TOML"):
+        Config.load(bad)

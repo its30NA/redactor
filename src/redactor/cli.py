@@ -21,11 +21,14 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from redactor import __version__
 from redactor import audit as audit_mod
 from redactor.config import Config
 from redactor.pipeline import Pipeline, SanitizeResult
 
 _SUBCOMMANDS = frozenset({"sanitize", "scan", "check", "install-hook", "clipboard", "ui"})
+# Flags that belong to the root parser (handled before subcommand dispatch).
+_ROOT_FLAGS = frozenset({"-h", "--help", "-V", "--version"})
 
 
 # --------------------------------------------------------------------------- #
@@ -33,7 +36,13 @@ _SUBCOMMANDS = frozenset({"sanitize", "scan", "check", "install-hook", "clipboar
 # --------------------------------------------------------------------------- #
 
 def _pipeline(config_path: str | None) -> Pipeline:
-    return Pipeline.from_config(Config.load(config_path))
+    from redactor.config import ConfigError
+
+    try:
+        return Pipeline.from_config(Config.load(config_path))
+    except ConfigError as exc:
+        print(f"scrub: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
 
 
 def _read_input(path: str | None) -> str:
@@ -135,13 +144,18 @@ def cmd_scan(args: argparse.Namespace) -> int:
     for report in scan_paths(paths, pipeline, recursive=not args.no_recursive):
         if report.skipped or not report.has_findings:
             continue
-        total_files += 1
-        total_findings += len(report.matches)
         kinds = ", ".join(sorted({m.label for m in report.matches}))
         if args.write:
-            sanitize_file(report.path, pipeline)
+            fixed = sanitize_file(report.path, pipeline)
+            if fixed.skipped:
+                print(f"skipped  {report.path}  ({fixed.skipped})")
+                continue  # not counted as sanitized — file left untouched
+            total_files += 1
+            total_findings += len(report.matches)
             print(f"fixed  {report.path}  ({len(report.matches)}: {kinds})")
         else:
+            total_files += 1
+            total_findings += len(report.matches)
             print(f"{report.path}: {len(report.matches)} finding(s) — {kinds}")
 
     verb = "sanitized" if args.write else "found in"
@@ -217,6 +231,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="scrub",
         description="Redact secrets from text before sharing it with external AI assistants.",
     )
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"scrub {__version__}"
+    )
     sub = parser.add_subparsers(dest="command")
 
     p_san = sub.add_parser("sanitize", help="Sanitize a file or stdin (default).")
@@ -261,9 +278,9 @@ def _normalize(argv: list[str]) -> list[str]:
     """Default to the sanitize subcommand when none is given.
 
     ``scrub file.log`` and ``scrub`` (stdin) must keep working, so if the first token
-    isn't a known subcommand or a help flag, we insert ``sanitize`` in front.
+    isn't a known subcommand or a root-level flag, we insert ``sanitize`` in front.
     """
-    if argv and (argv[0] in _SUBCOMMANDS or argv[0] in ("-h", "--help")):
+    if argv and (argv[0] in _SUBCOMMANDS or argv[0] in _ROOT_FLAGS):
         return argv
     return ["sanitize", *argv]
 

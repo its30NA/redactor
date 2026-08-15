@@ -81,12 +81,13 @@ secret value lives only in memory and is provably absent from output and audit.
 
 ---
 
-## Detectors (27 on by default, 33 total)
+## Detectors (33 on by default, 39 total)
 
-- **Structural (on, 26):** OpenAI, Anthropic, Hugging Face, GitHub, GitLab, AWS access +
-  secret, Azure storage, Google API + OAuth, Slack token + webhook, Discord webhook,
-  Stripe, SendGrid, Twilio, npm, PyPI, JWT, PEM/OpenSSH private keys, Bearer, Basic auth,
-  cookies, session IDs, connection-string passwords.
+- **Structural (on, 32):** OpenAI, Anthropic, Hugging Face, GitHub, GitLab, AWS access +
+  secret, Azure storage, DigitalOcean, Google API + OAuth, Slack token + webhook,
+  Discord webhook, Stripe, SendGrid, Twilio, npm, PyPI, Linear, Telegram bot,
+  Shopify, Grafana service account, JWT, PEM/OpenSSH private keys, Vault, Bearer,
+  Basic auth, cookies, session IDs, connection-string passwords.
 - **Heuristic assignment (on, 1):** `SOMETHING_PASSWORD=`, `X_API_KEY=`, etc. with a
   placeholder guard (`changeme`, `${VAR}`, `true` are ignored).
 - **High-entropy (off, opt-in):** `enabled_detectors = ["high_entropy_string"]`.
@@ -110,6 +111,7 @@ secret value lives only in memory and is provably absent from output and audit.
 | — | **Fix:** resolver now merges overlaps (found a real password-leak bug on live data) |
 | M6 | Local web UI (`scrub ui`) |
 | — | Packaging: global `scrub`, Windows/WSL desktop launcher, custom icon, guide + harsh tests, README screenshot |
+| — | **Community PR:** 6 new detectors (Linear, Telegram bot, Shopify, Grafana SA, Vault, DigitalOcean), `scrub --version`/`-V`, dynamic version from `__init__.py`, UTF-8-safe `scan --write` (skips non-UTF-8 files instead of corrupting them), venv-proof pre-commit hook, friendly `ConfigError` for bad rules/TOML, web-UI payload cap |
 
 ---
 

@@ -4,7 +4,6 @@ build-backend = "hatchling.build"
 
 [project]
 name = "redactor"
-version = "0.1.0"
 description = "Local, privacy-first text sanitizer — redact secrets before sharing text with external AI assistants."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +21,9 @@ classifiers = [
 # Deliberately zero runtime dependencies: the deterministic core is stdlib-only.
 # This keeps the tool trivially auditable and guarantees it can never phone home.
 dependencies = []
+# Version lives in src/redactor/__init__.py (single source of truth for
+# `scrub --version`, packaging, and importers alike).
+dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5"]
@@ -36,6 +38,9 @@ Homepage = "https://github.com/its30NA/redactor"
 packages = ["src/redactor"]
 # Ship the web UI's HTML alongside the Python package.
 artifacts = ["src/redactor/webui/*.html"]
+
+[tool.hatch.version]
+path = "src/redactor/__init__.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

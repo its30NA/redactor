@@ -31,6 +31,24 @@ def test_handle_sanitize_empty() -> None:
     assert out["sanitized"] == ""
 
 
+def test_payload_too_large_rejected() -> None:
+    from redactor.webui.server import _MAX_BODY_BYTES
+
+    # The handler rejects oversized bodies before parsing them.
+    handler = Handler.__new__(Handler)
+    handler.headers = {"Content-Length": str(_MAX_BODY_BYTES + 1)}
+    handler.path = "/api/sanitize"
+    handler.rfile = None  # must not be read when rejected
+    captured = {}
+
+    def fake_send(code, body, ctype):
+        captured["code"] = code
+
+    handler._send = fake_send
+    Handler.do_POST(handler)
+    assert captured["code"] == 413
+
+
 def test_index_html_loads() -> None:
     html = _index_html()
     assert "<html" in html.lower()

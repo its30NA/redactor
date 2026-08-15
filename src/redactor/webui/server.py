@@ -31,6 +31,11 @@ def _index_html() -> str:
     return resources.files("redactor.webui").joinpath("index.html").read_text(encoding="utf-8")
 
 
+# Refuse huge pastes — a 100 MB paste would be a memory DoS on the loopback
+# server. Paste-boxes this size are never legitimate chat fodder.
+_MAX_BODY_BYTES = 2 * 1024 * 1024
+
+
 @lru_cache(maxsize=8)
 def _pipeline(config_path: str | None, redact_pii: bool) -> Pipeline:
     """Build (and cache) a pipeline for a given config + PII toggle combination."""
@@ -74,7 +79,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/api/sanitize":
             self._send(404, "not found", "text/plain; charset=utf-8")
             return
-        length = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            self._send(400, json.dumps({"error": "invalid Content-Length"}), "application/json")
+            return
+        if length > _MAX_BODY_BYTES:
+            self._send(413, json.dumps({"error": "payload too large"}), "application/json")
+            return
         raw = self.rfile.read(length) if length else b"{}"
         try:
             payload = json.loads(raw or b"{}")

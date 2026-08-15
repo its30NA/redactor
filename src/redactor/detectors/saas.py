@@ -76,3 +76,39 @@ class PyPiTokenDetector(RegexDetector):
     label = "PyPI API Token"
     confidence = 0.99
     pattern = re.compile(r"\bpypi-[A-Za-z0-9_-]{16,}\b")
+
+
+class LinearApiKeyDetector(RegexDetector):
+    name = "linear_api_key"
+    kind = "linear_api_key"
+    label = "Linear API Key"
+    confidence = 0.98
+    pattern = re.compile(r"\blin_api_[A-Za-z0-9]{40}\b")
+
+
+class TelegramBotTokenDetector(RegexDetector):
+    name = "telegram_bot_token"
+    kind = "telegram_bot_token"
+    label = "Telegram Bot Token"
+    confidence = 0.98
+    # bot_id:35-char alnum — the ":" between digits and the fixed length make
+    # this shape far too specific to collide with ordinary data.
+    pattern = re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")
+
+
+class ShopifyTokenDetector(RegexDetector):
+    name = "shopify_token"
+    kind = "shopify_token"
+    label = "Shopify Access Token"
+    confidence = 0.98
+    # shpat_ = storefront access token, shppa_ = private app, shpca_ = custom app,
+    # shpss_ = session token — all 32 hex chars after the prefix.
+    pattern = re.compile(r"\bshp(?:at|pa|ca|ss)_[a-fA-F0-9]{32}\b")
+
+
+class GrafanaServiceAccountTokenDetector(RegexDetector):
+    name = "grafana_service_account_token"
+    kind = "grafana_service_account_token"
+    label = "Grafana Service Account Token"
+    confidence = 0.97
+    pattern = re.compile(r"\bglsa_[A-Za-z0-9_]{20,}\b")

@@ -32,3 +32,12 @@ class JwtDetector(RegexDetector):
     confidence = 0.95
     # header.payload.signature — header always begins "eyJ" (base64url of '{"').
     pattern = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
+
+
+class VaultTokenDetector(RegexDetector):
+    name = "vault_token"
+    kind = "vault_token"
+    label = "HashiCorp Vault Token"
+    confidence = 0.96
+    # Service tokens are hvs. + 24 base62 chars; batch tokens are hvb. + 24.
+    pattern = re.compile(r"\bhv[bs]\.[A-Za-z0-9]{24}\b")

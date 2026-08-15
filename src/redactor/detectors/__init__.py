@@ -21,6 +21,7 @@ from redactor.detectors.cloud import (
     AwsAccessKeyDetector,
     AwsSecretKeyDetector,
     AzureStorageKeyDetector,
+    DigitalOceanTokenDetector,
     GoogleApiKeyDetector,
     GoogleOAuthTokenDetector,
 )
@@ -28,7 +29,7 @@ from redactor.detectors.connection import (
     ConnectionStringPasswordDetector,
     UrlBasicAuthPasswordDetector,
 )
-from redactor.detectors.crypto import JwtDetector, PrivateKeyBlockDetector
+from redactor.detectors.crypto import JwtDetector, PrivateKeyBlockDetector, VaultTokenDetector
 from redactor.detectors.heuristics import (
     AssignmentSecretDetector,
     HighEntropyStringDetector,
@@ -42,12 +43,16 @@ from redactor.detectors.pii import (
 )
 from redactor.detectors.saas import (
     DiscordWebhookDetector,
+    GrafanaServiceAccountTokenDetector,
+    LinearApiKeyDetector,
     NpmTokenDetector,
     PyPiTokenDetector,
     SendGridKeyDetector,
+    ShopifyTokenDetector,
     SlackTokenDetector,
     SlackWebhookDetector,
     StripeKeyDetector,
+    TelegramBotTokenDetector,
     TwilioKeyDetector,
 )
 from redactor.detectors.vcs import GitHubTokenDetector, GitLabTokenDetector
@@ -75,6 +80,7 @@ _ALL_DETECTOR_CLASSES: tuple[type[Detector], ...] = (
     # Cryptographic material
     PrivateKeyBlockDetector,
     JwtDetector,
+    VaultTokenDetector,
     # AI providers
     AnthropicApiKeyDetector,
     OpenAIApiKeyDetector,
@@ -86,6 +92,7 @@ _ALL_DETECTOR_CLASSES: tuple[type[Detector], ...] = (
     AwsAccessKeyDetector,
     AwsSecretKeyDetector,
     AzureStorageKeyDetector,
+    DigitalOceanTokenDetector,
     GoogleApiKeyDetector,
     GoogleOAuthTokenDetector,
     # SaaS
@@ -97,6 +104,10 @@ _ALL_DETECTOR_CLASSES: tuple[type[Detector], ...] = (
     TwilioKeyDetector,
     NpmTokenDetector,
     PyPiTokenDetector,
+    LinearApiKeyDetector,
+    TelegramBotTokenDetector,
+    ShopifyTokenDetector,
+    GrafanaServiceAccountTokenDetector,
     # HTTP layer
     BearerTokenDetector,
     BasicAuthDetector,
