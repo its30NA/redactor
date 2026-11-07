@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `scrub.exe` carries a Windows version resource: product name, version, description and copyright.
+- A code signing policy and privacy statement in the README.
+
+### Changed
+
+- The README and the threat model say that the installer downloads Microsoft's WebView2 runtime when a PC
+  does not have it.
+
 ## [2.0.0] - 2026-11-06
 
 Version 2 is a rewrite. Version 1 was a Python command-line tool with a browser interface on a local

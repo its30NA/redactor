@@ -180,7 +180,23 @@ cd ../src-tauri && ../ui/node_modules/.bin/tauri build --bundles nsis
 
 [User guide](docs/GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) ·
 [Detectors](docs/DETECTORS.md) · [Accuracy](docs/ACCURACY.md) · [Harsh test cases](docs/HARSH_TESTS.md) ·
-[Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+[Security policy](SECURITY.md) · [Code signing policy](#code-signing-policy) · [Changelog](CHANGELOG.md)
+
+## Code signing policy
+
+Releases are not code-signed yet; free code signing through [SignPath Foundation](https://signpath.org/)
+is planned. Until then, [verify the download](#verify-the-download).
+
+- Committers and reviewers: [its30NA](https://github.com/its30NA)
+- Approvers: [its30NA](https://github.com/its30NA)
+
+Every release file is built by GitHub Actions from a tag on `main`, with checksums and build provenance
+attestations, and the release is published by hand after a check.
+
+**Privacy policy.** This program will not transfer any information to other networked systems unless
+specifically requested by the user or the person installing or operating it. The installer downloads
+Microsoft's WebView2 runtime from Microsoft only when the PC does not have it; the runtime keeps its own
+update traffic, covered by Microsoft's privacy statement.
 
 ## License
 
