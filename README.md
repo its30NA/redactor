@@ -39,7 +39,9 @@ Get the latest build from [GitHub Releases](https://github.com/its30NA/redactor/
 | `scrub-v<version>-aarch64-apple-darwin.tar.gz`, `scrub-v<version>-x86_64-apple-darwin.tar.gz` | `scrub` for macOS (Apple silicon, Intel). |
 | `SHA256SUMS` | Checksums of every file above. |
 
-The desktop app is Windows only. `scrub` runs on Windows, Linux and macOS.
+The desktop app is Windows only. It runs on Microsoft's WebView2 runtime, which ships with Windows 11
+and current Windows 10; on a PC without it, the installer downloads it from Microsoft (the portable
+zip downloads nothing and needs it installed). `scrub` runs on Windows, Linux and macOS.
 
 The Windows files are not code-signed, so SmartScreen may show "Windows protected your PC". Verify the
 download first (below), then choose "More info" and "Run anyway". See the
@@ -110,7 +112,8 @@ The engine is a pure Rust library with no I/O. The desktop app and `scrub` are t
   No HTTP client crate is linked into the Windows app or into `scrub`: `cargo deny` fails the build if one
   appears (`deny.toml`). These limits are checked by tests (`app/src-tauri/tests/config.rs`,
   `app/ui/tests/unit/bundle.test.ts`, `app/ui/tests/unit/isolation.test.ts`). The WebView2 runtime itself
-  (a Microsoft component) keeps its own update traffic.
+  (a Microsoft component) keeps its own update traffic, and the installer fetches it from Microsoft
+  only when it is missing.
 - **No logs.** There is no logging library. A panic never prints its message, because a message could
   quote your text: the app prints nothing, and `scrub` prints one fixed line with the source location and
   exits with code 101. Errors never contain text. The `scrub --audit` log records counts, labels and line

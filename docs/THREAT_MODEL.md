@@ -130,7 +130,8 @@ Windows, put the PC to sleep, or leave the app idle past the timeout (10 minutes
   Windows. Zeroing on drop limits the time a value sits in memory, not what the operating system does
   with it meanwhile.
 - **Other software on the path.** Redactor cannot see what your browser, terminal or chat client does with
-  text before or after. The WebView2 runtime is a Microsoft component with its own update mechanism. The
+  text before or after. The WebView2 runtime is a Microsoft component with its own update mechanism; the
+  installer downloads it from Microsoft when a PC does not have it. The
   app's content security policy keeps the app's own page from using the network, but does not govern the
   runtime's updates.
 - **Metadata.** Placeholders keep structure: labels, line breaks and which values are equal (`#1` twice).
