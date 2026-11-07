@@ -37,7 +37,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 }
 
 /// A fresh repository with rename detection explicitly on, as most users have it. Git for Windows
-/// refuses index paths with `:` or a newline unless `core.protectNTFS` is off; such names reach a
+/// refuses index paths with a newline unless `core.protectNTFS` is off; such names reach a
 /// repository from other systems, so the odd-name tests stage them on Windows too.
 fn repo() -> TempDir {
     let d = tempfile::tempdir().unwrap();
@@ -113,6 +113,9 @@ fn check_ignores_deletions() {
     assert!(!err.contains("old.env"), "{err}");
 }
 
+/// Not on Windows: Git for Windows reads `0:` as a drive letter and never stores such a name, so
+/// the trick cannot reach a repository there. The code under test is the same on every platform.
+#[cfg(not(windows))]
 #[test]
 fn check_reads_by_blob_id_not_by_name() {
     let d = repo();
