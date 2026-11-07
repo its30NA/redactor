@@ -3368,6 +3368,7 @@ dependencies = [
  "serde",
  "serde_json",
  "similar",
+ "tauri-winres",
  "tempfile",
  "toml 1.2.1+spec-1.1.0",
 ]

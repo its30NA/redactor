@@ -29,6 +29,10 @@ regex = "1.11"
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process"] }
 
+# Already in the tree through tauri-build; only Windows hosts build it.
+[target.'cfg(windows)'.build-dependencies]
+tauri-winres = "0.3"
+
 [dev-dependencies]
 assert_cmd = "2"
 tempfile = "3"
