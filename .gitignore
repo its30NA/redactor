@@ -1,24 +1,23 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
-.venv/
-venv/
-
-# Tooling
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.coverage
-htmlcov/
-
 # Editors / OS
 .vscode/
 .idea/
 .DS_Store
 
-# Local, private config a user might drop in (never commit real allowlists/secrets)
+# Local, private config a user might drop in (never commit real allowlists or secrets)
 redactor.local.toml
+
+# Rust, Node, Tauri, test output
+target/
+node_modules/
+app/ui/dist/
+app/ui/dist-mock/
+app/src-tauri/gen/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# tools/classifier/train.py bytecode
+__pycache__/
+
+# tools/classifier: the virtualenv for train.py
+.venv/
