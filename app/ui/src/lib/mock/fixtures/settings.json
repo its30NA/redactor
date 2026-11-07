@@ -1,0 +1,15 @@
+{
+  "theme": "system",
+  "sensitivity": "balanced",
+  "pii": false,
+  "stripInvisible": true,
+  "hotkey": "Ctrl+Alt+R",
+  "trayMode": true,
+  "autoWipeMinutes": 10,
+  "wipeOnLock": true,
+  "contentProtection": true,
+  "placeholderStyle": "labeled",
+  "reducedMotion": "system",
+  "alwaysRedact": ["Nightjar", "build-07.corp.example"],
+  "firstRunDone": true
+}

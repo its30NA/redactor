@@ -1,0 +1,279 @@
+{
+  "output": "# 🚀 staging rollout · notes for the on-call channel\nDATABASE_URL=postgres://orders_app:[REDACTED: Password in URL]@db.staging.example:5432/orders\nOPENAI_API_KEY=[REDACTED: OpenAI API Key]\nexport GITHUB_TOKEN=[REDACTED: GitHub Token]\naws_access_key_id = [REDACTED: AWS Access Key ID]\naws_secret_access_key = [REDACTED: AWS Secret Access Key]\n\n$ curl -u deploy:[REDACTED: Password #1] https://ci.example.test/api/v1/jobs\n2026-11-06T09:14:02Z WARN auth retry for orders_app with password [REDACTED: Password in URL]\nDas Passwort fürs Staging-WLAN ist [REDACTED: Password #2] – bitte nicht weitergeben.\n@oncall webhook signing secret, rotate after the demo 🔑[REDACTED: Random String #1]\nticket 4471 attachment note: [REDACTED: Random String #2]\n\n[smtp]\r\nhost = mail.example.test\r\npassword = [REDACTED: Password #1]\r\n\r\nrequest_id = 550e8400-e29b-41d4-a716-446655440000\ncommit 9f8e7d6c5b4a3f2e1d0c9b8a7654321000abcdef\n",
+  "findings": [
+    {
+      "id": 0,
+      "start": 88,
+      "end": 106,
+      "line": 2,
+      "kind": "url_userinfo_password",
+      "label": "Password in URL",
+      "tier": "certain",
+      "confidence": 0.95,
+      "detector": "url_userinfo_password",
+      "reason": "scheme://user:<password>@host",
+      "source": "pattern",
+      "valueKey": "395033cbc1884cd6a8f926b8a01f3e44",
+      "placeholder": "[REDACTED: Password in URL]",
+      "kept": false
+    },
+    {
+      "id": 1,
+      "start": 153,
+      "end": 209,
+      "line": 3,
+      "kind": "openai_project_key",
+      "label": "OpenAI API Key",
+      "tier": "certain",
+      "confidence": 0.99,
+      "detector": "openai_project_key",
+      "reason": "sk-proj- + 40+ [A-Za-z0-9_-]",
+      "source": "pattern",
+      "valueKey": "2cd3a376af6aefe8aac9991c582c7677",
+      "placeholder": "[REDACTED: OpenAI API Key]",
+      "kept": false
+    },
+    {
+      "id": 2,
+      "start": 230,
+      "end": 270,
+      "line": 4,
+      "kind": "github_pat",
+      "label": "GitHub Token",
+      "tier": "certain",
+      "confidence": 0.9,
+      "detector": "github_pat",
+      "reason": "GitHub token format, checksum not valid",
+      "source": "pattern",
+      "valueKey": "f7bec7652f97c1f120ec5523ed41ce15",
+      "placeholder": "[REDACTED: GitHub Token]",
+      "kept": false
+    },
+    {
+      "id": 3,
+      "start": 291,
+      "end": 311,
+      "line": 5,
+      "kind": "aws_access_key_id",
+      "label": "AWS Access Key ID",
+      "tier": "certain",
+      "confidence": 0.95,
+      "detector": "aws_access_key_id",
+      "reason": "AKIA/ASIA/AGPA/AIDA/AROA/ANPA/ABIA/ACCA + 16 [A-Z2-7]",
+      "source": "pattern",
+      "valueKey": "11db65e169a9710f724a7d9901e1e382",
+      "placeholder": "[REDACTED: AWS Access Key ID]",
+      "kept": false
+    },
+    {
+      "id": 4,
+      "start": 336,
+      "end": 376,
+      "line": 6,
+      "kind": "aws_secret_access_key",
+      "label": "AWS Secret Access Key",
+      "tier": "certain",
+      "confidence": 0.9,
+      "detector": "aws_secret_access_key",
+      "reason": "aws_secret_access_key = 40 base64 chars",
+      "source": "pattern",
+      "valueKey": "c880fa67957f566872d3a6267839f5c6",
+      "placeholder": "[REDACTED: AWS Secret Access Key]",
+      "kept": false
+    },
+    {
+      "id": 5,
+      "start": 395,
+      "end": 409,
+      "line": 8,
+      "kind": "context_password",
+      "label": "Password",
+      "tier": "certain",
+      "confidence": 0.9,
+      "detector": "context",
+      "reason": "Password argument of a command",
+      "source": "context",
+      "valueKey": "01caca2ab79d73232614e0f174538a92",
+      "placeholder": "[REDACTED: Password #1]",
+      "kept": false
+    },
+    {
+      "id": 6,
+      "start": 512,
+      "end": 530,
+      "line": 9,
+      "kind": "url_userinfo_password",
+      "label": "Password in URL",
+      "tier": "likely",
+      "confidence": 0.79750234,
+      "detector": "context",
+      "reason": "Secret named in a sentence",
+      "source": "context",
+      "valueKey": "395033cbc1884cd6a8f926b8a01f3e44",
+      "placeholder": "[REDACTED: Password in URL]",
+      "kept": false
+    },
+    {
+      "id": 7,
+      "start": 566,
+      "end": 582,
+      "line": 10,
+      "kind": "context_password",
+      "label": "Password",
+      "tier": "likely",
+      "confidence": 0.79044455,
+      "detector": "context",
+      "reason": "Secret named in a sentence",
+      "source": "context",
+      "valueKey": "ff190e618855d92626f98c3ac7e86788",
+      "placeholder": "[REDACTED: Password #2]",
+      "kept": false
+    },
+    {
+      "id": 8,
+      "start": 666,
+      "end": 698,
+      "line": 11,
+      "kind": "random_string",
+      "label": "Random String",
+      "tier": "possible",
+      "confidence": 0.55,
+      "detector": "classifier",
+      "reason": "Random-looking token",
+      "source": "classifier",
+      "valueKey": "9e4eb5a4eb41f8e8a25ba379912bec9e",
+      "placeholder": "[REDACTED: Random String #1]",
+      "kept": false
+    },
+    {
+      "id": 9,
+      "start": 728,
+      "end": 756,
+      "line": 12,
+      "kind": "random_string",
+      "label": "Random String",
+      "tier": "possible",
+      "confidence": 0.55,
+      "detector": "classifier",
+      "reason": "Random-looking token",
+      "source": "classifier",
+      "valueKey": "d50fe6f61c9bc578dfc79524551b1cfe",
+      "placeholder": "[REDACTED: Random String #2]",
+      "kept": false
+    },
+    {
+      "id": 10,
+      "start": 803,
+      "end": 817,
+      "line": 16,
+      "kind": "context_password",
+      "label": "Password",
+      "tier": "certain",
+      "confidence": 0.9,
+      "detector": "context",
+      "reason": "Random-looking value of a secret-named key",
+      "source": "context",
+      "valueKey": "01caca2ab79d73232614e0f174538a92",
+      "placeholder": "[REDACTED: Password #1]",
+      "kept": false
+    }
+  ],
+  "outputSpans": [
+    {
+      "start": 88,
+      "end": 115,
+      "findingId": 0
+    },
+    {
+      "start": 162,
+      "end": 188,
+      "findingId": 1
+    },
+    {
+      "start": 209,
+      "end": 233,
+      "findingId": 2
+    },
+    {
+      "start": 254,
+      "end": 283,
+      "findingId": 3
+    },
+    {
+      "start": 308,
+      "end": 341,
+      "findingId": 4
+    },
+    {
+      "start": 360,
+      "end": 383,
+      "findingId": 5
+    },
+    {
+      "start": 486,
+      "end": 513,
+      "findingId": 6
+    },
+    {
+      "start": 549,
+      "end": 572,
+      "findingId": 7
+    },
+    {
+      "start": 656,
+      "end": 684,
+      "findingId": 8
+    },
+    {
+      "start": 714,
+      "end": 742,
+      "findingId": 9
+    },
+    {
+      "start": 789,
+      "end": 812,
+      "findingId": 10
+    }
+  ],
+  "warnings": [],
+  "verified": true,
+  "stats": {
+    "ms": 3.4,
+    "chars": 919,
+    "byTier": {
+      "certain": 7,
+      "likely": 2,
+      "possible": 2
+    },
+    "byLabel": [
+      {
+        "label": "Password",
+        "n": 3
+      },
+      {
+        "label": "Password in URL",
+        "n": 2
+      },
+      {
+        "label": "Random String",
+        "n": 2
+      },
+      {
+        "label": "OpenAI API Key",
+        "n": 1
+      },
+      {
+        "label": "GitHub Token",
+        "n": 1
+      },
+      {
+        "label": "AWS Access Key ID",
+        "n": 1
+      },
+      {
+        "label": "AWS Secret Access Key",
+        "n": 1
+      }
+    ]
+  }
+}

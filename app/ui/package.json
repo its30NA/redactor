@@ -1,0 +1,49 @@
+{
+  "name": "redactor-ui",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Redactor desktop UI (Svelte 5, runs inside the Tauri 2 shell).",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --mode mock",
+    "dev:desktop": "vite",
+    "build": "vite build",
+    "build:mock": "vite build --mode mock",
+    "preview:mock": "vite preview --mode mock",
+    "fixtures:demo": "bash ../../tools/gen-ui-fixtures.sh",
+    "icon:export": "node scripts/export-icon.ts",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:update": "playwright test --update-snapshots"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@lucide/svelte": "1.70.0",
+    "@tauri-apps/api": "2.12.4",
+    "style-mod": "4.1.4",
+    "svelte": "5.57.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "22.20.5",
+    "eslint": "10.14.0",
+    "eslint-plugin-svelte": "3.24.0",
+    "globals": "17.14.0",
+    "jsdom": "31.0.0",
+    "svelte-check": "4.7.8",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
+  }
+}

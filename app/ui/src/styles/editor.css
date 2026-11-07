@@ -1,0 +1,461 @@
+/*
+ * The two CodeMirror panes: chrome, finding highlights, lock-on brackets, placeholder chips and
+ * the shred. CodeMirror injects its base theme as constructed stylesheets, which come after
+ * this file in the cascade, so every override here carries one more class than the base rule
+ * (`.cm-editor.rd-editor …`).
+ */
+
+:root {
+  --ed-font-size: 13px;
+  --ed-line: 22px;
+  --finding-certain-ink: light-dark(#a1123a, #ffb4c2);
+  --finding-likely-ink: light-dark(#8a4300, #fde3a0);
+  --finding-possible-ink: light-dark(#5b21b6, #d9cbff);
+  --chip-solid: light-dark(#e8f3f8, #0b1522);
+  --chip-ink: light-dark(#0b6680, #7de9f7);
+  --chip-violet-ink: light-dark(#5b21b6, #c4b5fd);
+  --chip-violet-solid: light-dark(#f1ecfd, #130f26);
+}
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+
+.cm-editor.rd-editor {
+  height: 100%;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--ed-font-size);
+}
+.cm-editor.rd-editor.cm-focused {
+  outline: none;
+}
+.cm-editor.rd-editor .cm-scroller {
+  font-family: var(--font-mono);
+  line-height: var(--ed-line);
+  font-feature-settings: 'zero' 0, 'calt';
+  font-variant-ligatures: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.cm-editor.rd-editor .cm-content {
+  padding: 14px 0 48px;
+  caret-color: var(--cyan);
+  user-select: text;
+}
+.cm-editor.rd-editor .cm-line {
+  padding: 0 18px 0 14px;
+}
+.cm-editor.rd-editor .cm-gutters {
+  min-width: 44px;
+  background: transparent;
+  border-right: 1px solid var(--hairline);
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.cm-editor.rd-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 34px;
+  padding: 0 10px 0 6px;
+}
+.cm-editor.rd-editor .cm-cursor,
+.cm-editor.rd-editor .cm-dropCursor {
+  border-left: 2px solid var(--cyan);
+  margin-left: -1px;
+}
+.cm-editor.rd-editor .cm-selectionLayer .cm-selectionBackground {
+  background: light-dark(rgb(14 116 144 / 0.14), rgb(34 211 238 / 0.14));
+}
+.cm-editor.rd-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+  background: light-dark(rgb(14 116 144 / 0.22), rgb(34 211 238 / 0.24));
+}
+.cm-editor.rd-editor .cm-content ::selection {
+  background: transparent;
+}
+.rd-editor .cm-special {
+  color: var(--amber);
+  font-weight: 700;
+}
+.rd-editor .cm-cr {
+  display: inline;
+}
+.cm-editor.rd-output .cm-content {
+  caret-color: transparent;
+}
+
+/* ── Findings in the Input ──────────────────────────────────────────────── */
+
+.rd-editor .cm-finding {
+  --c: var(--tier-certain);
+  --ink: var(--finding-certain-ink);
+  border-radius: 4px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 13%, transparent);
+  box-shadow:
+    inset 0 -1.5px 0 0 color-mix(in srgb, var(--c) 85%, transparent),
+    0 0 16px -5px color-mix(in srgb, var(--c) 80%, transparent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--c) 45%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition:
+    background-color var(--dur-2) ease,
+    box-shadow var(--dur-2) ease;
+}
+.rd-editor .cm-finding.t-likely {
+  --c: var(--tier-likely);
+  --ink: var(--finding-likely-ink);
+}
+.rd-editor .cm-finding.t-possible {
+  --c: var(--tier-possible);
+  --ink: var(--finding-possible-ink);
+}
+.rd-editor .cm-finding.is-hover {
+  background: color-mix(in srgb, var(--c) 24%, transparent);
+  box-shadow:
+    inset 0 -2px 0 0 var(--c),
+    0 0 22px -3px color-mix(in srgb, var(--c) 90%, transparent);
+}
+.rd-editor .cm-finding.is-kept {
+  color: inherit;
+  background: none;
+  text-shadow: none;
+  box-shadow: none;
+  text-decoration: underline dashed color-mix(in srgb, var(--mint) 70%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+/* Lock-on: corner brackets zoom onto the finding, flare red, then let go. */
+.cm-lock-layer {
+  pointer-events: none;
+}
+.cm-lock-layer .cm-lock {
+  --c: var(--tier-certain);
+  position: absolute;
+}
+.cm-lock-layer .cm-lock.t-likely {
+  --c: var(--tier-likely);
+}
+.cm-lock-layer .cm-lock.t-possible {
+  --c: var(--tier-possible);
+}
+.cm-lock-layer .cm-lock::before,
+.cm-lock-layer .cm-lock::after {
+  content: '';
+  position: absolute;
+  inset: -3px -5px;
+  opacity: 0;
+}
+/* Eight 2px bars, two per corner. */
+.cm-lock-layer .cm-lock::before {
+  --a: 7px;
+  background:
+    linear-gradient(var(--c), var(--c)) left top / var(--a) 2px,
+    linear-gradient(var(--c), var(--c)) left top / 2px var(--a),
+    linear-gradient(var(--c), var(--c)) right top / var(--a) 2px,
+    linear-gradient(var(--c), var(--c)) right top / 2px var(--a),
+    linear-gradient(var(--c), var(--c)) left bottom / var(--a) 2px,
+    linear-gradient(var(--c), var(--c)) left bottom / 2px var(--a),
+    linear-gradient(var(--c), var(--c)) right bottom / var(--a) 2px,
+    linear-gradient(var(--c), var(--c)) right bottom / 2px var(--a);
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px var(--c));
+}
+/* The flare: a soft glow behind the brackets. */
+.cm-lock-layer .cm-lock::after {
+  inset: -6px -8px;
+  border-radius: 8px;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--c) 55%, transparent), transparent);
+}
+.cm-lock-layer .cm-lock.is-fresh::before {
+  animation: lock-on 1150ms var(--ease-out) both;
+}
+.cm-lock-layer .cm-lock.is-fresh::after {
+  animation: lock-flare 1150ms ease-out both;
+}
+.cm-lock-layer .cm-lock.is-hold::before {
+  animation: lock-hold 260ms var(--ease-out) both;
+}
+.cm-lock-layer .cm-lock.is-hold.is-fresh::before {
+  animation: lock-on 1150ms var(--ease-out) both;
+}
+.cm-lock-layer .d1::before,
+.cm-lock-layer .d1::after {
+  animation-delay: 45ms !important;
+}
+.cm-lock-layer .d2::before,
+.cm-lock-layer .d2::after {
+  animation-delay: 90ms !important;
+}
+.cm-lock-layer .d3::before,
+.cm-lock-layer .d3::after {
+  animation-delay: 135ms !important;
+}
+.cm-lock-layer .d4::before,
+.cm-lock-layer .d4::after {
+  animation-delay: 180ms !important;
+}
+.cm-lock-layer .d5::before,
+.cm-lock-layer .d5::after {
+  animation-delay: 225ms !important;
+}
+.cm-lock-layer .d6::before,
+.cm-lock-layer .d6::after {
+  animation-delay: 270ms !important;
+}
+.cm-lock-layer .d7::before,
+.cm-lock-layer .d7::after {
+  animation-delay: 315ms !important;
+}
+.cm-lock-layer .d8::before,
+.cm-lock-layer .d8::after {
+  animation-delay: 360ms !important;
+}
+.cm-lock-layer .d9::before,
+.cm-lock-layer .d9::after {
+  animation-delay: 405ms !important;
+}
+.cm-lock-layer .d10::before,
+.cm-lock-layer .d10::after,
+.cm-lock-layer .d11::before,
+.cm-lock-layer .d11::after,
+.cm-lock-layer .d12::before,
+.cm-lock-layer .d12::after,
+.cm-lock-layer .d13::before,
+.cm-lock-layer .d13::after,
+.cm-lock-layer .d14::before,
+.cm-lock-layer .d14::after,
+.cm-lock-layer .d15::before,
+.cm-lock-layer .d15::after {
+  animation-delay: 450ms !important;
+}
+
+@keyframes lock-on {
+  0% {
+    transform: scale(2.1, 2.6);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  48% {
+    transform: scale(0.96);
+  }
+  58%,
+  78% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+    opacity: 0;
+  }
+}
+
+@keyframes lock-flare {
+  0%,
+  38% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  52% {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes lock-hold {
+  from {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ── Placeholder chips in the Safe output ───────────────────────────────── */
+
+.rd-output .cm-chip {
+  --ink: var(--chip-ink);
+  --tint-a: var(--cyan-tint);
+  --tint-b: color-mix(in srgb, var(--violet) 9%, transparent);
+  --rim: color-mix(in srgb, var(--cyan) 38%, transparent);
+  --solid: var(--chip-solid);
+  position: relative;
+  display: inline-block;
+  padding: 0 6px 0 5px;
+  margin: 0 1px;
+  line-height: 19px;
+  vertical-align: 1px;
+  border-radius: 6px;
+  white-space: nowrap;
+  color: var(--ink);
+  background: linear-gradient(100deg, var(--tint-a), var(--tint-b));
+  box-shadow:
+    inset 0 0 0 1px var(--rim),
+    inset 0 1px 0 0 light-dark(rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.06)),
+    0 0 14px -6px color-mix(in srgb, var(--ink) 80%, transparent);
+  transition: box-shadow var(--dur-2) ease;
+}
+.rd-output .cm-chip.tone-violet {
+  --ink: var(--chip-violet-ink);
+  --tint-a: var(--violet-tint);
+  --tint-b: color-mix(in srgb, var(--violet) 14%, transparent);
+  --rim: color-mix(in srgb, var(--violet-soft) 42%, transparent);
+  --solid: var(--chip-violet-solid);
+}
+.rd-output .cm-chip.is-hover {
+  box-shadow:
+    inset 0 0 0 1px var(--ink),
+    0 0 18px -4px var(--ink);
+}
+.rd-output .cm-chip-lock {
+  display: inline-block;
+  width: 10px;
+  height: 11px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  background: currentColor;
+  mask: url('../assets/lock.svg') center / contain no-repeat;
+  opacity: 0.9;
+}
+.rd-output .cm-chip-dim {
+  opacity: 0.55;
+}
+.rd-output .cm-chip-label {
+  font-weight: 600;
+}
+/* The decrypt overlay covers the text (same characters, same mono width), then removes itself. */
+.rd-output .cm-chip-veil {
+  position: absolute;
+  inset: 0;
+  padding-left: 20px;
+  border-radius: inherit;
+  color: var(--ink);
+  background: var(--solid);
+  box-shadow: inset 0 0 0 1px var(--rim);
+  text-shadow: 0 0 8px var(--ink);
+  pointer-events: none;
+}
+.rd-output .cm-chip.is-decrypting {
+  animation: chip-arrive 520ms var(--ease-out) both;
+}
+
+@keyframes chip-arrive {
+  from {
+    opacity: 0.2;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Shred (Wipe) ───────────────────────────────────────────────────────── */
+
+.shred {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+}
+.shred-strip {
+  position: absolute;
+  inset: 0;
+  animation: shred-fall 820ms cubic-bezier(0.55, 0, 0.85, 0.4) both;
+  will-change: transform, opacity;
+}
+.shred-copy {
+  position: absolute;
+  inset: 0;
+}
+.shred-strip.s0 {
+  clip-path: inset(0 88.9% 0 0);
+  --r: -4deg;
+  animation-delay: 0ms;
+}
+.shred-strip.s1 {
+  clip-path: inset(0 77.8% 0 11.1%);
+  --r: 3deg;
+  animation-delay: 40ms;
+}
+.shred-strip.s2 {
+  clip-path: inset(0 66.7% 0 22.2%);
+  --r: -2deg;
+  animation-delay: 15ms;
+}
+.shred-strip.s3 {
+  clip-path: inset(0 55.6% 0 33.3%);
+  --r: 4deg;
+  animation-delay: 70ms;
+}
+.shred-strip.s4 {
+  clip-path: inset(0 44.4% 0 44.4%);
+  --r: -3deg;
+  animation-delay: 30ms;
+}
+.shred-strip.s5 {
+  clip-path: inset(0 33.3% 0 55.6%);
+  --r: 2deg;
+  animation-delay: 85ms;
+}
+.shred-strip.s6 {
+  clip-path: inset(0 22.2% 0 66.7%);
+  --r: -4deg;
+  animation-delay: 50ms;
+}
+.shred-strip.s7 {
+  clip-path: inset(0 11.1% 0 77.8%);
+  --r: 3deg;
+  animation-delay: 100ms;
+}
+.shred-strip.s8 {
+  clip-path: inset(0 0 0 88.9%);
+  --r: -2deg;
+  animation-delay: 60ms;
+}
+.shred-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--red), var(--amber), var(--red), transparent);
+  box-shadow: 0 0 18px 2px color-mix(in srgb, var(--red) 60%, transparent);
+  animation: shred-bar 700ms var(--ease-out) both;
+}
+
+@keyframes shred-fall {
+  0% {
+    transform: none;
+    opacity: 1;
+  }
+  25% {
+    transform: translateY(6px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(70%) rotate(var(--r));
+    opacity: 0;
+  }
+}
+
+@keyframes shred-bar {
+  0% {
+    transform: scaleX(0.2);
+    opacity: 0;
+  }
+  30% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(140px) scaleX(1);
+    opacity: 0;
+  }
+}

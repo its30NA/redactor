@@ -1,0 +1,9 @@
+{
+  "status": "cleaned",
+  "removed": 2,
+  "byLabel": [
+    { "label": "Password", "n": 1 },
+    { "label": "GitHub Token", "n": 1 }
+  ],
+  "historyCleaned": true
+}

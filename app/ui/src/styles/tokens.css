@@ -1,0 +1,124 @@
+/*
+ * Design tokens. Colours use light-dark(), so the OS theme is followed with no JS
+ * and one definition per token; a manual override sets `color-scheme` through data-theme.
+ * Dark is the hero theme. Light accents are darkened to keep text at 4.5:1 or better.
+ */
+:root {
+  color-scheme: dark light;
+
+  /* Surfaces */
+  --bg: light-dark(#f6f7fb, #070a12);
+  --bg-deep: light-dark(#eceef6, #04060c);
+  --panel-fill: light-dark(rgb(255 255 255 / 0.6), rgb(10 13 24 / 0.42));
+  --rim-top: light-dark(rgb(255 255 255 / 1), rgb(255 255 255 / 0.16));
+  --rim-bottom: light-dark(rgb(11 16 32 / 0.06), rgb(255 255 255 / 0.04));
+  --panel-sheen-top: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.05));
+  --panel-sheen-bottom: light-dark(rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.018));
+  --glass: light-dark(rgb(11 16 32 / 0.035), rgb(255 255 255 / 0.04));
+  --glass-hover: light-dark(rgb(11 16 32 / 0.06), rgb(255 255 255 / 0.07));
+  --glass-active: light-dark(rgb(11 16 32 / 0.09), rgb(255 255 255 / 0.1));
+  --glass-strong: light-dark(rgb(255 255 255 / 0.82), rgb(14 18 30 / 0.78));
+  --border: light-dark(rgb(11 16 32 / 0.09), rgb(255 255 255 / 0.08));
+  --border-strong: light-dark(rgb(11 16 32 / 0.15), rgb(255 255 255 / 0.13));
+  --hairline: light-dark(rgb(11 16 32 / 0.07), rgb(255 255 255 / 0.06));
+  --highlight: light-dark(rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.09));
+  --scrim: light-dark(rgb(236 238 246 / 0.55), rgb(3 5 10 / 0.6));
+
+  /* Text */
+  --text: light-dark(#0b1020, #e6eaf2);
+  --text-2: light-dark(#2c3449, #b9c0d0);
+  --muted: light-dark(#545d73, #98a1b5);
+  --faint: light-dark(#8a93a8, #586075);
+
+  /* Accents */
+  --cyan: light-dark(#0e7490, #22d3ee);
+  --violet: light-dark(#6d28d9, #8b5cf6);
+  --violet-soft: light-dark(#7c3aed, #a78bfa);
+  --red: light-dark(#c81e44, #ff4d6d);
+  --mint: light-dark(#036649, #34d399);
+  --amber: light-dark(#b45309, #fbbf24);
+  --cyan-tint: light-dark(rgb(14 116 144 / 0.1), rgb(34 211 238 / 0.12));
+  --violet-tint: light-dark(rgb(109 40 217 / 0.09), rgb(139 92 246 / 0.14));
+  --red-tint: light-dark(rgb(200 30 68 / 0.09), rgb(255 77 109 / 0.13));
+  --mint-tint: light-dark(rgb(4 120 87 / 0.1), rgb(52 211 153 / 0.12));
+  --amber-tint: light-dark(rgb(180 83 9 / 0.1), rgb(251 191 36 / 0.12));
+
+  /* Finding tiers */
+  --tier-certain: var(--red);
+  --tier-likely: var(--amber);
+  --tier-possible: var(--violet-soft);
+
+  /* Primary gradient: bright with dark ink in dark mode, deep with white ink in light mode */
+  --grad-a: light-dark(#0e7490, #2dd4ee);
+  --grad-b: light-dark(#4f46e5, #7fa2f6);
+  --grad-c: light-dark(#6d28d9, #a07ef8);
+  --grad: linear-gradient(115deg, var(--grad-a) 0%, var(--grad-b) 50%, var(--grad-c) 100%);
+  --on-grad: light-dark(#ffffff, #06121c);
+  --grad-glow: light-dark(rgb(79 70 229 / 0.28), rgb(99 132 246 / 0.45));
+
+  /* Aurora */
+  --aurora-a: light-dark(rgb(34 211 238 / 0.34), rgb(34 211 238 / 0.34));
+  --aurora-b: light-dark(rgb(139 92 246 / 0.26), rgb(139 92 246 / 0.42));
+  --aurora-c: light-dark(rgb(244 114 182 / 0.14), rgb(59 130 246 / 0.16));
+  --dots: light-dark(rgb(11 16 32 / 0.075), rgb(255 255 255 / 0.065));
+  --grain: light-dark(rgb(11 16 32 / 0.05), rgb(255 255 255 / 0.045));
+  --vignette: light-dark(rgb(214 218 232 / 0.5), rgb(2 3 8 / 0.65));
+
+  /* Focus */
+  --focus: light-dark(#0e7490, #22d3ee);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
+
+  /* Elevation */
+  --shadow-panel:
+    inset 0 1px 0 0 var(--highlight), 0 1px 1px light-dark(rgb(11 16 32 / 0.04), rgb(0 0 0 / 0.3)),
+    0 18px 40px -22px light-dark(rgb(11 16 32 / 0.18), rgb(0 0 0 / 0.7));
+  --shadow-float:
+    inset 0 1px 0 0 var(--highlight), 0 2px 4px light-dark(rgb(11 16 32 / 0.05), rgb(0 0 0 / 0.35)),
+    0 24px 60px -18px light-dark(rgb(11 16 32 / 0.22), rgb(0 0 0 / 0.75));
+  --shadow-control:
+    inset 0 1px 0 0 var(--highlight), 0 1px 2px light-dark(rgb(11 16 32 / 0.08), rgb(0 0 0 / 0.45));
+
+  /* Type */
+  --font-ui: 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+
+  /* Shape */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Layout */
+  --titlebar-h: 44px;
+  --gutter: 14px;
+  --rail-w: 300px;
+  --rail-w-collapsed: 56px;
+
+  /* Motion (zeroed under reduced motion, see motion.css) */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --dur-4: 520ms;
+
+  --z-aurora: 0;
+  --z-app: 1;
+  --z-toast: 40;
+  --z-sheet: 50;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}

@@ -1,0 +1,170 @@
+{
+  "output": "# 1 · glued together, odd delimiters\nkey1:[REDACTED: OpenAI API Key],tok=[REDACTED: GitHub Token];aws=[REDACTED: AWS Access Key ID]\n\n# 2 · false-positive bait (must survive)\ncommit 9f8e7d6c5b4a3f2e1d0c9b8a7654321000abcdef\nrequest_id = 550e8400-e29b-41d4-a716-446655440000\nversion = 1.2.3.4 and build 2024.11.30\n\n# 3 · connection string, email-shaped password\nDATABASE_URL=postgres://admin:[REDACTED: Password in URL]@db.internal.example:5432/prod\n\n# 4 · JWT behind a Bearer header\ncurl -H \"Authorization: Bearer [REDACTED: JSON Web Token]\" https://api.internal.example/v1\n\n# 5 · a secret name no tool knows\nMEGACORP_INTERNAL_WIDGET_PASSWORD = [REDACTED: Password]\n\n# 6 · decoys (must survive)\nENABLE_FEATURE=true\nLOG_LEVEL=debug\nAPI_TIMEOUT=30\nRETRY_SECRET=changeme\nAUTH_MODE=${VAULT_REF}\n",
+  "findings": [
+    {
+      "id": 0,
+      "start": 42,
+      "end": 77,
+      "line": 2,
+      "kind": "openai_api_key",
+      "label": "OpenAI API Key",
+      "tier": "likely",
+      "confidence": 0.85,
+      "detector": "openai_api_key",
+      "reason": "sk- + 32+ [A-Za-z0-9_-] (generic)",
+      "source": "pattern",
+      "valueKey": "9538d561ad132573e97a1744033c8b6b",
+      "placeholder": "[REDACTED: OpenAI API Key]",
+      "kept": false
+    },
+    {
+      "id": 1,
+      "start": 82,
+      "end": 122,
+      "line": 2,
+      "kind": "github_pat",
+      "label": "GitHub Token",
+      "tier": "certain",
+      "confidence": 0.9,
+      "detector": "github_pat",
+      "reason": "GitHub token format, checksum not valid",
+      "source": "pattern",
+      "valueKey": "dcc04feb29382ea7ca03a4d6c6ec19c5",
+      "placeholder": "[REDACTED: GitHub Token]",
+      "kept": false
+    },
+    {
+      "id": 2,
+      "start": 127,
+      "end": 147,
+      "line": 2,
+      "kind": "aws_access_key_id",
+      "label": "AWS Access Key ID",
+      "tier": "certain",
+      "confidence": 0.95,
+      "detector": "aws_access_key_id",
+      "reason": "AKIA/ASIA/AGPA/AIDA/AROA/ANPA/ABIA/ACCA + 16 [A-Z2-7]",
+      "source": "pattern",
+      "valueKey": "65a8407ea6571ce59c6b1376c97a6a88",
+      "placeholder": "[REDACTED: AWS Access Key ID]",
+      "kept": false
+    },
+    {
+      "id": 3,
+      "start": 405,
+      "end": 416,
+      "line": 10,
+      "kind": "url_userinfo_password",
+      "label": "Password in URL",
+      "tier": "certain",
+      "confidence": 0.95,
+      "detector": "url_userinfo_password",
+      "reason": "scheme://user:<password>@host",
+      "source": "pattern",
+      "valueKey": "c5a9ff68d7cb49c959e13274489be820",
+      "placeholder": "[REDACTED: Password in URL]",
+      "kept": false
+    },
+    {
+      "id": 4,
+      "start": 512,
+      "end": 575,
+      "line": 13,
+      "kind": "jwt",
+      "label": "JSON Web Token",
+      "tier": "certain",
+      "confidence": 0.95,
+      "detector": "jwt",
+      "reason": "eyJ… . … . … (header decodes to JSON with alg/typ)",
+      "source": "pattern",
+      "valueKey": "88e0ce84fe096243896870c4ad587b34",
+      "placeholder": "[REDACTED: JSON Web Token]",
+      "kept": false
+    },
+    {
+      "id": 5,
+      "start": 680,
+      "end": 703,
+      "line": 16,
+      "kind": "context_password",
+      "label": "Password",
+      "tier": "likely",
+      "confidence": 0.75,
+      "detector": "context",
+      "reason": "Value of a secret-named key",
+      "source": "context",
+      "valueKey": "da6675cd154ebc75255c17eedebabcf5",
+      "placeholder": "[REDACTED: Password]",
+      "kept": false
+    }
+  ],
+  "outputSpans": [
+    {
+      "start": 42,
+      "end": 68,
+      "findingId": 0
+    },
+    {
+      "start": 73,
+      "end": 97,
+      "findingId": 1
+    },
+    {
+      "start": 102,
+      "end": 131,
+      "findingId": 2
+    },
+    {
+      "start": 389,
+      "end": 416,
+      "findingId": 3
+    },
+    {
+      "start": 512,
+      "end": 538,
+      "findingId": 4
+    },
+    {
+      "start": 643,
+      "end": 663,
+      "findingId": 5
+    }
+  ],
+  "warnings": [],
+  "verified": true,
+  "stats": {
+    "ms": 3.4,
+    "chars": 829,
+    "byTier": {
+      "certain": 4,
+      "likely": 2,
+      "possible": 0
+    },
+    "byLabel": [
+      {
+        "label": "OpenAI API Key",
+        "n": 1
+      },
+      {
+        "label": "GitHub Token",
+        "n": 1
+      },
+      {
+        "label": "AWS Access Key ID",
+        "n": 1
+      },
+      {
+        "label": "Password in URL",
+        "n": 1
+      },
+      {
+        "label": "JSON Web Token",
+        "n": 1
+      },
+      {
+        "label": "Password",
+        "n": 1
+      }
+    ]
+  }
+}

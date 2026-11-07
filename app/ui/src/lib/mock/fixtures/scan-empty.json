@@ -1,0 +1,17 @@
+{
+  "output": "",
+  "findings": [],
+  "outputSpans": [],
+  "warnings": [],
+  "verified": true,
+  "stats": {
+    "ms": 0,
+    "chars": 0,
+    "byTier": {
+      "certain": 0,
+      "likely": 0,
+      "possible": 0
+    },
+    "byLabel": []
+  }
+}
