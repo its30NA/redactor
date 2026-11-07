@@ -36,11 +36,14 @@ fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// A fresh repository with rename detection explicitly on, as most users have it.
+/// A fresh repository with rename detection explicitly on, as most users have it. Git for Windows
+/// refuses index paths with `:` or a newline unless `core.protectNTFS` is off; such names reach a
+/// repository from other systems, so the odd-name tests stage them on Windows too.
 fn repo() -> TempDir {
     let d = tempfile::tempdir().unwrap();
     git(d.path(), &["init", "-q"]);
     git(d.path(), &["config", "diff.renames", "copies"]);
+    git(d.path(), &["config", "core.protectNTFS", "false"]);
     d
 }
 
