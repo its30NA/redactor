@@ -25,7 +25,10 @@ test.describe('size', () => {
     expect(mains.size, 'renderer main thread in the trace').toBeGreaterThan(0);
     expect(tasks.length, 'main-thread tasks in the trace').toBeGreaterThan(100);
     const longest = Math.max(...tasks.map((e) => (e.dur ?? 0) / 1000));
-    expect(longest, `longest main-thread task ${longest.toFixed(0)} ms`).toBeLessThan(200);
+    // 200 ms on a desktop; shared CI runners are slower and noisy, so they get twice that. A paste
+    // handled in one piece blocks for seconds, which both budgets catch.
+    const budget = process.env.CI ? 400 : 200;
+    expect(longest, `longest main-thread task ${longest.toFixed(0)} ms`).toBeLessThan(budget);
     await expect(page.getByTestId('input-count')).toContainText('5,');
   });
 });
