@@ -4,9 +4,10 @@ import { demoInput, demoSecrets } from '../../src/lib/mock/demo';
 import { expect, openApp, test } from './fixtures';
 
 /**
- * Ten baselines (the repo is public; each update adds megabytes): the empty state with the
+ * Nine baselines (the repo is public; each update adds megabytes): the empty state with the
  * emblem, the results in all four combinations (dark/light × 1280×800/960×640), scanning, the
- * emoji-before-secret highlight, the Remembered and Settings sheets, and the app mark sizes.
+ * Remembered and Settings sheets, and the app mark sizes. The emoji-before-secret highlight is
+ * checked by its text, not a picture: the emoji glyph comes from the system's emoji font.
  * Motion is reduced so the final frame is deterministic; it is the same frame motion ends on.
  */
 const SIZES = [
@@ -61,8 +62,23 @@ test('emoji_before_secret_highlight', async ({ page, problems: _ }) => {
   expect(demoInput()).toContain(`🔑${secret}`);
   const mark = page.getByTestId('input-editor').locator('[data-fid]', { hasText: secret });
   await expect(mark).toHaveText(secret);
-  const line = page.getByTestId('input-editor').locator('.cm-line', { has: page.locator('[data-fid]', { hasText: secret }) });
-  await expect(line).toHaveScreenshot('emoji_before_secret.png');
+  // The highlight starts right after the emoji and ends with the secret: a UTF-16/UTF-8 offset
+  // slip would move both edges. Text, not a screenshot: the emoji's width depends on the font.
+  const around = await mark.evaluate((el) => {
+    const line = el.closest('.cm-line');
+    if (!line) return null;
+    const range = document.createRange();
+    range.setStart(line, 0);
+    range.setEndBefore(el);
+    const before = range.toString();
+    range.setStartAfter(el);
+    range.setEnd(line, line.childNodes.length);
+    return { before, after: range.toString() };
+  });
+  expect(around).not.toBeNull();
+  expect(around!.before.endsWith('🔑')).toBe(true);
+  const lineText = `${around!.before}${secret}${around!.after}`;
+  expect(demoInput().split('\n')).toContain(lineText);
 });
 
 test('remembered_dark_1280', async ({ page, problems: _ }) => {
