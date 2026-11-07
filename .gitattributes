@@ -1,2 +1,5 @@
+# Every text file is checked out with LF, on Windows too: tests compare file contents.
+* text=auto eol=lf
+
 # Generated model data: never touch line endings.
 crates/redactor-core/src/classifier/trigram.bin binary
