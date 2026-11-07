@@ -1,0 +1,13 @@
+Hola equipo,
+
+les paso los accesos al servidor de pruebas (10.0.4.30, puerto 8080).
+La contraseña es ⟦Password|Tr0ub4dor&3⟧, por favor no la compartan.
+clave: ⟦Password|Hunter2-Fake-9x⟧
+La contraseña de la base de datos es ⟦Password|Winter2024!⟧ para el usuario demo.
+contraseña: ⟦Password|Zebra!Lamp(42)⟧
+Tambien em senha: ⟦Password|Kx9!mPq2vL⟧ para el sistema de Brasil.
+La ventana de mantenimiento es el jueves de 22:00 a 23:30.
+La version 2.14.3 se desplegara despues.
+
+Saludos,
+Alice

@@ -1,0 +1,26 @@
+// Alphabet constants (excerpts from this repository)
+const BASE62: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const BASE58: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    /// A random-looking base62 token, generated at test time (SplitMix64, fixed seed).
+    fn random_token(n: usize) -> String {
+        const A: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        let mut x: u64 = 0x5EED_1234;
+        (0..n)
+            .map(|_| {
+                x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = x;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                A[((z ^ (z >> 31)) % 62) as usize] as char
+            })
+            .collect()
+    }
+
+# classifier training script
+TRI_NONE = -12.0  # average trigram log2-probability used when a token has no letters
+VOWELS = set("aeiou")
+WALK_ROWS = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm", "abcdefghijklmnopqrstuvwxyz"]
+B64_CHARS = set(string.ascii_letters + string.digits + "+/=_-")
+B58_CHARS = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+HEX_CHARS = set("0123456789abcdefABCDEF")

@@ -1,0 +1,25 @@
+{
+  "password": "Password",
+  "passwordHint": "Enter your password",
+  "passwordMismatch": "The passwords do not match",
+  "passwordTooShort": "Use at least 12 characters",
+  "token_expired": "Your session token expired",
+  "apiKeyLabel": "API key",
+  "apiKeyHelp": "Create a key under Settings, then paste it here",
+  "login.submit": "Sign in",
+  "login.forgot": "Forgot your password?"
+}
+
+# de.po
+msgid "Password"
+msgstr "Passwort"
+msgid "Enter your password"
+msgstr "Passwort eingeben"
+msgid "Your session token expired"
+msgstr "Ihr Sitzungs-Token ist abgelaufen"
+
+# messages.properties
+password.label=Password
+password.hint=Enter your password
+password.reset.sent=We sent you an email with a reset link
+secret.rotated=The secret was rotated

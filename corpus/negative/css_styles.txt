@@ -1,0 +1,17 @@
+:root {
+  --color-ink: #1d2026;
+  --color-bg: #f5f2ec;
+  --color-accent: #0052cc;
+  --radius: 10px;
+  --font-body: "Figtree", system-ui, sans-serif;
+}
+body { margin: 0; background: var(--color-bg); color: var(--color-ink); font: 16px/1.5 var(--font-body); }
+.card { background: #fff; border: 1px solid #dfd9ce; border-radius: var(--radius); padding: 16px; }
+.card h2 { font-weight: 600; font-size: 1.25rem; }
+.btn { border-radius: 8px; padding: 8px 14px; background: var(--color-accent); color: #fff; }
+.btn:hover { background: #003d99; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.login-form input[type="password"] { width: 100%; letter-spacing: 0.2em; }
+.token-badge { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

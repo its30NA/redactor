@@ -1,0 +1,10 @@
+{
+  "name": "tls-bundle",
+  "version": "1.0.0",
+  "hosts": ["app.example.com", "api.example.com"],
+  "expires": "2027-01-01",
+  "tls_key": "⟦gen:pem_rsa@json⟧",
+  "tls_cert_path": "/etc/app/tls/server.crt",
+  "ocsp_stapling": true,
+  "min_version": "1.2"
+}

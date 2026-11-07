@@ -1,0 +1,23 @@
+# key material for the demo host (do not commit)
+host: backup.example.org
+ssh_key_comment: svc-backup@example.org
+id_ed25519:
+⟦gen:pem_openssh⟧
+
+pgp_secret:
+⟦gen:pgp_block⟧
+
+# age identity
+# created: 2026-03-14T09:12:01Z
+⟦gen:age⟧
+
+[Interface]
+Address = 10.8.0.2/24
+ListenPort = 51820
+PrivateKey = ⟦gen:wireguard⟧
+DNS = 10.8.0.1
+
+# bitcoin test wallet
+wif: ⟦gen:wif⟧
+seed: ⟦gen:bip39_12⟧
+network: testnet

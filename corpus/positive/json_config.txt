@@ -1,0 +1,26 @@
+{
+  "name": "demo-service",
+  "version": "1.8.0",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8443,
+    "timeoutSeconds": 30,
+    "requestId": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "database": {
+    "host": "10.0.4.12",
+    "port": 5432,
+    "user": "demo",
+    "password": "⟦Password|Hunter2-Fake-9x⟧",
+    "ssl": true
+  },
+  "cache": {
+    "host": "10.0.4.20",
+    "passwd": "⟦Password|Winter2024!⟧"
+  },
+  "features": { "newUi": true, "betaExport": false },
+  "smtp": { "host": "smtp.example.com", "user": "mailer", "pass": "⟦Password|S3cr3t!Pass⟧" },
+  "github": { "token": "⟦gen:github_pat⟧" },
+  "commit": "f491d28a3abf168cc3239b8a1e2c0d4f5a6b7c8d",
+  "retries": 3
+}

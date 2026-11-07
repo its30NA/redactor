@@ -1,0 +1,13 @@
+2026-03-14 09:12:01 INFO  [main] app.Server - starting on port 8080 (version 2.3.1)
+2026-03-14 09:12:02 INFO  [main] app.Db - connecting to jdbc:postgresql://10.0.4.12:5432/shop
+2026-03-14 09:12:02 DEBUG [main] app.Config - loaded password=⟦Password|Hunter2-Fake-9x⟧ from env
+2026-03-14 09:12:03 WARN  [pool-1] app.Http - slow request id=550e8400-e29b-41d4-a716-446655440000 took 2300ms
+2026-03-14 09:12:05 ERROR [pool-2] app.Auth - login failed for user alice, token=⟦gen:github_pat⟧
+java.sql.SQLException: Access denied for user 'shop_app'@'10.0.4.9' (using password: YES)
+    at com.example.Db.connect(Db.java:88)
+    at com.example.Main.main(Main.java:21)
+2026-03-14 09:12:06 INFO  [pool-2] app.Retry - attempt 2 of 3
+2026-03-14 09:12:07 ERROR [pool-2] app.Mail - SMTP auth failed: user=mailer pass=⟦Password|Winter2024!⟧
+2026-03-14 09:12:09 INFO  [main] app.Server - healthy, uptime 8s
+2026-03-14 09:12:10 DEBUG [pool-3] app.Http - request header X-Api-Key: ⟦gen:hex32⟧
+2026-03-14 09:12:11 INFO  [main] app.Build - commit 9f8e7d6c5b4a3f2e1d0c9b8a7654321000abcdef

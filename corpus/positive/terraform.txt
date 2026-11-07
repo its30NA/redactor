@@ -1,0 +1,33 @@
+terraform {
+  required_version = ">= 1.6.0"
+  backend "s3" {
+    bucket = "demo-tf-state"
+    key    = "prod/terraform.tfstate"
+    region = "eu-west-1"
+  }
+}
+
+provider "aws" {
+  region     = "eu-west-1"
+  access_key = "⟦gen:aws_key_id⟧"
+  secret_key = "⟦gen:aws_secret⟧"
+}
+
+resource "aws_db_instance" "main" {
+  identifier        = "demo-db"
+  engine            = "postgres"
+  instance_class    = "db.t3.medium"
+  allocated_storage = 50
+  username          = "demo"
+  password          = "⟦Password|Hunter2-Fake-9x⟧"
+  skip_final_snapshot = true
+}
+
+variable "admin_password" {
+  type    = string
+  default = "⟦Password|Winter2024!⟧"
+}
+
+provider "tfe" {
+  token = "⟦gen:terraform⟧"
+}

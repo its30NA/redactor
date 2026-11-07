@@ -1,0 +1,27 @@
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"net/http"
+)
+
+const (
+	listenAddr = ":8080"
+	version    = "0.7.1"
+	dbHost     = "10.0.4.12"
+	dbUser     = "demo"
+	dbPassword = "⟦Password|Hunter2-Fake-9x⟧"
+	apiToken   = "⟦gen:github_pat⟧"
+)
+
+func main() {
+	replicaPass := "⟦Password|Zebra!Lamp(42)⟧"
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=shop", dbHost, dbUser, replicaPass)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	http.ListenAndServe(listenAddr, nil)
+}

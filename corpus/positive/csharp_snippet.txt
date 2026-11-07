@@ -1,0 +1,24 @@
+using System;
+using System.Data.SqlClient;
+
+namespace Demo.Orders
+{
+    public class Settings
+    {
+        public const string ApiUrl = "https://api.example.com";
+        public const int TimeoutSeconds = 30;
+        public string Password { get; set; } = "⟦Password|Hunter2-Fake-9x⟧";
+        public string ApiKey = "⟦gen:alnum32⟧";
+    }
+
+    public static class Db
+    {
+        public static SqlConnection Open()
+        {
+            var cs = "Server=10.0.4.12;Database=Orders;User Id=sa;Password=⟦*|Ad0N3tFake!⟧;";
+            var conn = new SqlConnection(cs);
+            conn.Open();
+            return conn;
+        }
+    }
+}

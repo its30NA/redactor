@@ -1,0 +1,13 @@
+Password hygiene for small teams
+
+Most breaches do not start with a clever exploit. They start with a password that was reused, guessed or pasted into a chat window. This post walks through habits that make a difference.
+
+First, never share a password in plain text. If a colleague needs access, send an invitation to the password manager instead. A token or an API key should be treated the same way: it identifies a service, and anyone who holds it can act as that service.
+
+Second, make every password long and unique. A passphrase of four random words beats a short string of symbols. Check that your manager generates them for you.
+
+Third, rotate API keys when people leave the team. Revoke the old token, create a new one, and store it in the secret store, not in the repository. Many teams add a pre-commit hook that scans for keys before a commit leaves the laptop.
+
+Fourth, turn on two-factor authentication everywhere it is offered. A stolen password alone then no longer opens the door.
+
+Finally, write down who owns each credential and when it was last rotated. A short table in the wiki is enough. When something goes wrong, you will know which password to change first.

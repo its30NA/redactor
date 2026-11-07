@@ -1,0 +1,30 @@
+# Items API
+
+Base URL: `https://api.example.com/v2`
+
+## Authentication
+
+Send your token in the `Authorization` header:
+
+    Authorization: Bearer <token>
+
+Create a key in the dashboard, then set it in your shell:
+
+    set API_KEY=your_api_key_here
+    export API_TOKEN=<your-token>
+
+## List items
+
+    curl -H "Authorization: Bearer $TOKEN" https://api.example.com/v2/items?limit=50
+
+    curl -u "$API_USER:$API_PASSWORD" https://api.example.com/v2/export
+
+Parameters:
+
+| name  | type    | default | description        |
+|-------|---------|---------|--------------------|
+| limit | integer | 20      | page size, max 100 |
+| after | string  |         | cursor             |
+
+Responses use HTTP status codes. A 401 means the token is missing or expired.
+Rate limit: 600 requests per minute per key.

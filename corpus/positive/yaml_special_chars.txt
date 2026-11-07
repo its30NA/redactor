@@ -1,0 +1,20 @@
+# values that need quoting in YAML
+environment: staging
+replicas: 3
+port: 8080
+db:
+  user: svc-backup
+  password: '⟦Password|p&ss;w0rd#1⟧'
+  alt_password: "⟦Password|Zebra!Lamp(42)⟧"
+  old_password: ⟦Password|Tr0ub4dor&3⟧
+  note: rotate every 90 days
+ldap:
+  host: ldap.example.org
+  password: '⟦Password|its-Fake-pw9⟧'
+smtp:
+  password: "⟦Password|a%b^c*d(e)f1⟧"
+healthcheck:
+  path: /healthz
+  interval: 10s
+tags: [web, internal, "v2"]
+build: 9f8e7d6c5b4a3f2e1d0c9b8a7654321000abcdef

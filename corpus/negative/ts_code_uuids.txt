@@ -1,0 +1,27 @@
+import { randomUUID } from "crypto";
+
+export enum OrderStatus {
+  PendingPaymentConfirmation = "PENDING_PAYMENT_CONFIRMATION",
+  AwaitingFulfillmentAssignment = "AWAITING_FULFILLMENT_ASSIGNMENT",
+  ShippedToCustomerAddress = "SHIPPED_TO_CUSTOMER_ADDRESS",
+}
+
+export const DEFAULT_TENANT_ID = "550e8400-e29b-41d4-a716-446655440000";
+export const FALLBACK_WAREHOUSE = "123e4567-e89b-12d3-a456-426614174000";
+
+export interface CustomerNotificationPreferences {
+  emailDigestFrequencyInDays: number;
+  allowMarketingCommunications: boolean;
+  preferredContactMethodForUrgentIssues: string;
+}
+
+export function buildCorrelationIdentifier(prefix: string): string {
+  return `${prefix}-${randomUUID()}`;
+}
+
+const getAuthenticatedUserSessionExpiryTimestamp = (s: Session) => s.expiresAt;
+const handleUnauthorizedResponseFromUpstreamGateway = () => null;
+
+export class InvoiceLineItemTaxCalculationService {
+  constructor(private readonly regionalTaxRateLookupTable: Map<string, number>) {}
+}

@@ -1,0 +1,23 @@
+POST /api/v1/orders HTTP/1.1
+Host: api.example.com
+User-Agent: demo-client/1.4
+Accept: application/json
+Content-Type: application/json
+Content-Length: 58
+Authorization: Bearer ⟦gen:jwt⟧
+X-Request-Id: 550e8400-e29b-41d4-a716-446655440000
+X-Api-Key: ⟦gen:hex32⟧
+Cookie: theme=dark; session=⟦gen:alnum32|*⟧; lang=en
+
+{"sku": "A-1001", "qty": 2}
+
+HTTP/1.1 201 Created
+Date: Sat, 14 Mar 2026 09:12:01 GMT
+Content-Type: application/json
+Set-Cookie: sid=⟦gen:alnum32|*⟧; Path=/; HttpOnly; Secure
+ETag: "33a64df551425fcc55e4d42a148795d9"
+
+GET /admin HTTP/1.1
+Host: intranet.example.org
+Authorization: Basic ⟦gen:basic_auth⟧
+Accept: text/html

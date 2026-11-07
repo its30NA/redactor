@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+env:
+  NODE_VERSION: "20"
+  REGISTRY: registry.example.com
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login
+        run: docker login registry.example.com -u ci-bot -p ⟦*|Zebra!Lamp(42)⟧
+      - name: Test
+        env:
+          DB_PASSWORD: ⟦Password|Hunter2-Fake-9x⟧
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm test
+      - name: Publish
+        env:
+          GITHUB_TOKEN: ⟦gen:github_pat⟧
+          SLACK_WEBHOOK_URL: ⟦gen:slack_webhook⟧
+        run: ./scripts/publish.sh --tag v1.4.2
+      - name: Notify
+        run: echo "done in 42s"

@@ -1,0 +1,27 @@
+# /etc/nginx/conf.d/app.conf
+server {
+    listen 443 ssl http2;
+    server_name app.example.com;
+    ssl_certificate     /etc/nginx/certs/app.crt;
+    ssl_certificate_key /etc/nginx/certs/app.key;
+    client_max_body_size 20m;
+
+    location /api/ {
+        proxy_pass http://10.0.4.50:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Api-Key ⟦gen:hex32⟧;
+        proxy_set_header Authorization "Bearer ⟦gen:alnum40⟧";
+    }
+    location /admin/ {
+        auth_basic "Restricted";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+    }
+}
+
+# apache vhost snippet
+<VirtualHost *:8080>
+    ServerName intranet.example.org
+    SetEnv DB_PASSWORD ⟦Password|Hunter2-Fake-9x⟧
+    SetEnv APP_MODE production
+    DocumentRoot /srv/app/public
+</VirtualHost>

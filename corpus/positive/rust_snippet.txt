@@ -1,0 +1,28 @@
+use std::time::Duration;
+
+const API_BASE: &str = "https://api.example.com";
+const TIMEOUT: Duration = Duration::from_secs(30);
+const PORT: u16 = 8080;
+
+struct Config {
+    host: String,
+    user: String,
+    password: String,
+}
+
+fn load() -> Config {
+    Config {
+        host: "10.0.4.12".to_string(),
+        user: "demo".to_string(),
+        password: "⟦Password|Hunter2-Fake-9x⟧".to_string(),
+    }
+}
+
+fn client() -> reqwest::Client {
+    let token = "⟦gen:anthropic⟧";
+    reqwest::Client::builder()
+        .timeout(TIMEOUT)
+        .default_headers(auth(token))
+        .build()
+        .unwrap()
+}

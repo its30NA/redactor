@@ -1,0 +1,18 @@
+[package]
+name = "redactor-wire"
+description = "The JSON contract between the redactor engine and its front ends (UI and CLI)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+redactor-core = { path = "../redactor-core", features = ["serde"] }
+memchr = "2.7"
+serde = { version = "1", features = ["derive"] }
+zeroize = "1.8"
+
+[dev-dependencies]
+serde_json = "1"

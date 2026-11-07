@@ -1,0 +1,14 @@
+-- bootstrap.sql
+CREATE DATABASE shop ENCODING 'UTF8';
+CREATE USER shop_app IDENTIFIED BY '⟦*|Hunter2-Fake-9x⟧';
+CREATE USER report_ro IDENTIFIED BY '⟦*|Winter2024!⟧' PASSWORD EXPIRE;
+GRANT SELECT ON shop.* TO report_ro;
+GRANT ALL PRIVILEGES ON shop.* TO shop_app;
+ALTER ROLE shop_app WITH LOGIN PASSWORD '⟦*|Zebra!Lamp(42)⟧';
+ALTER ROLE backup_svc PASSWORD '⟦*|Tr0ub4dor&3⟧' VALID UNTIL '2027-01-01';
+CREATE LOGIN audit_user WITH PASSWORD = '⟦*|S3cr3t!Pass⟧', CHECK_POLICY = OFF;
+ALTER LOGIN sa WITH PASSWORD = '⟦*|Sup3rS3cret!⟧';
+CREATE INDEX idx_orders_created ON orders (created_at);
+SELECT count(*) FROM orders WHERE status = 'paid';
+SET statement_timeout = 30000;
+-- migration 0042 applied by alice on 2026-03-14

@@ -1,0 +1,16 @@
+# deploy.ps1
+$ErrorActionPreference = "Stop"
+$server = "10.0.4.30"
+$user = "svc-backup"
+$secure = ConvertTo-SecureString "⟦*|PsFake!Pass42⟧" -AsPlainText -Force
+$cred = New-Object System.Management.Automation.PSCredential($user, $secure)
+$env:DB_PASSWORD = "⟦Password|Hunter2-Fake-9x⟧"
+$env:API_HOST = "api.example.com"
+Write-Host "Connecting to $server on port 5985"
+Invoke-Command -ComputerName $server -Credential $cred -ScriptBlock { Get-Service W3SVC }
+cmdkey /add:fileserver.example.com /user:alice /pass:⟦*|Winter2024!⟧
+net use Z: \\10.0.4.40\share /user:EXAMPLE\bob ⟦*|Zebra!Lamp(42)⟧
+Connect-Database -Server $server -User app -Password ⟦Password|S3cr3t!Pass⟧
+Get-ChildItem C:\app\logs | Where-Object { $_.Length -gt 1MB }
+$token = "⟦gen:github_pat⟧"
+Write-Host "Done in 12 seconds"

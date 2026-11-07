@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Demo landing page</title>
+  <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+  <header class="top">
+    <img alt="logo" width="32" height="32" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAA00lEQVR4nAHIADf/AEQggjz95vHCazD5DsfdAeSIdTSiDwsNBADDbtgOceD9d7B2cOuUC9UzX5c9qthhm5EA/8kR9XzO1Fi7vyzgN1PJvfoP8BadyVdWAHQGZnbPsLTriQLEQmnaHPa6ZtP4ttSxAACp6g51WlwughAkKgjnB49/iThesJQjVVEAglaLluik/vI6DJ/Fr9dghDeBa90KcwnLAEoSUuTacOZyD8qk2h6YQGwYnCQnnphR1QCBQgQTb+tXE8FmsTJp3WP8NceX/wimzZBmqmC6CYRkQQAAAABJRU5ErkJggg==">
+    <nav><a href="/">Home</a> <a href="/pricing">Pricing</a></nav>
+  </header>
+  <main>
+    <h1>Welcome</h1>
+    <p>Inline icons keep the first paint fast.</p>
+    <img alt="divider" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAGCAIAAAB1kpiRAAAAxUlEQVR4nAG6AEX/ABwuK7hWnYBsElHcyb7jiRIOuu6jwthUWnh2DFqmWABFuF3k1Lq1ueRSzOx/+o7/tejss+n5caZVifWem9AAn2r6uyauBGE2HhmLdDZFiH1rHtgQHbm4WH8MKjoiAAwUCr+CQVBeAMUWfk0SArA5kqz6D53lF4fNTvJzLwChNAzlQcn5p0muhIbWCUcdgRFDUlcx6HYQfnfjJYAAKXS4g9iOAk0SxNFSOCx7NDMKXXY1bwzt6J7CbGvepU9VciISNyAAAAAASUVORK5CYII=">
+    <style>.hero{background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAA00lEQVR4nAHIADf/AEQggjz95vHCazD5DsfdAeSIdTSiDwsNBADDbtgOceD9d7B2cOuUC9UzX5c9qthhm5EA/8kR9XzO1Fi7vyzgN1PJvfoP8BadyVdWAHQGZnbPsLTriQLEQmnaHPa6ZtP4ttSxAACp6g51WlwughAkKgjnB49/iThesJQjVVEAglaLluik/vI6DJ/Fr9dghDeBa90KcwnLAEoSUuTacOZyD8qk2h6YQGwYnCQnnphR1QCBQgQTb+tXE8FmsTJp3WP8NceX/wimzZBmqmC6CYRkQQAAAABJRU5ErkJggg==) repeat-x}</style>
+  </main>
+  <footer>Version 2.14.3 build 9f8e7d6c</footer>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Provider tokens under generic key names: the provider's label names the value.
+# .env
+OPENAI_API_KEY=⟦gen:openai⟧
+ANTHROPIC_API_KEY=⟦gen:anthropic⟧
+GITHUB_TOKEN=⟦gen:github_pat⟧
+STRIPE_SECRET_KEY=⟦gen:stripe_test⟧
+SLACK_BOT_TOKEN=⟦gen:slack_bot⟧
+NPM_TOKEN=⟦gen:npm⟧
+API_HOST=api.example.com
+
+# config.yaml
+providers:
+  openai:
+    api_key: ⟦gen:openai⟧
+    model: small
+  github:
+    token: "⟦gen:github_pat⟧"
+  gitlab:
+    token: ⟦gen:gitlab⟧
+  sendgrid:
+    api_key: ⟦gen:sendgrid⟧
+
+# settings.json
+{
+  "openai": { "apiKey": "⟦gen:openai⟧", "timeout": 30 },
+  "github": { "token": "⟦gen:github_pat⟧" },
+  "huggingface": { "token": "⟦gen:huggingface⟧" },
+  "slack": { "botToken": "⟦gen:slack_bot⟧", "channel": "#builds" }
+}

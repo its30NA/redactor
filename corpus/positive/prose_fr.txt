@@ -1,0 +1,12 @@
+Bonjour l'equipe,
+
+voici les acces pour le serveur de test (10.0.4.30, port 8080).
+Le mot de passe est ⟦Password|Tr0ub4dor&3⟧, merci de ne pas le partager.
+mdp : ⟦Password|Hunter2-Fake-9x⟧
+Le mot de passe de la base de donnees est ⟦Password|Winter2024!⟧ pour l'utilisateur demo.
+Mot de passe: ⟦Password|Zebra!Lamp(42)⟧
+La fenetre de maintenance est jeudi de 22h a 23h30.
+La version 2.14.3 sera deployee ensuite.
+
+Cordialement,
+Alice

@@ -1,0 +1,23 @@
+import os
+import requests
+
+API_URL = "https://api.example.com/v2"
+TIMEOUT = 30
+MAX_RETRIES = 3
+
+creds = {'api_key': '⟦gen:alnum20⟧', 'region': 'eu'}
+DB_PASSWORD = "⟦Password|Hunter2-Fake-9x⟧"
+db = {"host": "10.0.4.12", "user": "demo", "password": "⟦Password|Winter2024!⟧"}
+
+def fetch(path):
+    headers = {"Authorization": "Bearer ⟦gen:alnum40⟧"}
+    r = requests.get(API_URL + path, headers=headers, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+def connect():
+    import psycopg2
+    return psycopg2.connect(host="10.0.4.12", user="demo", password="⟦Password|Zebra!Lamp(42)⟧", dbname="shop")
+
+if __name__ == "__main__":
+    print(fetch("/status"), os.getpid())

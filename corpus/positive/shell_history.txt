@@ -1,0 +1,15 @@
+  101  cd /srv/app
+  102  git status
+  103  mysql -u root -p⟦*|S3cretDbPass9⟧ prod
+  104  mysql -u app -p⟦*|Hunter2-Fake-9x⟧ -h 10.0.4.12 shop
+  105  sshpass -p ⟦*|Winter2024!⟧ ssh alice@10.0.0.7
+  106  curl -u admin:⟦*|Sup3rS3cret!⟧ https://api.example.com/v1
+  107  export DB_PASSWORD=⟦Password|Zebra!Lamp(42)⟧
+  108  export GITHUB_TOKEN=⟦gen:github_pat⟧
+  109  docker login -u demo -p ⟦*|Tr0ub4dor&3⟧ registry.example.com
+  110  htpasswd -b /etc/nginx/.htpasswd alice ⟦*|S3cr3t!Pass⟧
+  111  ls -la /var/log
+  112  tail -n 50 /var/log/app/app.log
+  113  psql "postgres://demo:⟦*|p%40ss-Fake-12⟧@10.0.4.12:5432/shop"
+  114  kubectl get pods -n shop
+  115  history | grep ssh

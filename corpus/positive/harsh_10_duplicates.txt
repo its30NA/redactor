@@ -1,0 +1,9 @@
+# duplicate values keep one number
+primary=⟦gen:openai#a⟧ backup=⟦gen:openai#b⟧ retry=⟦gen:openai#a⟧
+timeout=30
+region=eu-west-1
+# second block, same keys again
+primary=⟦gen:openai#a⟧
+backup=⟦gen:openai#b⟧
+workers=4
+version=1.2.3.4

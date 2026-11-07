@@ -1,0 +1,26 @@
+# integrations.env
+LOG_LEVEL=info
+SLACK_BOT_TOKEN=⟦gen:slack_bot⟧
+SLACK_USER_TOKEN=⟦gen:slack_user⟧
+SLACK_WEBHOOK=⟦gen:slack_webhook⟧
+DISCORD_WEBHOOK=⟦gen:discord_webhook⟧
+TEAMS_WEBHOOK=⟦gen:teams_webhook⟧
+STRIPE_KEY=⟦gen:stripe_test⟧
+STRIPE_WEBHOOK_SECRET=⟦gen:stripe_webhook⟧
+SENDGRID_API_KEY=⟦gen:sendgrid⟧
+MAILGUN_API_KEY=⟦gen:mailgun⟧
+TWILIO_ACCOUNT_SID=⟦gen:twilio_sid⟧
+TWILIO_API_KEY=⟦gen:twilio_key⟧
+TELEGRAM_BOT=⟦gen:telegram⟧
+SHOPIFY_TOKEN=⟦gen:shopify⟧
+NOTION_TOKEN=⟦gen:notion⟧
+LINEAR_API_KEY=⟦gen:linear⟧
+GITLAB_TOKEN=⟦gen:gitlab⟧
+PYPI_TOKEN=⟦gen:pypi⟧
+DOCKERHUB_TOKEN=⟦gen:dockerhub⟧
+VAULT_TOKEN=⟦gen:vault⟧
+DIGITALOCEAN_TOKEN=⟦gen:digitalocean⟧
+SENTRY_AUTH_TOKEN=⟦gen:sentry⟧
+GITHUB_OAUTH=⟦gen:github_oauth⟧
+GITHUB_FINE=⟦gen:github_fine⟧
+SENTRY_ENV=production

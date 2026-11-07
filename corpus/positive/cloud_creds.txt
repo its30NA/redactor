@@ -1,0 +1,23 @@
+# ~/.aws/credentials
+[default]
+aws_access_key_id = ⟦gen:aws_key_id⟧
+aws_secret_access_key = ⟦gen:aws_secret⟧
+region = eu-west-1
+output = json
+
+[staging]
+aws_access_key_id = ⟦gen:aws_key_id⟧
+aws_secret_access_key = ⟦gen:aws_secret⟧
+
+# service-account.json
+{
+  "type": "service_account",
+  "project_id": "demo-project-123",
+  "private_key_id": "0123456789abcdef0123456789abcdef01234567",
+  "private_key": "⟦gen:pem_pkcs8@json⟧",
+  "client_email": "svc@demo-project-123.iam.example.com",
+  "token_uri": "https://oauth2.example.com/token"
+}
+
+# azure
+DefaultEndpointsProtocol=https;AccountName=demostorage;AccountKey=⟦gen:azure_storage_key⟧;EndpointSuffix=core.example.net

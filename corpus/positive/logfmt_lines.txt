@@ -1,0 +1,8 @@
+# logfmt and key=value log lines with several secrets per line
+primary_password=⟦Password|Tulip-Harbor-91⟧ backup_password=⟦Password|Cedar-Quill-37⟧ retry_password=⟦Password|Tulip-Harbor-91⟧
+ts=2026-11-06T10:15:02Z level=⟦!|info⟧ msg="db connect" user=⟦!|alice⟧ password=⟦Password|Orchid-Lantern-42!⟧ host=⟦!|db.example.com⟧
+ts=2026-11-06T10:15:03Z level=⟦!|warn⟧ user=⟦!|bob⟧ password=⟦Password|Hunter2-Fake-9x⟧ token=⟦gen:alnum32#t1|Token⟧ status=⟦!|401⟧ path=⟦!|/login⟧
+ts=2026-11-06T10:15:04Z level=debug user=⟦!|demo⟧ password=⟦Password|Winter2024!⟧ token=⟦gen:alnum32#t2|Token⟧ api_key=⟦gen:alnum24#k1|API Key⟧ region=⟦!|eu-west-1⟧
+time="2026-11-06 10:15:05" service=⟦!|billing⟧ client_secret=⟦gen:alnum40#c1|Secret⟧ client_id=⟦!|billing-web⟧ attempt=⟦!|3⟧
+2026-11-06 10:15:06 INFO request id=⟦!|7f3a⟧ user=⟦!|carol⟧ db_password=⟦Password|Zebra!Lamp(42)⟧ cache_password=⟦Password|Tr0ub4dor&3⟧ took=⟦!|12ms⟧
+2026-11-06 10:15:07 INFO request id=8a1c user=dave status=200 took=9ms

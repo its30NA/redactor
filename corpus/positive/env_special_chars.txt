@@ -1,0 +1,18 @@
+# special characters in passwords
+APP_ENV=staging
+HTTP_PORT=3000
+DB_USER=svc-backup
+DB_PASSWORD=⟦Password|p&ss;w0rd#1⟧
+CACHE_PASSWORD='⟦Password|Zebra!Lamp(42)⟧'
+LDAP_PASSWORD="⟦Password|Tr0ub4dor&3⟧"
+SMTP_PASSWORD=⟦Password|a%b^c*d(e)f1⟧
+ADMIN_PASSWORD='⟦Password|$ecret!Pa$$-77⟧'
+BACKUP_PASSWORD="⟦Password|Q!w2#E4$r5%T6^⟧"
+LOG_LEVEL=warn
+TIMEOUT_MS=5000
+UPLOAD_DIR=/srv/app/uploads
+MAX_UPLOAD_MB=25
+PROXY_PASSWORD="⟦Password|pa ss&word;1⟧"
+LEGACY_PWD=⟦Password|Winter2024!⟧
+ENABLE_METRICS=1
+METRICS_PORT=9100

@@ -1,0 +1,20 @@
+# Release workflow step (excerpt from this repository)
+        working-directory: app/src-tauri
+        run: ../ui/node_modules/.bin/tauri build --ci --bundles nsis -- --locked
+      - name: Collect the installer and the portable zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $installers = @(Get-ChildItem target/release/bundle/nsis/*-setup.exe)
+          if ($installers.Count -ne 1) { throw "expected exactly one NSIS installer, found $($installers.Count)" }
+          Copy-Item $installers[0].FullName dist/
+          $exe = 'target/release/Redactor.exe'
+          if (-not (Test-Path $exe)) { $exe = 'target/release/redactor-app.exe' }
+          if (-not (Test-Path $exe)) { throw 'app executable not found in target/release' }
+          $name = "Redactor-$env:TAG-windows-x64-portable"
+          New-Item -ItemType Directory -Force -Path "stage/$name" | Out-Null
+          Copy-Item $exe "stage/$name/Redactor.exe"
+          Copy-Item LICENSE, README.md "stage/$name/"
+          Compress-Archive -Path "stage/$name" -DestinationPath "dist/$name.zip"
+          Get-ChildItem dist

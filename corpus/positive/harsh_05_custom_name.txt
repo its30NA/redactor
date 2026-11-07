@@ -1,0 +1,10 @@
+# custom variable names no tool knows natively
+ENABLE_FEATURE=true
+LOG_LEVEL=debug
+API_TIMEOUT=30
+MEGACORP_INTERNAL_WIDGET_PASSWORD = ⟦Password|h0rse-b4ttery-staple-99⟧
+WIDGET_ENDPOINT = https://widgets.internal.example.com
+WIDGET_RETRIES = 3
+ACME_LEGACY_BRIDGE_PASSWD=⟦Password|Bridge-Fake-77x⟧
+BRIDGE_HOST=10.0.4.99
+BRIDGE_PORT=7443

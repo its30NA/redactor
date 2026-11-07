@@ -1,0 +1,10 @@
+# mixed provider soup, separate lines
+export OPENAI_API_KEY=⟦gen:openai⟧
+export ANTHROPIC_API_KEY=⟦gen:anthropic⟧
+GITHUB_TOKEN=⟦gen:github_pat⟧
+GOOGLE_API_KEY=⟦gen:google_api⟧
+SLACK_WEBHOOK=⟦gen:slack_webhook⟧
+AWS_ACCESS_KEY_ID=⟦gen:aws_key_id⟧
+REGION=eu-west-1
+LOG_LEVEL=info
+PORT=8080

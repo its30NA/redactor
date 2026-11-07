@@ -1,0 +1,28 @@
+; php.ini / app.ini
+[general]
+app_name = Demo CMS
+debug = 0
+timezone = Europe/Berlin
+
+[database]
+driver = mysql
+host = 10.0.4.12
+port = 3306
+name = cms
+user = cms_app
+password = ⟦Password|Hunter2-Fake-9x⟧
+
+[mail]
+host = smtp.example.com
+port = 25
+username = mailer
+password = ⟦Password|Winter2024!⟧
+
+[cache]
+backend = redis
+host = 10.0.4.20
+pass = ⟦Password|dragonfly-Fake-88⟧
+
+[paths]
+upload = /srv/app/uploads
+tmp = /tmp

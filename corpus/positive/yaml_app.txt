@@ -1,0 +1,29 @@
+# application.yml
+spring:
+  application:
+    name: demo-orders
+  datasource:
+    url: jdbc:postgresql://10.0.4.12:5432/orders
+    username: orders_app
+    password: ⟦Password|Hunter2-Fake-9x⟧
+  redis:
+    host: 10.0.4.20
+    port: 6379
+    password: "⟦Password|correct horse battery staple⟧"
+server:
+  port: 8081
+  shutdown: graceful
+logging:
+  level:
+    root: INFO
+    com.example.orders: DEBUG
+app:
+  version: 3.2.1
+  feature-flags:
+    new-pricing: true
+  mail:
+    host: smtp.example.com
+    password: ⟦Password|Winter2024!⟧
+  integrations:
+    stripe-key: ⟦gen:stripe_test⟧
+    timeout: 30s

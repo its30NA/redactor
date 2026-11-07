@@ -1,0 +1,15 @@
+[09:12] alice: hey, can you get into the wiki?
+[09:13] bob: no, it says invalid login
+[09:13] alice: ok the wiki password is ⟦?Password|dragonfly⟧
+[09:14] bob: still nothing, which server?
+[09:14] alice: wiki.example.org port 8443, same user as always
+[09:15] alice: the wifi pw is ⟦*|Kx9!mPq2vL⟧ - keep it safe
+[09:16] bob: thx. and the vpn?
+[09:16] alice: vpn password: ⟦Password|Winter2024!⟧ , profile is "office-eu"
+[09:17] bob: got it. deploy token?
+[09:17] alice: ⟦gen:github_pat⟧ (expires next month)
+[09:18] bob: perfect, standup at 10:00?
+[09:18] alice: yes, build 2.14.3 is green
+[09:19] bob: the shared mailbox login is mailer / ⟦*|Zebra!Lamp(42)⟧
+[09:20] alice: lol that one is ancient
+[09:21] bob: ci runs on commit 9f8e7d6c5b4a3f2e1d0c9b8a7654321000abcdef

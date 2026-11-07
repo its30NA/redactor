@@ -1,0 +1,46 @@
+
+| `md5_crypt_hash` | Password Hash | $1$salt$ + 22 chars | 0.95 | on |
+| `apr1_hash` | Password Hash | $apr1$salt$ + 22 chars | 0.95 | on |
+| `yescrypt_hash` | Password Hash | $y$params$salt$ + 43 chars | 0.95 | on |
+| `pbkdf2_django_hash` | Password Hash | pbkdf2_sha256$iterations$salt$hash | 0.95 | on |
+| `pwdump_hash` | Windows Password Hash | user:rid:<LM 32 hex>:<NT 32 hex>::: | 0.95 | on |
+| `htpasswd_sha` | Password Hash | user:{SHA}<28 base64> | 0.95 | on |
+
+## HTTP, URLs and connection strings
+
+| Rule | Label | Matches | Confidence | Default |
+|---|---|---|---|---|
+| `auth_bearer` | Bearer Token | Authorization: Bearer <token> | 0.95 | on |
+| `auth_basic` | HTTP Basic Credentials | Authorization: Basic <base64 user:password> | 0.80 | on |
+| `auth_token_scheme` | Access Token | Authorization: Token <token> | 0.90 | on |
+| `auth_digest_response` | HTTP Digest Response | Authorization: Digest … response="<hex>" | 0.85 | on |
+| `auth_aws4_signature` | AWS Signature | AWS4-HMAC-SHA256 … Signature=<64 hex> | 0.95 | on |
+| `auth_ntlm` | NTLM/Negotiate Token | Authorization: NTLM\|Negotiate <base64> | 0.90 | on |
+| `bearer_token` | Bearer Token | Bearer <20+ token chars> | 0.80 | on |
+| `api_key_header` | API Key | X-Api-Key / api-key / x-goog-api-key / Ocp-Apim-Subscription-Key: <key> | 0.90 | on |
+| `auth_token_header` | Access Token | X-Auth-Token / X-Access-Token / PRIVATE-TOKEN / X-Vault-Token / X-Shopify-Access-Token: <token> | 0.90 | on |
+| `cookie_header` | HTTP Cookie | Cookie: <rest of line> | 0.85 | on |
+| `set_cookie_header` | HTTP Cookie | Set-Cookie: name=<value> | 0.80 | on |
+| `session_id` | Session ID | PHPSESSID/JSESSIONID/session_id/sid = 16+ chars | 0.75 | on |
+| `url_userinfo_password` | Password in URL | scheme://user:<password>@host | 0.95 | on |
+| `url_query_token` | Access Token | ?access_token=\|refresh_token=\|id_token=\|token=\|code=… in a URL | 0.85 | on |
+| `url_query_client_secret` | Client Secret | ?client_secret=… in a URL | 0.95 | on |
+| `url_query_key` | API Key | ?key=\|api_key=\|apikey=… in a URL (16+ chars) | 0.80 | on |
+| `url_query_password` | Password | ?password=\|passwd=\|pwd=\|pass=… in a URL | 0.90 | on |
+| `url_query_signature` | Signature | ?sig=\|signature=… in a URL (16+ chars) | 0.75 | on |
+| `connection_string_password` | Password | Server=…;User Id=…;Password=<value>; | 0.95 | on |
+| `pgpass_line` | Password | host:port:database:user:<password> (.pgpass) | 0.80 | on |
+| `docker_config_auth` | Registry Credentials | "auth": "<base64 user:password>" (Docker config) | 0.95 | on |
+| `npmrc_auth` | npm Registry Token | _authToken=… / _auth=… / _password=… (.npmrc) | 0.95 | on |
+
+## Personal data (off unless PII is on)
+
+| Rule | Label | Matches | Confidence | Default |
+|---|---|---|---|---|
+| `email` | Email Address | local@domain.tld | 0.90 | with `--pii` |
+| `phone_e164` | Phone Number | +<country> <number> (E.164, optional spaces) | 0.70 | with `--pii` |
+| `phone_de` | Phone Number | German numbers: 0xxx xxxxxxx, 0xxx/xxxxxxx, 0049 … | 0.70 | with `--pii` |
+| `iban` | IBAN | CCkk + 11-30 alphanumerics (mod-97 valid) | 0.95 | with `--pii` |
+| `credit_card` | Credit Card Number | 13-19 digits, optional spaces/dashes (Luhn valid) | 0.90 | with `--pii` |
+| `ipv4` | IP Address | a.b.c.d | 0.70 | with `--pii` |
+| `ipv6` | IP Address | IPv6 address (3+ groups) | 0.70 | with `--pii` |

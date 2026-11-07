@@ -1,0 +1,42 @@
+package checksum
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"testing"
+)
+
+// Test vectors for the digest helper. Each sha256 digest is of the input string.
+var vectors = []struct {
+	input  string
+	sha256 string
+}{
+	{"", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+	{"abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
+	{"hello world", "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"},
+	{"demo-service", "a06ae7aaa21885b14f3c33a08be9f1ab02dbe79a552f2eb45fd0e37c658a8e25"},
+	{"release-2.14.3", "b43e1352875658b782dd51902a920bef9d6d4096c4c9763208f567bcf3216ee8"},
+	{"The quick brown fox", "5cac4f980fedc3d3f1f99b4be3472c9b30d56523e632d151237ec9309048bda9"},
+}
+
+const emptyDigest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" // sha256 of empty input
+const releaseChecksum = "68b076be5ba974795f927bf1aa53b0dc2991b90d8d535a9dbaf33bad74a2d3a3" // checksum of demo-service-2.14.3.tar.gz
+
+func TestDigest(t *testing.T) {
+	for _, v := range vectors {
+		sum := sha256.Sum256([]byte(v.input))
+		if hex.EncodeToString(sum[:]) != v.sha256 {
+			t.Errorf("digest mismatch for %q", v.input)
+		}
+	}
+}
+
+// go.sum
+github.com/example/log v1.4.0 h1:Vwry69r7ZMcSGr9Q0/rQ4M6sQ6ilnHxpU2kNB/LfCF0=
+github.com/example/log v1.4.0/go.mod h1:jwpu4a9d3JEe6ilrRmO7GOtsH284jNfh7rccfm3bc1U=
+github.com/example/mux v1.8.1 h1:If4MLooklxDCNbofxoSeh6aIIHy9kG1kFC/f7OfDBM0=
+github.com/example/mux v1.8.1/go.mod h1:egwO4DjJCXcLsY5lfGitLxTv3wxVzIrm0Ek75zM6eX8=
+golang.org/x/text v0.14.0 h1:z3R8QgsVabzxZ3+/cW3dRrB09zQmQcwPUHCmvk9g8o4=
+golang.org/x/text v0.14.0/go.mod h1:uIClPXtDTiEAdxtBL2jkN69lF3zKXTeEjMdQ0ooVkzs=
+example.org/pkg/errors v0.9.1 h1:VWyYMWF/KPi4qO11CPOXTEwsj9X70mx9jK3HnY5HjfQ=
+example.org/pkg/errors v0.9.1/go.mod h1:f2bPHiyJVS5AD6knIO9Bj1g4KwubT4lcPKhtfzG6Jsk=

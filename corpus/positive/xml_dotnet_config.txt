@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <appSettings>
+    <add key="Environment" value="Production" />
+    <add key="PageSize" value="50" />
+    <add key="ApiBaseUrl" value="https://api.example.com/v2" />
+    <add key="MailPassword" value="⟦Password|Winter2024!⟧" />
+    <add key="ServiceToken" value="⟦gen:alnum32|*⟧" />
+    <add key="FeatureNewGrid" value="true" />
+  </appSettings>
+  <connectionStrings>
+    <add name="Main" connectionString="Server=10.0.4.12;Database=Shop;User Id=shop_app;Password=⟦*|Ad0N3tFake!⟧;Encrypt=True;" providerName="System.Data.SqlClient" />
+    <add name="Audit" connectionString="Data Source=10.0.4.13;Initial Catalog=Audit;User ID=audit;Password=⟦*|Zebra!Lamp(42)⟧;" providerName="System.Data.SqlClient" />
+  </connectionStrings>
+  <system.web>
+    <compilation debug="false" targetFramework="4.8" />
+    <httpRuntime maxRequestLength="20480" />
+  </system.web>
+  <ldap>
+    <server host="ldap.example.org" port="636" />
+    <password>⟦Password|Fake-Xml-Pass-77⟧</password>
+  </ldap>
+</configuration>

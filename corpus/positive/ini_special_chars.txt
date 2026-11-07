@@ -1,0 +1,21 @@
+[global]
+workgroup = EXAMPLE
+server string = Demo File Server
+log level = 1
+
+[ldap]
+uri = ldap://10.2.0.5
+admin dn = cn=admin,dc=example,dc=org
+password = ⟦Password|p&ss;w0rd#1⟧
+
+[share]
+path = /srv/share
+read only = no
+valid users = alice bob
+smb password = "⟦Password|Zebra!Lamp(42)⟧"
+
+[backup]
+target = 10.2.0.9
+user = svc-backup
+passwd = ⟦Password|a%b^c*d(e)f1⟧
+schedule = 02:30

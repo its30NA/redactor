@@ -1,0 +1,17 @@
+⟦opt:crlf⟧
+; settings.ini for the demo service
+[Service]
+Name=DemoSvc
+Port=8443
+LogLevel=Information
+[Database]
+Server=10.0.4.12
+User=svc
+Password=⟦Password|Hunter2-Fake-9x⟧
+[Mail]
+Host=smtp.example.com
+Pass=⟦Password|Winter2024!⟧
+[Api]
+Token=⟦gen:github_pat⟧
+Timeout=30
+Path=C:\app\data

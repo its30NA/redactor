@@ -1,0 +1,49 @@
+openapi: 3.0.3
+info:
+  title: Items API
+  version: 2.14.3
+servers:
+  - url: https://api.example.com/v2
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    BasicAuth:
+      type: http
+      scheme: basic
+  schemas:
+    Login:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: string
+        password:
+          type: string
+          format: password
+          example: string
+    Token:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: string
+        expires_in:
+          type: integer
+          example: 3600
+security:
+  - ApiKeyAuth: []
+paths:
+  /login:
+    post:
+      summary: Exchange credentials for a token
+      responses:
+        "200":
+          description: OK

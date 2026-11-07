@@ -1,0 +1,25 @@
+CREATE TABLE users (
+  id            BIGSERIAL PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  display_name  TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  password_salt TEXT,
+  api_token_hash TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login_at TIMESTAMPTZ
+);
+CREATE TABLE sessions (
+  id          UUID PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_sessions_user ON sessions (user_id);
+CREATE INDEX idx_users_created ON users (created_at DESC);
+ALTER TABLE users ADD CONSTRAINT chk_email CHECK (position('@' in email) > 1);
+CREATE TABLE secrets_audit (
+  id BIGSERIAL PRIMARY KEY,
+  secret_name TEXT NOT NULL,
+  rotated_at TIMESTAMPTZ NOT NULL
+);
+COMMENT ON COLUMN users.password_hash IS 'bcrypt hash, never the plain password';

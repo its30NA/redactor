@@ -1,0 +1,232 @@
+//! Engine pipeline glue: shadow text, manual ranges, matcher hits, keep, warnings.
+
+use std::sync::Arc;
+
+use redactor_core::{
+    Engine, EngineConfig, MatcherHit, ScanRequest, SecretMatcher, Source, WarningKind,
+};
+
+/// Reports every occurrence of one fixed string (stand-in for the watchlist).
+struct Fixed(&'static str);
+
+impl SecretMatcher for Fixed {
+    fn find(&self, text: &str) -> Vec<MatcherHit> {
+        text.match_indices(self.0)
+            .map(|(i, m)| MatcherHit {
+                start: i,
+                end: i + m.len(),
+                label: "Known Secret".into(),
+            })
+            .collect()
+    }
+}
+
+fn engine() -> Engine {
+    Engine::new(EngineConfig::default()).unwrap()
+}
+
+#[test]
+fn manual_range_redacted() {
+    let text = "hello world plain";
+    let out = engine().scan(
+        text,
+        &ScanRequest {
+            manual: &[(12, 17)],
+            ..ScanRequest::default()
+        },
+    );
+    assert_eq!(out.output, "hello world [REDACTED: Selected Text]");
+    assert_eq!(out.findings.len(), 1);
+    assert_eq!(out.findings[0].source, Source::Manual);
+    assert_eq!((out.findings[0].start, out.findings[0].end), (12, 17));
+    let span = out.output_spans[0];
+    assert_eq!(
+        &out.output[span.start..span.end],
+        "[REDACTED: Selected Text]"
+    );
+}
+
+#[test]
+fn manual_range_snaps_to_char_boundaries() {
+    let text = "a😀b";
+    // Byte 2 is inside the emoji: the range grows to cover it.
+    let out = engine().scan(
+        text,
+        &ScanRequest {
+            manual: &[(2, 3), (100, 200)],
+            ..ScanRequest::default()
+        },
+    );
+    assert_eq!(out.findings.len(), 1);
+    assert_eq!((out.findings[0].start, out.findings[0].end), (1, 5));
+}
+
+#[test]
+fn matcher_hits_survive_zero_width_split() {
+    let engine = engine().with_matcher(Arc::new(Fixed("hunter2hunter2")));
+    let text = "pw hunter2\u{200B}hunter2 and hunter2hunter2.";
+    let out = engine.scan(text, &ScanRequest::default());
+    assert_eq!(out.findings.len(), 2);
+    assert!(out.findings.iter().all(|f| f.source == Source::Watchlist));
+    // Same value (after normalization) -> same key -> same placeholder, no number.
+    assert_eq!(out.findings[0].value_key, out.findings[1].value_key);
+    assert_eq!(
+        out.output,
+        "pw [REDACTED: Known Secret] and [REDACTED: Known Secret]."
+    );
+    assert!(out
+        .warnings
+        .iter()
+        .any(|w| w.kind == WarningKind::InvisibleChars && w.count == 1));
+}
+
+#[test]
+fn keep_leaves_value_in_place() {
+    let engine = engine().with_matcher(Arc::new(Fixed("hunter2hunter2")));
+    let text = "a hunter2hunter2 b";
+    let first = engine.scan(text, &ScanRequest::default());
+    let key = first.findings[0].value_key;
+    let second = engine.scan(
+        text,
+        &ScanRequest {
+            keep: &[key],
+            ..ScanRequest::default()
+        },
+    );
+    assert_eq!(second.output, text);
+    assert_eq!(second.findings.len(), 1);
+    assert!(second.findings[0].kept);
+    assert!(second.findings[0].placeholder.is_empty());
+    assert!(second.output_spans.is_empty());
+}
+
+#[test]
+fn value_keys_depend_on_session_key() {
+    let a = Engine::new(EngineConfig::default())
+        .unwrap()
+        .with_matcher(Arc::new(Fixed("hunter2hunter2")));
+    let b = Engine::new(EngineConfig::default())
+        .unwrap()
+        .with_matcher(Arc::new(Fixed("hunter2hunter2")));
+    let ka = a.scan("hunter2hunter2", &ScanRequest::default()).findings[0].value_key;
+    let kb = b.scan("hunter2hunter2", &ScanRequest::default()).findings[0].value_key;
+    assert_ne!(ka, kb);
+}
+
+#[test]
+fn hidden_characters_warned_and_stripped() {
+    let text = "a\u{200B}b \u{202E}c\u{E0041} 👨\u{200D}👩";
+    let out = engine().scan(text, &ScanRequest::default());
+    assert_eq!(out.output, "ab c 👨\u{200D}👩");
+    let count = |k| {
+        out.warnings
+            .iter()
+            .find(|w| w.kind == k)
+            .map_or(0, |w| w.count)
+    };
+    assert_eq!(count(WarningKind::InvisibleChars), 1);
+    assert_eq!(count(WarningKind::BidiControls), 1);
+    assert_eq!(count(WarningKind::TagChars), 1);
+
+    let keep = Engine::new(EngineConfig {
+        strip_invisible: false,
+        ..EngineConfig::default()
+    })
+    .unwrap()
+    .scan(text, &ScanRequest::default());
+    assert_eq!(keep.output, text);
+}
+
+#[test]
+fn invalid_config_is_rejected() {
+    let bad = EngineConfig {
+        allowlist: vec!["(unclosed".into()],
+        ..EngineConfig::default()
+    };
+    assert!(Engine::new(bad).is_err());
+    let bad = EngineConfig {
+        template: String::new(),
+        ..EngineConfig::default()
+    };
+    assert!(Engine::new(bad).is_err());
+}
+
+/// One value, one placeholder: the URL rule, the context engine and propagation name the same
+/// password differently, and every occurrence renders with the strongest of those labels.
+#[test]
+fn one_value_one_label() {
+    let text = "DATABASE_URL=postgres://app:Orchid-Lantern-42!@db.example:5432/app\n\
+                login failed for user app with password Orchid-Lantern-42!\n\
+                retry with Orchid-Lantern-42!\n";
+    for pii in [false, true] {
+        let out = engine().scan(
+            text,
+            &ScanRequest {
+                pii: Some(pii),
+                ..ScanRequest::default()
+            },
+        );
+        let pw: Vec<_> = out
+            .findings
+            .iter()
+            .filter(|f| &text[f.start..f.end] == "Orchid-Lantern-42!")
+            .collect();
+        assert_eq!(pw.len(), 3, "pii={pii}: {:?}", out.findings);
+        for f in &pw {
+            assert_eq!(f.label, "Password in URL", "pii={pii}");
+            assert_eq!(f.placeholder, pw[0].placeholder, "pii={pii}");
+        }
+        assert_eq!(
+            out.output.matches(pw[0].placeholder.as_str()).count(),
+            3,
+            "pii={pii}: {}",
+            out.output
+        );
+        // Each finding reports the label it renders with.
+        for s in &out.output_spans {
+            let f = &out.findings[s.finding];
+            assert_eq!(&out.output[s.start..s.end], f.placeholder);
+            assert!(f.placeholder.contains(&f.label), "{f:?}");
+        }
+        // A rescan of the output finds nothing and changes nothing.
+        let again = engine().scan(
+            &out.output,
+            &ScanRequest {
+                pii: Some(pii),
+                ..ScanRequest::default()
+            },
+        );
+        assert!(again.findings.is_empty(), "pii={pii}: {:?}", again.findings);
+        assert_eq!(again.output, out.output);
+    }
+}
+
+/// Two different values under one label still get numbers of their own, in order of first
+/// appearance, and each value keeps its number wherever it occurs.
+#[test]
+fn different_values_keep_their_numbers() {
+    let text = "DATABASE_URL=postgres://app:Orchid-Lantern-42!@db.example:5432/app\n\
+                CACHE_URL=redis://svc:Velvet-Harbor-77~@cache.example:6379\n\
+                login failed with password Orchid-Lantern-42!\n\
+                retry with Velvet-Harbor-77~\n";
+    let out = engine().scan(text, &ScanRequest::default());
+    let placeholder = |v: &str| -> Vec<String> {
+        out.findings
+            .iter()
+            .filter(|f| &text[f.start..f.end] == v)
+            .map(|f| f.placeholder.clone())
+            .collect()
+    };
+    let a = placeholder("Orchid-Lantern-42!");
+    let b = placeholder("Velvet-Harbor-77~");
+    assert_eq!(a.len(), 2, "{:?}", out.findings);
+    assert_eq!(b.len(), 2, "{:?}", out.findings);
+    assert!(
+        a.iter().all(|p| p == "[REDACTED: Password in URL #1]"),
+        "{a:?}"
+    );
+    assert!(
+        b.iter().all(|p| p == "[REDACTED: Password in URL #2]"),
+        "{b:?}"
+    );
+}

@@ -1,0 +1,31 @@
+import os
+import bcrypt
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+API_TOKEN = os.environ["API_TOKEN"]
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+MIN_LENGTH = 12
+
+def hash_password(password: str) -> bytes:
+    salt = bcrypt.gensalt(rounds=12)
+    hash = bcrypt.hashpw(password.encode(), salt)
+    return hash
+
+def login(user, password):
+    row = db.fetch_user(user)
+    if row is None:
+        return False
+    return bcrypt.checkpw(password.encode(), row.password_hash)
+
+@app.route("/login", methods=["POST"])
+def handle_login():
+    username = request.form["username"]
+    password = request.form["password"]
+    if len(password) < MIN_LENGTH:
+        abort(400)
+    token = os.environ["API_TOKEN"]
+    secret = config.get("secret_key")
+    if not login(username, password):
+        abort(401)
+    return {"ok": True, "token_ttl": 3600}

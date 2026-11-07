@@ -1,0 +1,37 @@
+# yarn lockfile v1
+
+
+ansi-styles@^4.3.0:
+  version "4.3.0"
+  resolved "https://registry.example.com/ansi-styles/-/ansi-styles-4.3.0.tgz#a76c4065383217062f13608358df1ed961e0495f"
+  integrity sha1-p2xAZTgyFwYvE2CDWN8e2WHgSV8=
+  dependencies:
+    color-convert "^2.0.1"
+
+chalk@^4.1.2:
+  version "4.1.2"
+  resolved "https://registry.example.com/chalk/-/chalk-4.1.2.tgz#ab36ffe52d5fec3689a5c056cf3d4d747f42630f"
+  integrity sha1-qzb/5S1f7DaJpcBWzz1NdH9CYw8=
+  dependencies:
+    color-convert "^2.0.1"
+
+color-convert@^2.0.1:
+  version "2.0.1"
+  resolved "https://registry.example.com/color-convert/-/color-convert-2.0.1.tgz#1750a57d7631312d456d7553fadf64135c96c008"
+  integrity sha1-F1ClfXYxMS1FbXVT+t9kE1yWwAg=
+  dependencies:
+    color-convert "^2.0.1"
+
+has-flag@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.example.com/has-flag/-/has-flag-4.0.0.tgz#8412bb7abfdf3f3c1364aaa7b7a978c9e5d1c45f"
+  integrity sha1-hBK7er/fPzwTZKqnt6l4yeXRxF8=
+  dependencies:
+    color-convert "^2.0.1"
+
+supports-color@^7.2.0:
+  version "7.2.0"
+  resolved "https://registry.example.com/supports-color/-/supports-color-7.2.0.tgz#e3177a3c79882e54e7fd811bf409ddb6cb1994c9"
+  integrity sha1-4xd6PHmILlTn/YEb9AndtssZlMk=
+  dependencies:
+    color-convert "^2.0.1"

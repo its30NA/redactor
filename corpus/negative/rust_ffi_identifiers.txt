@@ -1,0 +1,29 @@
+// Raw syscall numbers and FFI constants (identifiers only, no values of interest)
+pub const NR_semtimedop_time64: i64 = 420;
+pub const SYS_clock_gettime64: i64 = 403;
+pub const __NR_rt_sigtimedwait_time64: i64 = 421;
+pub const SYS_futex_time64: i64 = 422;
+pub const __NR_clock_nanosleep_time64: i64 = 407;
+pub const EVP_PKEY_CTX_set_rsa_keygen_bits: u32 = 4096;
+pub const SSL_CTX_set_tlsext_servername_callback: u32 = 53;
+pub const IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA: u16 = 0x0020;
+pub const D3D12_FEATURE_DATA_D3D12_OPTIONS5: u32 = 27;
+pub const kCFStringEncodingUTF8: u32 = 0x08000100;
+pub const GL_COMPRESSED_RGBA_S3TC_DXT5_EXT: u32 = 0x83F3;
+pub const PTHREAD_MUTEX_ADAPTIVE_NP: i32 = 3;
+pub const GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS: u32 = 0x8DA8;
+pub const IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE: u16 = 0x0040;
+pub const SO_ATTACH_REUSEPORT_CBPF: i32 = 51;
+pub const NR_process_madvise_pidfd: i64 = 440;
+pub const AUDIT_ARCH_X86_64_EXTENDED: u32 = 0xC000003E;
+pub const FILE_NOTIFY_CHANGE_LAST_ACCESS: u32 = 0x20;
+pub const D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS: u32 = 4;
+pub const IPV6_RECVPATHMTU_NOTIFICATION: i32 = 61;
+pub const kSecAttrAccessibleWhenUnlockedThisDeviceOnly: u32 = 4;
+extern "C" {
+    pub fn EVP_PKEY_CTX_set_rsa_pss_saltlen(ctx: *mut u8, len: i32) -> i32;
+    pub fn SSL_CTX_set_alpn_select_cb(ctx: *mut u8, cb: *const u8, arg: *mut u8);
+    pub fn CRYPTO_THREADID_set_callback(cb: *const u8) -> i32;
+    pub fn GetModuleHandleExW(flags: u32, name: *const u16, out: *mut *mut u8) -> i32;
+    pub fn VkPhysicalDeviceSubgroupSizeControlPropertiesEXT_init(p: *mut u8);
+}

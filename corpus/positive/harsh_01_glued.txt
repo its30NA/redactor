@@ -1,0 +1,7 @@
+# glued together, weird delimiters
+build=2.14.3,region=eu-west-1,retries=3
+key1:⟦gen:openai⟧,tok=⟦gen:github_pat⟧;aws=⟦gen:aws_key_id⟧
+host=10.0.4.12;port=5432;timeout=30
+backup:⟦gen:openai⟧|⟦gen:github_pat⟧|id=7
+status=ok;uptime=3600;version=1.2.3.4
+commit=9f8e7d6c5b4a3f2e1d0c9b8a7654321000abcdef

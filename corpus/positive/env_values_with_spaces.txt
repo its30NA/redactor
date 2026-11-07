@@ -1,0 +1,17 @@
+# .env with values containing spaces
+APP_NAME=Demo Shop Backend
+APP_ENV=production
+GREETING=hello there world
+DB_HOST=db.example.net
+DB_USER=app
+DB_PASSWORD=⟦Password|correct horse battery staple⟧
+ADMIN_PASSWORD=⟦Password|correct horse battery staple⟧ # rotate quarterly
+SMTP_PASSWORD="⟦Password|blue monkey 42 rides⟧" # mail relay
+REPORT_PASSWORD='⟦Password|my dog Rex 2019⟧'
+CACHE_TTL=300
+# next line is the shared vault entry
+VAULT_PASSWORD=⟦Password|open sesame now please⟧ # do not commit
+REGION=eu-west-1
+SUPPORT_EMAIL=support@example.com
+DEPLOY_NOTE=first deploy after the migration
+BACKUP_PASSWORD=⟦Password|tall green lamp 77⟧

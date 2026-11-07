@@ -1,0 +1,40 @@
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct Credential {
+    pub token: String,
+    pub secret: Vec<u8>,
+    pub password_hash: String,
+    pub key: String,
+    pub label: &'static str,
+}
+
+pub struct Vault {
+    entries: HashMap<String, Credential>,
+}
+
+impl Vault {
+    pub fn new() -> Self {
+        Self { entries: HashMap::new() }
+    }
+
+    pub fn insert(&mut self, name: &str, cred: Credential) {
+        self.entries.insert(name.to_string(), cred);
+    }
+
+    pub fn labels(&self) -> Vec<&'static str> {
+        self.entries.values().map(|c| c.label).collect()
+    }
+
+    pub fn total_secret_bytes(&self) -> usize {
+        self.entries.values().map(|c| c.secret.len()).sum()
+    }
+
+    pub fn wipe(&mut self) {
+        for c in self.entries.values_mut() {
+            c.secret.iter_mut().for_each(|b| *b = 0);
+            c.token.clear();
+        }
+        self.entries.clear();
+    }
+}

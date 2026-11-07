@@ -1,0 +1,18 @@
+{
+  "service": "billing",
+  "port": 9090,
+  "log": { "level": "debug", "file": "/var/log/app/billing.log" },
+  "db": {
+    "user": "billing",
+    "password": "⟦Password|p&ss;w0rd#1⟧"
+  },
+  "ldap": {
+    "bindDn": "cn=admin,dc=example,dc=org",
+    "password": "⟦Password|Qu0te\"Back\\slash!⟧"
+  },
+  "windows": { "sharePassword": "⟦Password|C:\\Tr0ub4dor&3⟧" },
+  "queue": { "host": "10.1.2.3", "password": "⟦Password|a<b>c&d'e%f⟧" },
+  "mail": { "password": "⟦Password|Zebra!Lamp(42)⟧" },
+  "workers": 8,
+  "uuid": "123e4567-e89b-12d3-a456-426614174000"
+}

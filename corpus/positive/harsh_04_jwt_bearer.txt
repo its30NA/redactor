@@ -1,0 +1,7 @@
+# JWT hiding inside a Bearer header
+curl -H "Authorization: Bearer ⟦gen:jwt⟧" https://api.example.com/v1
+curl -s -o /dev/null -w "%{http_code}\n" https://api.example.com/health
+curl -H "Accept: application/json" https://api.example.com/v1/items?limit=50
+curl -H "Authorization: Bearer ⟦gen:jwt⟧" -X DELETE https://api.example.com/v1/items/42
+# request id for tracing
+X-Request-Id: 550e8400-e29b-41d4-a716-446655440000

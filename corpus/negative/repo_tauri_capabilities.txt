@@ -1,0 +1,31 @@
+
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window: the app's own commands, the custom title bar and event listening. Nothing else.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-scan",
+    "allow-scrub-clipboard",
+    "allow-read-clipboard",
+    "allow-copy-text",
+    "allow-open-text-file",
+    "allow-save-text-file",
+    "allow-session-list",
+    "allow-session-remember",
+    "allow-session-add",
+    "allow-session-forget",
+    "allow-session-clear",
+    "allow-get-settings",
+    "allow-set-settings",
+    "allow-app-info",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "core:window:allow-start-dragging",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

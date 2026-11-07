@@ -1,0 +1,14 @@
+# .env.ai
+MODEL_DEFAULT=gpt-4o
+MAX_TOKENS=2048
+TEMPERATURE=0.2
+OPENAI_API_KEY=⟦gen:openai⟧
+OPENAI_LEGACY_KEY=⟦gen:openai_legacy⟧
+ANTHROPIC_API_KEY=⟦gen:anthropic⟧
+HF_TOKEN=⟦gen:huggingface⟧
+GROQ_API_KEY=⟦gen:groq⟧
+REPLICATE_API_TOKEN=⟦gen:replicate⟧
+OPENROUTER_API_KEY=⟦gen:openrouter⟧
+REQUEST_TIMEOUT=60
+CACHE_DIR=/srv/app/cache
+EMBEDDING_DIM=1536

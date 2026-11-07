@@ -1,0 +1,16 @@
+Passwoerter richtig verwalten
+
+Das Passwort muss mindestens 12 Zeichen haben und darf nicht auf mehreren Seiten verwendet werden.
+Passwort ist falsch. Bitte versuchen Sie es erneut.
+Passwort vergessen? Wir senden Ihnen einen Link zum Zuruecksetzen per E-Mail.
+
+Ein Token oder ein API-Schluessel gehoert nie in ein Chat-Fenster. Wer ihn kennt, kann im Namen des Dienstes handeln.
+Wenn ein Kollege das Team verlaesst, wird sein Zugang gesperrt und der Schluessel erneuert.
+
+Tipps:
+1. Nutzen Sie einen Passwortmanager.
+2. Aktivieren Sie die Zwei-Faktor-Authentifizierung.
+3. Das neue Passwort darf dem alten nicht aehneln.
+4. Das Passwort wird nie im Klartext gespeichert, sondern nur als Hash.
+
+Die Schulung findet am Donnerstag um 10:00 Uhr in Raum 4 statt.

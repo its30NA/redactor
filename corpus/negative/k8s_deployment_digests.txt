@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  namespace: shop
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: api
+        image: registry.example.com/demo/api@sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479
+        ports:
+        - containerPort: 8080
+      - name: worker
+        image: registry.example.com/demo/worker@sha256:87eba76e7f3164534045ba922e7770fb58bbd14ad732bbf5ba6f11cc56989e6e
+        ports:
+        - containerPort: 8081
+      - name: sidecar
+        image: registry.example.com/demo/sidecar@sha256:6c8b4535ccc87f19061c4646189e33d78f01c8b63dc4e3cb2f630b1796ee93b6
+        ports:
+        - containerPort: 8082
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: demo-credentials
+              key: password
+        - name: API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: demo-credentials
+              key: api-token
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+data:
+  LOG_LEVEL: info
+  FEATURE_NEW_UI: "true"
+  TIMEOUT_SECONDS: "30"
+  IMAGE_DIGEST: sha256:e67d23e7820c49a8051dac2831f38290f5e72f66c8db5079eeb60d82f14894c0

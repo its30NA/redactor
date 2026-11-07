@@ -1,0 +1,22 @@
+ENABLE_FEATURE=true
+LOG_LEVEL=debug
+API_TIMEOUT=30
+RETRY_SECRET=changeme
+AUTH_MODE=${VAULT_REF}
+DB_PASSWORD=changeme
+API_TOKEN=<your-token>
+SECRET_KEY={{ .Values.password }}
+password = %(password)s
+DB_PASS=$DB_PASS
+apiKey: process.env.API_KEY
+token: ${{ secrets.GITHUB_TOKEN }}
+PASSWORD=xxxx
+SECRET=****
+API_KEY=your_api_key_here
+CLIENT_SECRET=<client-secret>
+TOKEN=${TOKEN}
+auth_password: ""
+password: null
+password: example
+access_token: REPLACE_ME
+DB_PASSWORD=${DB_PASSWORD:-}

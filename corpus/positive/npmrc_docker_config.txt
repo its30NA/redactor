@@ -1,0 +1,20 @@
+# ~/.npmrc
+registry=https://registry.example.com/
+always-auth=true
+//registry.example.com/:_authToken=⟦gen:npm⟧
+fund=false
+audit-level=high
+
+# ~/.docker/config.json
+{
+  "auths": {
+    "registry.example.com": {
+      "auth": "⟦gen:basic_auth⟧"
+    },
+    "ghcr.example.org": {
+      "auth": "⟦gen:basic_auth⟧"
+    }
+  },
+  "credsStore": "desktop",
+  "currentContext": "default"
+}

@@ -1,0 +1,35 @@
+# Tauri crate manifest (excerpt from this repository)
+[dependencies]
+redactor-core = { path = "../../crates/redactor-core", features = ["serde"] }
+redactor-wire = { path = "../../crates/redactor-wire" }
+memchr = "2.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+zeroize = "1.8"
+
+[target.'cfg(windows)'.dependencies]
+tauri = { version = "=2.12.5", features = ["isolation", "tray-icon"] }
+tauri-plugin-dialog = "=2.8.4"
+tauri-plugin-global-shortcut = "=2.4.1"
+tauri-plugin-notification = "=2.8.0"
+tauri-plugin-single-instance = "=2.5.5"
+webview2-com = "0.39"
+windows = { version = "0.62", features = [
+    "ApplicationModel_DataTransfer",
+    "Foundation",
+    "Foundation_Collections",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Power",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_WinRT",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(windows)'.build-dependencies]
+tauri-build = { version = "=2.7.4", features = ["isolation"] }

@@ -1,0 +1,12 @@
+# smoke tests
+curl -s https://api.example.com/health
+curl -s -H "Authorization: Bearer ⟦gen:github_pat⟧" https://api.github.example.com/user
+curl -X POST https://api.example.com/v1/login -d 'user=alice&password=⟦Password|Hunter2-Fake-9x⟧'
+curl -u admin:⟦*|Sup3rS3cret!⟧ https://intranet.example.org/api
+curl -H "X-Api-Key: ⟦gen:hex32⟧" https://api.example.com/v2/items
+curl --user svc-backup:⟦*|Winter2024!⟧ -o out.json https://api.example.com/export
+curl -s -o /dev/null -w "%{http_code}\n" https://example.com/
+curl -H "Authorization: Basic ⟦gen:basic_auth⟧" https://api.example.com/me
+curl "https://api.example.com/cb?access_token=⟦gen:alnum24⟧&state=1"
+curl -d '{"password": "⟦Password|Zebra!Lamp(42)⟧"}' -H 'Content-Type: application/json' https://api.example.com/reset
+curl --max-time 10 --retry 3 https://example.com/status

@@ -1,0 +1,11 @@
+deploy --password ⟦Password|Xy7#kLm2Qp⟧ --region eu
+deploy --password=⟦Password|Zebra!Lamp(42)⟧ --region us --dry-run
+tool login -u alice -p ⟦Password|Hunter2-Fake-9x⟧
+tool login --user bob --pass ⟦Password|Winter2024!⟧
+tool --token ⟦gen:github_pat⟧ sync --jobs 4
+tool --api-key=⟦gen:alnum32⟧ status
+migrate --db-password "⟦Password|p&ss;w0rd#1⟧" --db-host 10.0.4.12
+migrate --db-password '⟦Password|correct horse battery staple⟧' --verbose
+backup --passphrase "⟦Password|tall green lamp 77⟧" --target /srv/backups
+build --tag v1.4.2 --jobs 8 --no-cache
+./run.sh --port 8080 --log-level debug --workers 4

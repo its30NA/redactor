@@ -1,0 +1,16 @@
+# application.properties
+server.port=8082
+spring.application.name=demo-billing
+spring.datasource.url=jdbc:postgresql://10.0.4.12:5432/billing
+spring.datasource.username=billing
+spring.datasource.password=⟦Password|Hunter2-Fake-9x⟧
+spring.redis.host=10.0.4.20
+spring.redis.password=⟦Password|Winter2024!⟧
+spring.mail.host=smtp.example.com
+spring.mail.port=587
+spring.mail.password=⟦Password|Zebra!Lamp(42)⟧
+logging.level.root=INFO
+app.jwt.secret=⟦gen:alnum40⟧
+app.feature.newInvoice=true
+app.timeout.seconds=30
+keystore.password=⟦Password|changeit-Fake-5⟧

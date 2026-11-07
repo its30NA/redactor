@@ -1,0 +1,26 @@
+[package]
+name = "redactor-core"
+description = "Detection engine for redactor: finds and redacts secrets in text, offline."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+aho-corasick = "1.1"
+blake3 = "1"
+regex = "1.11"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = "1"
+sha2 = "0.10"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+# Tests always see the serde derives (the JSON shape is part of the contract).
+redactor-core = { path = ".", features = ["serde"] }
+proptest = { version = "1.12", default-features = false, features = ["std"] }

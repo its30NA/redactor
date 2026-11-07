@@ -1,0 +1,67 @@
+First, a JSON config line from the app:
+{"password": "⟦Password|Hunter2-Fake-9x⟧", "user": "demo"}
+
+A Python dict in the loader:
+creds = {'api_key': '⟦gen:alnum20⟧'}
+
+YAML with spaces in the value:
+password: "⟦Password|correct horse battery staple⟧"
+
+A message from Alice in German:
+Mein Passwort ist ⟦Password|Tr0ub4dor&3⟧ bitte nicht teilen
+
+Chat about wifi:
+the wifi pw is ⟦*|Kx9!mPq2vL⟧ - keep it safe
+
+A curl call from the runbook:
+curl -u admin:⟦*|Sup3rS3cret!⟧ https://api.example.com/v1
+
+Database shell:
+mysql -u root -p⟦*|S3cretDbPass9⟧ prod
+
+Deploy script:
+deploy --password ⟦Password|Xy7#kLm2Qp⟧ --region eu
+
+XML config:
+<password>⟦Password|Fake-Xml-Pass-77⟧</password>
+
+A netrc entry:
+machine api.example.org login demo password ⟦Password|N3trcFakePw⟧
+
+ADO.NET connection string:
+Server=db;Database=app;User Id=sa;Password=⟦*|Ad0N3tFake!⟧;
+
+PGP key export:
+⟦gen:pgp_block⟧
+
+Telegram bot env:
+BOT=⟦gen:telegram⟧
+
+Tailscale env:
+TS_AUTHKEY ⟦gen:tailscale⟧
+
+Groq key on its own line:
+⟦gen:groq⟧
+
+Header from a proxy dump:
+X-Api-Key: ⟦gen:hex32⟧
+
+Reused later (both occurrences):
+DB_PASSWORD=⟦Password|Hunter2-Fake-9x⟧
+... login failed for ⟦*|Hunter2-Fake-9x⟧
+
+Split-key probe, plain form:
+key: ⟦gen:github_pat⟧
+
+Kubernetes secret data:
+data:
+  password: ⟦Password|SHVudGVyMi1GYWtlLTl4⟧
+
+OAuth callback:
+GET /cb?access_token=⟦gen:alnum24⟧&state=1
+
+Quoted hash char:
+DB_PASSWORD="⟦Password|p#ss-Fake-91⟧"
+
+PowerShell:
+ConvertTo-SecureString "⟦*|PsFake!Pass42⟧" -AsPlainText -Force
