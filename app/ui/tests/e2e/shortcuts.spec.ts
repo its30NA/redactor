@@ -140,3 +140,37 @@ test.describe('scheduling and size', () => {
     expect((await scans(page)).at(-1)?.text).toBe(`${demoInput()}!`);
   });
 });
+
+test.describe('copy after a failed or pending scan', () => {
+  test('a failed rescan makes copy and save say so instead of doing nothing', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await pasted(page);
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.failScans(true));
+    await page.getByTestId('input-editor').locator('.cm-content').press('End');
+    await page.keyboard.type('!');
+    await expect(page.locator('.toast', { hasText: 'The safe output was not updated' })).toBeVisible();
+    await blur(page);
+    await page.keyboard.press('Control+Shift+C');
+    await expect(page.locator('.toast', { hasText: 'Scan failed, nothing copied' })).toBeVisible();
+    await page.keyboard.press('Control+s');
+    await expect(page.locator('.toast', { hasText: 'Scan failed, nothing saved' })).toBeVisible();
+    expect(await called(page, 'copy_text')).toHaveLength(0);
+    expect(await called(page, 'save_text_file')).toHaveLength(0);
+  });
+
+  test('a copy during a sensitivity change waits for the rescan under the new setting', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await pasted(page);
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.delaySettings(800));
+    await page.keyboard.press('Control+3');
+    await page.keyboard.press('Control+Shift+C');
+    await expect(page.locator('.toast', { hasText: 'Safe text copied' })).toBeVisible();
+    const calls = await mockCalls(page);
+    const copy = calls.findIndex((c) => c.cmd === 'copy_text');
+    const lastScan = calls.slice(0, copy).findLastIndex((c) => c.cmd === 'scan');
+    const settingsSet = calls.findIndex((c) => c.cmd === 'set_settings');
+    expect(copy).toBeGreaterThan(-1);
+    expect(lastScan).toBeGreaterThan(settingsSet);
+    expect((calls[lastScan]?.args.req as ScanRequest).sensitivity).toBe('paranoid');
+  });
+});

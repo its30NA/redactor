@@ -6,6 +6,7 @@
 import { addAnyway, TYPED_SECRET_LABEL } from './always-redact';
 import { session } from './session.svelte';
 import { settings } from './settings.svelte';
+import { workspace } from './workspace.svelte';
 
 /** True when the shell took the value into memory. */
 export function keepForSession(value: string): Promise<boolean> {
@@ -16,6 +17,8 @@ export function keepForSession(value: string): Promise<boolean> {
 export async function addToList(value: string): Promise<string | null> {
   const res = addAnyway(settings.value.alwaysRedact, value);
   if ('error' in res) return res.error;
-  await settings.update({ alwaysRedact: res.list });
+  const update = settings.update({ alwaysRedact: res.list });
+  workspace.rescanAfter(update);
+  await update;
   return null;
 }

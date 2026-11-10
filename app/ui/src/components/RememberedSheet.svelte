@@ -28,6 +28,14 @@
   let pending = $state(false);
   let busy = $state(false);
 
+  // Closing (Esc, Ctrl+Shift+X, a wipe) drops a pending entry: it may be a password.
+  $effect(() => {
+    if (open) return;
+    word = '';
+    wordError = null;
+    pending = false;
+  });
+
   const time = (iso: string) => {
     const d = new Date(iso);
     return Number.isNaN(d.getTime())
@@ -69,8 +77,7 @@
     }
     pending = false;
     word = '';
-    await settings.update({ alwaysRedact: res.list });
-    workspace.rescan();
+    workspace.rescanAfter(settings.update({ alwaysRedact: res.list }));
   }
 
   async function keepSession() {
@@ -96,12 +103,10 @@
       return;
     }
     word = '';
-    workspace.rescan();
   }
 
-  async function remove(w: string) {
-    await settings.update({ alwaysRedact: settings.value.alwaysRedact.filter((x) => x !== w) });
-    workspace.rescan();
+  function remove(w: string) {
+    workspace.rescanAfter(settings.update({ alwaysRedact: settings.value.alwaysRedact.filter((x) => x !== w) }));
   }
 </script>
 

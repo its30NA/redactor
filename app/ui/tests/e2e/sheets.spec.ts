@@ -233,6 +233,27 @@ test.describe('wipe event', () => {
     await expect(page.getByTestId('remembered-open')).toHaveAccessibleName(/0 this session/);
   });
 
+  test('a lock wipe closes the sheets and clears what was typed into them', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await openRemembered(page);
+    await page.getByTestId('always-input').fill(PASSWORD);
+    await page.getByTestId('always-input').press('Enter');
+    await expect(page.getByTestId('password-warning')).toBeVisible();
+    await page.getByTestId('add-secret-open').click();
+    await page.getByTestId('secret-input').fill(PASSWORD);
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('wipe', { reason: 'lock' }));
+    await expect(page.getByTestId('add-secret')).toHaveCount(0);
+    await expect(sheet(page)).toHaveCount(0);
+    await expect(page.getByTestId('secret-input')).toHaveCount(0);
+    await expect(page.getByTestId('always-input')).toHaveCount(0);
+    // Reopened, nothing typed before the wipe comes back.
+    await openRemembered(page);
+    await expect(page.getByTestId('always-input')).toHaveValue('');
+    await expect(page.getByTestId('password-warning')).toHaveCount(0);
+    await page.getByTestId('add-secret-open').click();
+    await expect(page.getByTestId('secret-input')).toHaveValue('');
+  });
+
   test('sleep wipes too and says why', async ({ page, problems: _ }) => {
     await openApp(page);
     await page.getByRole('button', { name: /Paste & scrub/ }).click();

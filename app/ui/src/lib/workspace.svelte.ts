@@ -377,12 +377,22 @@ class Workspace {
       toasts.show({ tone: 'warning', title: `Nothing to ${verb} yet`, detail: 'Paste text first. The safe version appears on the right.' });
       return null;
     }
+    // A settings change first, then the rescan it started.
+    while (this.#pendingRescan) await this.#pendingRescan;
     if (this.busy) await this.#scheduler.idle();
     if (this.tooLarge) {
       toasts.show({ tone: 'error', title: 'Too large to scan', detail: 'Nothing was copied. Split the text into parts under 20 MB.' });
       return null;
     }
-    if (!this.response || this.stale) return null;
+    if (!this.response || this.stale) {
+      const done = verb === 'copy' ? 'copied' : 'saved';
+      toasts.show(
+        this.error
+          ? { tone: 'error', title: `Scan failed, nothing ${done}`, detail: 'Edit the text to scan it again.' }
+          : { tone: 'warning', title: `Not scanned yet, nothing ${done}`, detail: 'Try again in a moment.' },
+      );
+      return null;
+    }
     return this.response.output;
   }
 
@@ -457,6 +467,24 @@ class Workspace {
   /** Re-scan now (sensitivity, PII or a remembered secret changed). */
   rescan(): void {
     if (this.hasText) this.#scheduler.now();
+  }
+
+  #pendingRescan: Promise<void> | null = null;
+
+  /**
+   * A change the output depends on (sensitivity, PII, words, style) is on its way to the shell.
+   * The output is stale from now on, and a copy or save waits for the update and the rescan.
+   */
+  rescanAfter(update: Promise<unknown>): void {
+    if (this.response) this.stale = true;
+    const pending: Promise<void> = update.then(
+      () => this.rescan(),
+      () => this.rescan(),
+    );
+    this.#pendingRescan = pending;
+    void pending.finally(() => {
+      if (this.#pendingRescan === pending) this.#pendingRescan = null;
+    });
   }
 
   keepValue(key: string): void {

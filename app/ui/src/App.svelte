@@ -63,6 +63,8 @@
 
     const unlisten = [
       onEvent('wipe', ({ reason }) => {
+        // Like Ctrl+Shift+X: a sheet or dialog may hold a typed secret.
+        closeOverlays();
         session.set([]);
         workspace.wipe(reason);
       }),
@@ -200,7 +202,7 @@
 
   function setSensitivity(sensitivity: Sensitivity) {
     if (settings.value.sensitivity === sensitivity) return;
-    void settings.update({ sensitivity }).then(() => workspace.rescan());
+    workspace.rescanAfter(settings.update({ sensitivity }));
   }
 
   const THEME_ORDER: ThemeSetting[] = ['system', 'dark', 'light'];
@@ -210,7 +212,7 @@
     THEME_ORDER[(THEME_ORDER.indexOf(settings.value.theme) + 1) % THEME_ORDER.length] ?? 'system',
   );
 
-  const setPii = (pii: boolean) => void settings.update({ pii }).then(() => workspace.rescan());
+  const setPii = (pii: boolean) => workspace.rescanAfter(settings.update({ pii }));
 
   const commands = $derived<Command[]>([
     { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste'), hint: 'clipboard', run: () => run('paste') },
@@ -306,7 +308,7 @@
     <Dock
       bind:sensitivity={settings.value.sensitivity}
       bind:pii={settings.value.pii}
-      onsensitivity={(sensitivity) => void settings.update({ sensitivity }).then(() => workspace.rescan())}
+      onsensitivity={(sensitivity) => workspace.rescanAfter(settings.update({ sensitivity }))}
       onpii={setPii}
       onpaste={() => void workspace.paste()}
       onwipe={() => workspace.wipe()}

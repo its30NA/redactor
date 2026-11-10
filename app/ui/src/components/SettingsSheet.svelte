@@ -44,7 +44,7 @@
   ];
 
   /** Changes that alter the output scan again. */
-  const rescanning = (patch: Partial<Settings>) => void settings.update(patch).then(() => workspace.rescan());
+  const rescanning = (patch: Partial<Settings>) => workspace.rescanAfter(settings.update(patch));
   const update = (patch: Partial<Settings>) => void settings.update(patch);
 
   // ── Hotkey capture ──

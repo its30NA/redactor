@@ -52,6 +52,10 @@ export interface MockBackend {
   setClipboard(text: string | null): void;
   /** Make `set_settings` reject with this message, like the shell does (tests); null stops it. */
   rejectSettings(message: string | null): void;
+  /** Make `scan` reject, like a failed scan in the shell (tests). */
+  failScans(on: boolean): void;
+  /** Delay `set_settings` answers by this many ms (tests). */
+  delaySettings(ms: number): void;
   uninstall(): void;
 }
 
@@ -258,6 +262,8 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
   let clipboard: string | null = opts.clipboard === null ? null : inputByName(opts.clipboard ?? 'demo');
   let maximized = false;
   let settingsError: string | null = null;
+  let scansFail = false;
+  let settingsDelay = 0;
   let nextId = 100;
   const calls: MockCall[] = [];
 
@@ -289,6 +295,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
       switch (cmd) {
         case COMMANDS.scan: {
           await delay(latency);
+          if (scansFail) throw 'Internal error.';
           return scanFor(args.req as ScanRequest, known());
         }
         case COMMANDS.readClipboard:
@@ -316,6 +323,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
           return settings;
         case COMMANDS.setSettings:
           // The shell rejects with a plain string, for example for a hotkey another app holds.
+          if (settingsDelay) await delay(settingsDelay);
           if (settingsError !== null) throw settingsError;
           settings = { ...(args.settings as Settings) };
           backend.settings = settings;
@@ -350,6 +358,12 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
     },
     rejectSettings: (message) => {
       settingsError = message;
+    },
+    failScans: (on) => {
+      scansFail = on;
+    },
+    delaySettings: (ms) => {
+      settingsDelay = ms;
     },
     uninstall: () => {
       clearMocks();
