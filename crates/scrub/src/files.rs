@@ -306,6 +306,17 @@ pub fn replace(path: &Path, bytes: &[u8], read_meta: &fs::Metadata) -> Result<()
     if !unchanged(read_meta, &now) {
         return Err("it changed while it was being scanned; left unchanged".into());
     }
+    #[cfg(unix)]
+    {
+        // Renaming over the path would leave the secret in every other hard link.
+        use std::os::unix::fs::MetadataExt;
+        if now.nlink() > 1 {
+            return Err(format!(
+                "it has {} hard links, which would keep the old content; left unchanged",
+                now.nlink()
+            ));
+        }
+    }
     let dir = match path.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => Path::new("."),
@@ -390,6 +401,21 @@ mod tests {
             .unwrap_err()
             .contains("not a regular file"));
         assert_eq!(fs::read(&outside).unwrap(), b"keep me");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replace_refuses_a_file_with_other_hard_links() {
+        let d = tempfile::tempdir().unwrap();
+        let (p, other) = (d.path().join("a.env"), d.path().join("b.env"));
+        fs::write(&p, "old").unwrap();
+        fs::hard_link(&p, &other).unwrap();
+        let (_, meta) = read(&p).unwrap();
+        assert!(replace(&p, b"new", &meta)
+            .unwrap_err()
+            .contains("hard links"));
+        assert_eq!(fs::read(&other).unwrap(), b"old");
+        assert_eq!(fs::read(&p).unwrap(), b"old");
     }
 
     fn skip(raw: &[u8]) -> Option<Skip> {
