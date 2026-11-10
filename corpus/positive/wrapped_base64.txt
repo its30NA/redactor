@@ -1,0 +1,25 @@
+# Base64 wrapped across lines (base64 -w 76, MIME, YAML block scalars): the body is
+# decoded whole, so a secret whose key and value fall on different lines is found.
+
+backup of the shop .env, base64 -w 76:
+⟦Encoded Password|QVBQX05BTUU9c2hvcApBUFBfRU5WPXByb2R1Y3Rpb24KTE9HPXdhcm4KI3gKREJfUEFTU1dPUkQ9
+SHVudGVyMi1GYWtlLTl4Ck1BSUxfRlJPTT1ub3JlcGx5QGV4YW1wbGUuY29tClNFU1NJT05fRFJJ
+VkVSPWZpbGUK⟧
+
+second backup, the password split across lines two and three:
+⟦Encoded Password|QVBQX05BTUU9c2hvcApBUFBfRU5WPXByb2R1Y3Rpb24KQVBQX0RFQlVHPWZhbHNlCkxPR19MRVZF
+TD13YXJuaW5nCkRCX0hPU1Q9ZGIuaW50ZXJuYWwuZXhhbXBsZQpEQl9QQVNTV09SRD1IdW50ZXIy
+LUZha2UtOXgKTUFJTF9GUk9NPW5vcmVwbHlAZXhhbXBsZS5jb20KU0VTU0lPTl9EUklWRVI9Zmls
+ZQpDQUNIRV9EUklWRVI9ZmlsZQpRVUVVRV9DT05ORUNUSU9OPXN5bmMK⟧
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-env
+data:
+  env.b64: |
+    ⟦Encoded Password|QVBQX05BTUU9YmlsbGluZwpBUFBfRU5WPXN0YWdpbmcKREJfSE9TVD1kYi5zdGFn
+    aW5nLmV4YW1wbGUKREJfVVNFUj1iaWxsaW5nCkRCX1BBU1NXT1JEPVR1bGlwLUhh
+    cmJvci05MXgKUkVESVNfVVJMPXJlZGlzOi8vY2FjaGUuc3RhZ2luZy5leGFtcGxl
+    OjYzNzkvMAo=⟧
+  region: eu-central

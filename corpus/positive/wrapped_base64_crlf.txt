@@ -1,0 +1,8 @@
+⟦opt:crlf⟧
+# A Windows mail attachment: base64 at 76 columns with CRLF line ends.
+Content-Type: text/plain; name="reports.ini"
+Content-Transfer-Encoding: base64
+
+⟦Encoded Password|W2RhdGFiYXNlXQ0KaG9zdCA9IHNxbDAxLmNvcnAuZXhhbXBsZQ0KdXNlciA9IHJlcG9ydF9yZWFk
+ZXINCnBhc3N3b3JkID0gV2ludGVyLU1hcGxlLTIwMjQhDQp0aW1lb3V0ID0gMzANCg==⟧
+

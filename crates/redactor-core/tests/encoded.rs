@@ -143,3 +143,63 @@ fn precision() {
     assert_eq!(out.findings.len(), 1, "{:?}", out.findings);
     assert!(out.output.contains(&glued) && out.output.contains(&unrelated));
 }
+
+/// Base64 wrapped across lines (`base64 -w 76`, audit 2026-11-10, finding 1): a copy of the
+/// value split by a line break is redacted with the value's placeholder, every character that
+/// carries a bit of it on both lines included. Nothing outside the blob is touched (the rest of
+/// a line, misaligned base64, may read as a random string on the rescan).
+#[test]
+fn wrapped_base64_copy() {
+    let mut g = Gen::named("encoded wrapped");
+    let v = value(&mut g);
+    // The value starts at byte 47 to 56 of the document, so its characters run from about 63
+    // to 95 and the break after 76 always falls inside them.
+    for pad in 0..10 {
+        let doc = format!(
+            "notes from the migration, kept{}\nthe old one was {v} until today\nend\n",
+            "x".repeat(pad)
+        );
+        let blob = b64_encode(doc.as_bytes());
+        let lines: Vec<&str> = blob
+            .as_bytes()
+            .chunks(76)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect();
+        let head = format!("DB_PASSWORD={v}\nbackup:\n");
+        let text = format!("{head}{}\n", lines.join("\n"));
+        let out = scan(&text);
+        assert!(out.verified);
+        let key = out.findings[0].value_key;
+        // The blob characters that carry a bit of the value, as offsets into `text`.
+        let at = doc.find(&v).unwrap();
+        let (a, b) = (at, at + v.len());
+        let first = 4 * (a / 3) + a % 3;
+        let last = 4 * ((b - 1) / 3) + (b - 1) % 3 + 1;
+        assert!(
+            first < 76 && last >= 76,
+            "pad {pad}: the value does not straddle"
+        );
+        let offset = |j: usize| head.len() + j + j / 76;
+        let copy = out
+            .findings
+            .iter()
+            .find(|f| f.start >= head.len() && f.source == Source::Propagated)
+            .unwrap_or_else(|| panic!("pad {pad}: not redacted: {}", out.output));
+        assert_eq!(copy.value_key, key, "pad {pad}");
+        assert!(
+            copy.start <= offset(first) && offset(last) < copy.end,
+            "pad {pad}: {:?} vs {}..={}",
+            (copy.start, copy.end),
+            offset(first),
+            offset(last)
+        );
+        assert!(text[copy.start..copy.end].contains('\n'), "pad {pad}");
+        assert!(
+            out.findings[1..].iter().all(|f| f.start >= head.len()),
+            "pad {pad}: {:?}",
+            out.findings
+        );
+        let again = scan(&out.output);
+        assert!(again.findings.is_empty(), "rescan: {:?}", again.findings);
+    }
+}

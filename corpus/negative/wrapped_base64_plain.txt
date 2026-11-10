@@ -1,0 +1,18 @@
+# Wrapped base64 that holds no secret: a text attachment and a YAML block scalar.
+attachment notes.txt, base64 -w 76:
+UmVsZWFzZSBub3RlcyBmb3IgdGhlIHJlcG9ydGluZyBzZXJ2aWNlLiBUaGlzIHZlcnNpb24gbW92
+ZXMgdGhlIG5pZ2h0bHkgZXhwb3J0IHRvIHRoZSBuZXcgc2NoZWR1bGVyLCBhZGRzIGEgcmV0cnkg
+Zm9yIHRoZSB1cGxvYWQgc3RlcCBhbmQgZml4ZXMgdGhlIGRhdGUgZm9ybWF0IGluIHRoZSBtb250
+aGx5IHN1bW1hcnkuIE5vIGNvbmZpZ3VyYXRpb24gY2hhbmdlcyBhcmUgbmVlZGVkOyB0aGUgbmV4
+dCByZWxlYXNlIHdpbGwgZHJvcCB0aGUgb2xkIGV4cG9ydCBwYXRoLgo=
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reports-settings
+data:
+  settings.b64: |
+    bG9nX2xldmVsPWluZm8KcmV0cmllcz0zCmV4cG9ydF9kaXI9L3Zhci9saWIvcmVw
+    b3J0cy9leHBvcnQKc2NoZWR1bGU9MCAyICogKiAqCnRpbWV6b25lPUV1cm9wZS9C
+    ZXJsaW4KZm9ybWF0PWNzdgo=
+

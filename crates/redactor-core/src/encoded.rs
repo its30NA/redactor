@@ -7,9 +7,13 @@
 //! the decoded bytes counts. A hit maps back to the characters that carry its bits: exactly
 //! for percent and JSON escapes (every decoded byte knows the escape it came from), and for
 //! base64 and hex to the characters holding any bit of it (a base64 character at the edge
-//! also holds bits of a neighbour). One level deeper, a hit maps to the whole outer run.
+//! also holds bits of a neighbour). Base64 wrapped across lines is decoded joined as well, and
+//! a hit in it maps through the lines, so a value split by a line break maps to its
+//! characters on both lines. One level deeper, a hit maps to the whole outer run.
 
 use std::ops::Range;
+
+use crate::decode::wrapped;
 
 /// The decoded runs of one text, back to back in `buf` (a zero byte between runs).
 #[derive(Default)]
@@ -43,6 +47,13 @@ enum Map {
     Escapes(usize),
     /// Base64 starting at this source offset; the run's body ends at the second one.
     Base64(usize, usize),
+    /// Base64 wrapped across `lines` lines of `width` characters (the last may hold fewer):
+    /// `map[at + i]` is where line `i` starts, and `map[at + lines]` the number of characters.
+    Wrapped {
+        at: usize,
+        lines: usize,
+        width: usize,
+    },
     /// Hex starting at this source offset.
     Hex(usize),
 }
@@ -79,6 +90,22 @@ impl Decoded {
                     last + 1
                 };
                 (first..end, false)
+            }
+            Map::Wrapped { at, lines, width } => {
+                // As for base64 in one line, in the characters of all lines joined.
+                let total = self.map[at + lines];
+                let char_at = |j: usize| {
+                    let line = (j / width).min(lines - 1);
+                    self.map[at + line] + (j - line * width)
+                };
+                let first = 4 * (a / 3) + a % 3;
+                let last = 4 * ((b - 1) / 3) + (b - 1) % 3 + 1;
+                let end = if last + 1 >= total {
+                    p.src.end
+                } else {
+                    char_at(last) + 1
+                };
+                (char_at(first)..end, false)
             }
             Map::Hex(c0) => (c0 + 2 * a..c0 + 2 * b, false),
         })
@@ -139,6 +166,11 @@ impl Decoded {
                 self.map.extend_from_slice(map);
                 Map::Escapes(at)
             }
+            Map::Wrapped { lines, width, .. } => {
+                let at = self.map.len();
+                self.map.extend_from_slice(map);
+                Map::Wrapped { at, lines, width }
+            }
             h => h,
         };
         self.pieces.push(Piece {
@@ -168,6 +200,16 @@ pub(crate) fn decode(
     let mut scratch = Vec::new();
     let mut map = Vec::new();
     base64(hay, min_len, exact, src, budget, &mut scratch, out)
+        && wrapped_base64(
+            hay,
+            min_len,
+            exact,
+            src,
+            budget,
+            &mut scratch,
+            &mut map,
+            out,
+        )
         && hex(hay, min_len, exact, src, budget, &mut scratch, out)
         && (!hay.contains(&b'%')
             || percent(
@@ -217,6 +259,22 @@ fn b64_val(c: u8) -> u32 {
     }
 }
 
+/// Decodes base64 characters (either alphabet, no padding) onto `out`; a last single
+/// character holds no whole byte.
+fn b64_into(chars: &[u8], out: &mut Vec<u8>) {
+    for chunk in chars.chunks(4) {
+        if chunk.len() == 1 {
+            break;
+        }
+        let mut n = 0u32;
+        for (k, &c) in chunk.iter().enumerate() {
+            n |= b64_val(c) << (18 - 6 * k);
+        }
+        let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+        out.extend_from_slice(&bytes[..chunk.len() - 1]);
+    }
+}
+
 fn base64(
     hay: &[u8],
     min_len: usize,
@@ -258,17 +316,7 @@ fn base64(
                 break;
             }
             scratch.clear();
-            for chunk in b.chunks(4) {
-                if chunk.len() == 1 {
-                    break;
-                }
-                let mut n = 0u32;
-                for (k, &c) in chunk.iter().enumerate() {
-                    n |= b64_val(c) << (18 - 6 * k);
-                }
-                let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
-                scratch.extend_from_slice(&bytes[..chunk.len() - 1]);
-            }
+            b64_into(b, scratch);
             if !take(budget, scratch.len()) {
                 return false;
             }
@@ -278,6 +326,51 @@ fn base64(
                 Map::Whole
             };
             out.push(scratch, src(start..i), how, &[]);
+        }
+    }
+    true
+}
+
+/// Base64 wrapped across lines (see [`wrapped`]): the lines' characters joined and decoded.
+#[allow(clippy::too_many_arguments)]
+fn wrapped_base64(
+    hay: &[u8],
+    min_len: usize,
+    exact: bool,
+    src: &dyn Fn(Range<usize>) -> Range<usize>,
+    budget: &mut usize,
+    scratch: &mut Vec<u8>,
+    map: &mut Vec<usize>,
+    out: &mut Decoded,
+) -> bool {
+    let min_chars = (min_len * 4).div_ceil(3);
+    for w in wrapped(hay) {
+        let joined: Vec<u8> = w
+            .lines
+            .iter()
+            .flat_map(|r| hay[r.clone()].iter().copied())
+            .collect();
+        if joined.len() < min_chars {
+            continue;
+        }
+        scratch.clear();
+        b64_into(&joined, scratch);
+        if !take(budget, scratch.len()) {
+            return false;
+        }
+        let whole = src(w.lines[0].start..w.end);
+        if exact {
+            map.clear();
+            map.extend(w.lines.iter().map(|r| r.start));
+            map.push(joined.len());
+            let how = Map::Wrapped {
+                at: 0,
+                lines: w.lines.len(),
+                width: w.lines[0].len(),
+            };
+            out.push(scratch, whole, how, map);
+        } else {
+            out.push(scratch, whole, Map::Whole, &[]);
         }
     }
     true
@@ -595,6 +688,33 @@ mod tests {
             hits(r#""Plum\/tree""#, "Plum/tree"),
             [(r"Plum\/tree".into(), true)]
         );
+    }
+
+    /// Base64 wrapped across lines (audit 2026-11-10, finding 1): a value split by a line
+    /// break is found in the joined body and maps to the characters that carry it on both
+    /// lines, the break and the next line's indentation between them.
+    #[test]
+    fn wrapped_base64_maps_across_lines() {
+        let v = "Plumtree47-Kite";
+        for (indent, eol) in [("", "\n"), ("    ", "\r\n")] {
+            for pad in 0..24 {
+                let doc = format!("{} {v} and some more words after it", "x".repeat(pad));
+                let e = b64(&doc, false);
+                let hay: String = e
+                    .as_bytes()
+                    .chunks(32)
+                    .map(|c| format!("{indent}{}{eol}", String::from_utf8_lossy(c)))
+                    .collect();
+                let got = hits(&hay, v);
+                assert!(!got.is_empty(), "pad {pad}: {hay}");
+                for (src, exact) in &got {
+                    assert!(!exact);
+                    let chars: String = src.split(eol).map(|l| l.trim_start()).collect();
+                    assert!(e.contains(&chars), "pad {pad}: {src:?}");
+                    assert!(chars.len() >= 20 && chars.len() <= 22, "pad {pad}: {src:?}");
+                }
+            }
+        }
     }
 
     #[test]

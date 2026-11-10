@@ -1,7 +1,8 @@
 //! The decode layer: encoded runs that decode to readable text.
 //!
 //! Four encodings are recognised, each as a maximal run of its own characters:
-//! - base64 / base64url runs of 16+ characters (padding included),
+//! - base64 / base64url runs of 16+ characters (padding included), and base64 wrapped across
+//!   lines (see [`wrapped`]), whose lines are joined and decoded as one run as well,
 //! - hex runs of 32+ digits,
 //! - percent-encoded runs with at least one `%XX` (a secret with a single symbol is
 //!   encoded with one escape),
@@ -62,6 +63,21 @@ pub(crate) fn decode_layers(text: &str, budget: &mut Budget) -> Vec<Layer> {
     let mut out = Vec::new();
     let bytes = text.as_bytes();
     base64_and_hex(bytes, budget, &mut out);
+    for w in wrapped(bytes) {
+        let body: Vec<u8> = w
+            .lines
+            .iter()
+            .flat_map(|r| bytes[r.clone()].iter().copied())
+            .collect();
+        let std = body.iter().any(|b| matches!(b, b'+' | b'/'));
+        let url = body.iter().any(|b| matches!(b, b'-' | b'_'));
+        if std && url {
+            continue;
+        }
+        if let Some(decoded) = b64_decode(&body, url) {
+            push(&mut out, budget, w.lines[0].start..w.end, decoded);
+        }
+    }
     if bytes.contains(&b'%') {
         percent(bytes, budget, &mut out);
     }
@@ -143,6 +159,96 @@ fn base64_and_hex(bytes: &[u8], budget: &mut Budget, out: &mut Vec<Layer>) {
             push(out, budget, start..end, decoded);
         }
     }
+}
+
+/// Fewer characters per line are not taken for wrapped base64.
+const MIN_WRAP: usize = 32;
+
+/// Base64 wrapped across lines, as `base64 -w`, MIME, PEM and YAML block scalars write it.
+#[derive(Debug)]
+pub(crate) struct Wrapped {
+    /// Each line's base64 characters (no indentation, padding or line end).
+    pub lines: Vec<Range<usize>>,
+    /// Where the last line's padding ends: the block runs from `lines[0].start` to here.
+    pub end: usize,
+}
+
+/// Every block of two or more lines wrapped at one width: the first line holds [`MIN_WRAP`]
+/// or more base64 characters, each next line as many, but the last, which may hold fewer and
+/// the padding (no more than the width in all). The lines hold nothing else but the same
+/// indentation; they end in LF or CRLF.
+pub(crate) fn wrapped(bytes: &[u8]) -> Vec<Wrapped> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    while start < bytes.len() {
+        let (line, next) = b64_line(bytes, start);
+        let Some((first, pad)) = line else {
+            start = next;
+            continue;
+        };
+        let width = first.len();
+        if width < MIN_WRAP || pad > first.end {
+            start = next;
+            continue;
+        }
+        let indent = &bytes[start..first.start];
+        let mut lines = vec![first];
+        let mut end = pad;
+        let mut at = next;
+        while at < bytes.len() {
+            let (line, after) = b64_line(bytes, at);
+            let Some((chars, pad)) = line else {
+                break;
+            };
+            if &bytes[at..chars.start] != indent || pad - chars.start > width {
+                break;
+            }
+            let full = chars.len() == width && pad == chars.end;
+            lines.push(chars);
+            end = pad;
+            at = after;
+            if !full {
+                break;
+            }
+        }
+        if lines.len() >= 2 {
+            out.push(Wrapped { lines, end });
+            start = at;
+        } else {
+            start = next;
+        }
+    }
+    out
+}
+
+/// The line at `start`, when it holds nothing but indentation, base64 characters and their
+/// padding: its characters and where the padding ends. And where the next line starts.
+fn b64_line(bytes: &[u8], start: usize) -> (Option<(Range<usize>, usize)>, usize) {
+    let end = bytes[start..]
+        .iter()
+        .position(|&b| b == b'\n')
+        .map_or(bytes.len(), |i| start + i);
+    let next = (end + 1).min(bytes.len());
+    let mut e = end;
+    while e > start && matches!(bytes[e - 1], b'\r' | b' ' | b'\t') {
+        e -= 1;
+    }
+    let mut i = start;
+    while i < e && matches!(bytes[i], b' ' | b'\t') {
+        i += 1;
+    }
+    let chars = i;
+    while i < e && b64_char(bytes[i]) {
+        i += 1;
+    }
+    let body_end = i;
+    while i < e && i - body_end < 2 && bytes[i] == b'=' {
+        i += 1;
+    }
+    (
+        (i == e && body_end > chars).then_some((chars..body_end, i)),
+        next,
+    )
 }
 
 fn hex_decode(h: &[u8]) -> Vec<u8> {
@@ -413,6 +519,72 @@ mod tests {
             vec![(r"pw \u0070\u0077\u0021 ok".into(), "pw pw! ok".into())]
         );
         assert_eq!(layers(r#""\ud83d\ude00 smile""#)[0].1, "😀 smile");
+    }
+
+    fn b64(data: &[u8]) -> String {
+        const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+        for c in data.chunks(3) {
+            let n = c
+                .iter()
+                .enumerate()
+                .fold(0u32, |n, (k, &b)| n | (b as u32) << (16 - 8 * k));
+            for k in 0..=c.len() {
+                out.push(T[(n >> (18 - 6 * k) & 63) as usize] as char);
+            }
+            out.push_str(&"=".repeat(3 - c.len()));
+        }
+        out
+    }
+
+    /// `encoded` cut into lines of `width` characters, each with `indent` and `eol`.
+    fn wrap(encoded: &str, width: usize, indent: &str, eol: &str) -> String {
+        encoded
+            .as_bytes()
+            .chunks(width)
+            .map(|c| format!("{indent}{}{eol}", String::from_utf8_lossy(c)))
+            .collect()
+    }
+
+    const ENV: &str = "APP_NAME=shop\nAPP_ENV=production\nLOG=warn\n#x\nDB_PASSWORD=Hunter2-Fake-9x\nMAIL_FROM=noreply@example.com\nSESSION_DRIVER=file\n";
+
+    /// Base64 wrapped across lines is decoded whole as well (audit 2026-11-10, finding 1):
+    /// at 76 and 64 columns, LF and CRLF, indented as in a YAML block, the last line shorter
+    /// and padded. The layer is the whole block.
+    #[test]
+    fn wrapped_base64_is_decoded_whole() {
+        let e = b64(ENV.as_bytes());
+        for (width, indent, eol) in [
+            (76, "", "\n"),
+            (64, "", "\r\n"),
+            (64, "    ", "\n"),
+            (32, "  ", "\r\n"),
+        ] {
+            let block = wrap(&e, width, indent, eol);
+            let text = format!("data:\n{block}end\n");
+            let got = layers(&text);
+            let whole = block.trim_start().trim_end().to_string();
+            assert!(
+                got.contains(&(whole.clone(), ENV.to_string())),
+                "{width} {indent:?} {eol:?}: {got:?}"
+            );
+        }
+    }
+
+    /// Only lines of one width are joined, at 32 characters or more; a wrapped body that
+    /// decodes to bytes (a key, a certificate) is no layer.
+    #[test]
+    fn wrapped_base64_needs_one_width_and_text() {
+        let e = b64(ENV.as_bytes());
+        let uneven = format!("{}\n{}\n{}\n", &e[..76], &e[76..148], &e[148..]);
+        assert!(layers(&uneven).iter().all(|l| l.1 != ENV), "{uneven}");
+        let narrow = wrap(&e, 28, "", "\n");
+        assert!(layers(&narrow).iter().all(|l| l.1 != ENV));
+        let indents = format!("  {}\n    {}\n", &e[..64], &e[64..]);
+        assert!(layers(&indents).iter().all(|l| l.1 != ENV));
+        let bytes: Vec<u8> = (0..600u32).map(|i| (i * 7919 % 251) as u8).collect();
+        let body = wrap(&b64(&bytes), 64, "", "\n");
+        assert!(layers(&body).is_empty(), "{:?}", layers(&body));
     }
 
     #[test]
