@@ -17,6 +17,10 @@ pub fn run(args: &ClipboardArgs) -> Result<i32, CliError> {
     match scrub_clipboard(&mut clipboard, &engine).map_err(|e| CliError::new(2, e))? {
         ClipOutcome::Cleaned { summary, .. } => eprintln!("{summary}"),
         ClipOutcome::Clean => eprintln!("No sensitive data detected."),
+        ClipOutcome::Stripped => eprintln!(
+            "No sensitive data detected; invisible or direction-changing characters were \
+             removed from the clipboard text."
+        ),
         ClipOutcome::Empty => eprintln!("The clipboard has no text; nothing to do."),
         ClipOutcome::Protected => eprintln!(
             "The clipboard content is marked private by its source (for example a password \

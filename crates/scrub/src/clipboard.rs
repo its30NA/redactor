@@ -57,14 +57,16 @@ pub enum ClipOutcome {
         summary: String,
     },
     Clean,
+    /// No secrets, but invisible, bidi or tag characters were removed and written back.
+    Stripped,
     Empty,
     Protected,
     /// Something else was copied during the scan; left untouched.
     Changed,
 }
 
-/// Reads the clipboard, redacts it, and writes it back only when something was found and the
-/// clipboard still holds what was read.
+/// Reads the clipboard, redacts it, and writes it back only when the text changed (findings or
+/// stripped hidden characters) and the clipboard still holds what was read.
 pub fn scrub_clipboard(clip: &mut dyn Clipboard, engine: &Engine) -> Result<ClipOutcome, String> {
     let text = match clip.read()? {
         ClipRead::Text(t) if !t.is_empty() => t,
@@ -78,11 +80,14 @@ pub fn scrub_clipboard(clip: &mut dyn Clipboard, engine: &Engine) -> Result<Clip
     };
     let outcome = engine.scan(&text, &ScanRequest::default());
     let rows = crate::audit::rows_of(&text, &outcome.findings);
-    if rows.is_empty() {
+    if outcome.output == text {
         clip.finish(None)?;
         return Ok(ClipOutcome::Clean);
     }
+    // Written back whenever the text changed, as `scrub FILE` does: hidden characters alone
+    // (no findings) are stripped too.
     Ok(match clip.finish(Some(&outcome.output))? {
+        Finish::Written if rows.is_empty() => ClipOutcome::Stripped,
         Finish::Written => ClipOutcome::Cleaned {
             removed: rows.len(),
             summary: crate::audit::summary(&rows),
@@ -323,6 +328,16 @@ mod tests {
         );
         assert!(f.written.is_empty());
         assert_eq!(f.finished, 1, "the session is always ended");
+    }
+
+    #[test]
+    fn hidden_characters_alone_are_stripped_like_scrub_file_does() {
+        let mut f = Fake::new(ClipRead::Text("pay\u{202E}load\u{200B}".into()));
+        assert_eq!(
+            scrub_clipboard(&mut f, &engine()).unwrap(),
+            ClipOutcome::Stripped
+        );
+        assert_eq!(f.written, ["payload"]);
     }
 
     #[test]
