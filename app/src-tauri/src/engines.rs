@@ -3,7 +3,7 @@
 //! An [`Engine`] is immutable, and three settings are part of its config: the always-redact
 //! words (`EngineConfig.terms`), the placeholder style and `stripInvisible`. Sensitivity and PII
 //! come with each request. So the set keeps one engine per `stripInvisible` value for the current
-//! words and style, builds a new one off the UI thread when they change, and swaps it in.
+//! words and style, drops them when those change and builds new ones off the UI thread.
 //! Session secrets do not need a rebuild: their matcher reads the live session list.
 //!
 //! All engines share one per-process session key, so a finding's `valueKey` (what the UI sends
@@ -95,8 +95,9 @@ impl EngineSet {
     }
 
     /// Switches to a new profile. Returns true when it differs from the current one; the caller
-    /// then warms the new engine with [`EngineSet::get`] on a background thread. Scans keep
-    /// using the old engine until the new one is ready.
+    /// then warms the new engine with [`EngineSet::get`] on a background thread. Both old
+    /// engines are dropped at once, so a scan that comes before the warm-up has finished builds
+    /// the new engine itself, on its own worker thread.
     pub fn set_profile(&self, profile: Profile) -> bool {
         let mut st = self.lock();
         if st.profile == profile {
