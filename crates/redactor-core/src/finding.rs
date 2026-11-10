@@ -183,6 +183,12 @@ pub struct MatcherHit {
 pub trait SecretMatcher: Send + Sync {
     /// Byte ranges in `text` (which is the engine's normalized shadow text).
     fn find(&self, text: &str) -> Vec<MatcherHit>;
+
+    /// Every label `find` can give, so that placeholders carrying one are recognised when
+    /// output is scanned again. A placeholder with a label not listed here is ordinary text.
+    fn labels(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// A detector's raw output, before guards, thresholds and resolution.

@@ -20,7 +20,7 @@ use crate::finding::{
 use crate::guard::is_placeholder;
 use crate::normalize::{normalize_value, HiddenCounts, Shadow};
 use crate::occurrences::Occurrences;
-use crate::placeholder::PlaceholderPolicy;
+use crate::placeholder::{PlaceholderPolicy, GENERIC_LABEL};
 use crate::propagate::{propagate, Copies, ValueCopy, BOUNDARY_BELOW, MIN_CHARS};
 use crate::redact::{apply, Redaction, Resolved};
 use crate::resolve::{outranks, resolve};
@@ -70,6 +70,8 @@ impl std::error::Error for EngineError {}
 
 /// Label of user-selected ranges.
 const MANUAL_LABEL: &str = "Selected Text";
+/// Label of a `user:password` pair found inside a decoded layer.
+const CREDENTIALS_LABEL: &str = "Credentials";
 
 /// Immutable after construction; `Send + Sync`, so one engine can serve many threads.
 pub struct Engine {
@@ -81,8 +83,11 @@ pub struct Engine {
     pii_detectors: Vec<Box<dyn Detector>>,
     allowlist: Option<RegexSet>,
     matcher: Option<Arc<dyn SecretMatcher>>,
-    /// Placeholders of the configured and the default template: protected text.
+    /// Placeholders of the configured and the default template, with a label from
+    /// `labels`: protected text.
     placeholder_res: Vec<Regex>,
+    /// Every label the engine itself can put in a placeholder (`known_labels`).
+    labels: Vec<String>,
 }
 
 impl fmt::Debug for Engine {
@@ -136,11 +141,8 @@ impl Engine {
         }
         let (pii_detectors, detectors): (Vec<_>, Vec<_>) =
             detectors.into_iter().partition(|d| d.is_pii());
-        let mut placeholder_res: Vec<Regex> =
-            placeholder_regex(&config.template).into_iter().collect();
-        if config.template != DEFAULT_TEMPLATE {
-            placeholder_res.extend(placeholder_regex(DEFAULT_TEMPLATE));
-        }
+        let labels = known_labels(&config);
+        let placeholder_res = placeholder_regexes(&config.template, &labels);
         Ok(Engine {
             policy: PlaceholderPolicy {
                 style: config.placeholder,
@@ -153,6 +155,7 @@ impl Engine {
             allowlist,
             matcher: None,
             placeholder_res,
+            labels,
         })
     }
 
@@ -160,6 +163,12 @@ impl Engine {
     pub fn with_matcher(mut self, m: Arc<dyn SecretMatcher>) -> Engine {
         self.matcher = Some(m);
         self
+    }
+
+    /// True when `text` is exactly one placeholder this engine recognises as earlier output:
+    /// its template (or the default one) around a label it emits.
+    pub fn is_placeholder(&self, text: &str) -> bool {
+        self.protected(text, &[]) == [(0, text.len())]
     }
 
     /// Number of active detection rules (PII rules included).
@@ -471,6 +480,18 @@ impl Engine {
         for re in &self.placeholder_res {
             v.extend(re.find_iter(text).map(|m| (m.start(), m.end())));
         }
+        // The matcher's labels change at run time (a watchlist), so they are compiled per scan.
+        let extra: Vec<String> = self
+            .matcher
+            .as_ref()
+            .map(|m| m.labels())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|l| !self.labels.contains(l))
+            .collect();
+        for re in placeholder_regexes(&self.config.template, &extra) {
+            v.extend(re.find_iter(text).map(|m| (m.start(), m.end())));
+        }
         if v.is_empty() {
             return v;
         }
@@ -574,7 +595,7 @@ impl Engine {
                     start: starts[i],
                     end: starts[i] + l.text.len(),
                     kind: Cow::Borrowed("encoded_credentials"),
-                    label: Cow::Borrowed("Credentials"),
+                    label: Cow::Borrowed(CREDENTIALS_LABEL),
                     confidence: conf,
                     detector: Cow::Borrowed("decode"),
                     reason: Cow::Borrowed("user:password pair"),
@@ -723,11 +744,56 @@ struct Rendered {
     redaction: Redaction,
 }
 
-/// A regex for the placeholders `template` renders, or `None` when the template has too
-/// little literal text to tell a placeholder from ordinary words.
-fn placeholder_regex(template: &str) -> Option<Regex> {
+/// Every label the engine itself can put in a placeholder, without the `Encoded ` prefix:
+/// the rules' labels, the context engine's, the custom rules', the generic one and the
+/// engine's own.
+fn known_labels(config: &EngineConfig) -> Vec<String> {
+    let mut v: Vec<String> = crate::rules::rule_infos()
+        .into_iter()
+        .map(|i| i.label.to_string())
+        .collect();
+    v.extend(context::labels().map(String::from));
+    v.extend([MANUAL_LABEL, CREDENTIALS_LABEL, GENERIC_LABEL, terms::LABEL].map(String::from));
+    v.extend(config.custom_rules.iter().map(|r| r.label.clone()));
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// Regexes for the placeholders of `template` and of the default template, with a label
+/// from `labels`.
+fn placeholder_regexes(template: &str, labels: &[String]) -> Vec<Regex> {
+    let mut out: Vec<Regex> = placeholder_regex(template, labels).into_iter().collect();
+    if template != DEFAULT_TEMPLATE {
+        out.extend(placeholder_regex(DEFAULT_TEMPLATE, labels));
+    }
+    out
+}
+
+/// A regex for the placeholders `template` renders with one of `labels` (optionally
+/// `Encoded `-prefixed), or `None` when the template has too little literal text to tell a
+/// placeholder from ordinary words, or there are no labels. Text merely framed like the
+/// template (`"Winter-Maple-2024!"` for `"{label}"`) is not a placeholder.
+fn placeholder_regex(template: &str, labels: &[String]) -> Option<Regex> {
     const LABEL: &str = "{label}";
     const SUFFIX: &str = "{suffix}";
+    let mut sorted: Vec<&str> = labels
+        .iter()
+        .map(String::as_str)
+        .filter(|l| !l.is_empty())
+        .collect();
+    if sorted.is_empty() {
+        return None;
+    }
+    // Longest first: the regex alternation takes the first branch that matches.
+    sorted.sort_unstable_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+    sorted.dedup();
+    let alternation = sorted
+        .iter()
+        .map(|l| regex::escape(l))
+        .collect::<Vec<_>>()
+        .join("|");
+    let label_re = format!("(?:{}){{0,1}}(?:{alternation})", regex::escape(ENCODED));
     let mut re = String::new();
     let mut literal = 0usize;
     let mut rest = template;
@@ -749,15 +815,7 @@ fn placeholder_regex(template: &str) -> Option<Regex> {
         literal += rest[..i].chars().filter(|c| !c.is_whitespace()).count();
         if is_label {
             rest = &rest[i + LABEL.len()..];
-            // The label runs up to the first literal character after it.
-            let after = rest.strip_prefix(SUFFIX).unwrap_or(rest);
-            match after.chars().next() {
-                Some(stop) => {
-                    let stop = regex::escape(&stop.to_string());
-                    re.push_str(&format!("[^{stop}\\r\\n]{{1,100}}?"));
-                }
-                None => re.push_str("[^\\s]{1,100}"),
-            }
+            re.push_str(&label_re);
         } else {
             rest = &rest[i + SUFFIX.len()..];
             re.push_str("(?: #[0-9]{1,9})?");

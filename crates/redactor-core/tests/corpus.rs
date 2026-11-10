@@ -428,6 +428,15 @@ fn corpus_gates() {
             if let Some(msg) = rescan_clean(&engine, out, s, doc.pii) {
                 failures.push(format!("{}: {msg}", doc.name));
             }
+            // Every label the engine emits is one it recognises in a placeholder later.
+            for f in &out.findings {
+                if !f.placeholder.is_empty() && !engine.is_placeholder(&f.placeholder) {
+                    failures.push(format!(
+                        "{}: placeholder {:?} is not recognised as one",
+                        doc.name, f.placeholder
+                    ));
+                }
+            }
         }
         pos_rows.push(row);
     }

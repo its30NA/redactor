@@ -1037,6 +1037,11 @@ fn drop_identifiers(text: &str, found: &mut Vec<Found>) {
     });
 }
 
+/// Every label the context engine gives its findings.
+pub(crate) fn labels() -> impl Iterator<Item = &'static str> {
+    lexicon::Label::ALL.into_iter().map(lexicon::Label::as_str)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -20,6 +20,19 @@ pub(crate) enum Label {
 }
 
 impl Label {
+    /// Every label, for the engine's set of placeholder labels.
+    pub(crate) const ALL: [Label; 9] = [
+        Label::Password,
+        Label::Pin,
+        Label::Token,
+        Label::ApiKey,
+        Label::Secret,
+        Label::PrivateKey,
+        Label::Credential,
+        Label::RecoveryPhrase,
+        Label::ConnectionString,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Label::Password => "Password",

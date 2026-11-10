@@ -397,6 +397,19 @@ impl SecretMatcher for SessionMatcher {
         }
         hits
     }
+
+    fn labels(&self) -> Vec<String> {
+        let mut labels: Vec<String> = self
+            .0
+            .read()
+            .entries
+            .iter()
+            .map(|e| e.meta.label.clone())
+            .collect();
+        labels.sort_unstable();
+        labels.dedup();
+        labels
+    }
 }
 
 #[cfg(test)]
@@ -444,6 +457,25 @@ mod tests {
             .unwrap();
         assert_eq!(list[0].label, DEFAULT_LABEL);
         assert_eq!(store.read().entries[0].value.bytes(), secret.as_bytes());
+    }
+
+    /// A placeholder with a session label is earlier output, even under a template of its
+    /// own and a label shaped like a password: scrubbing it again changes nothing.
+    #[test]
+    fn session_labels_are_known_placeholders() {
+        let store = Arc::new(SessionStore::new());
+        let secret = fake_secret(3);
+        store.add(&secret, "Vault-Key-2024x").unwrap();
+        let engine = Engine::new(EngineConfig {
+            template: "<{label}>".into(),
+            ..EngineConfig::default()
+        })
+        .unwrap()
+        .with_matcher(Arc::new(SessionMatcher(store)));
+        let first = engine.scan(&format!("password={secret}\n"), &ScanRequest::default());
+        assert_eq!(first.output, "password=<Vault-Key-2024x>\n");
+        let second = engine.scan(&first.output, &ScanRequest::default());
+        assert_eq!(second.output, first.output, "{:?}", second.findings);
     }
 
     #[test]

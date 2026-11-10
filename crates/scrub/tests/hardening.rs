@@ -392,6 +392,22 @@ fn a_loaded_config_is_named_and_check_warns_about_weakening() {
     assert_eq!(out, fixture);
 }
 
+#[test]
+fn check_warns_about_a_template_of_its_own() {
+    let d = repo();
+    put(
+        d.path(),
+        "redactor.toml",
+        "template = \"<{label}{suffix}>\"\n",
+    );
+    put(d.path(), "ok.txt", "nothing\n");
+    git(d.path(), &["add", "ok.txt"]);
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("lowers detection"), "{err}");
+    assert!(err.contains("template = \"<{label}{suffix}>\""), "{err}");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_world_writable_config_is_refused() {

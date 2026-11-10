@@ -287,3 +287,129 @@ fn guard_still_skips_references_and_config_words() {
         }
     }
 }
+
+fn engine_with_template(template: &str) -> Engine {
+    Engine::new(EngineConfig {
+        template: template.into(),
+        ..EngineConfig::default()
+    })
+    .unwrap()
+}
+
+/// Text framed like the template is not a placeholder unless its label is one the engine
+/// emits: the values inside are redacted.
+#[test]
+fn template_framed_text_is_not_a_placeholder() {
+    let cases = [
+        (
+            "\"{label}\"",
+            "password = \"Winter-Maple-2024!\"\n",
+            &["Winter-Maple-2024!"][..],
+        ),
+        (
+            "<{label}{suffix}>",
+            "<add key=\"DbPassword\" value=\"Tulip-Harbor-91x\" />\n",
+            &["Tulip-Harbor-91x"][..],
+        ),
+        (
+            "[{label}]",
+            "{\"db\": {\"password\": \"Hunter2-Fake-9x\"}, \"keys\": [\"Zq81mXv0pLr3TfK9wQe2Lm\"]}\n",
+            &["Hunter2-Fake-9x", "Zq81mXv0pLr3TfK9wQe2Lm"][..],
+        ),
+        (
+            redactor_core::DEFAULT_TEMPLATE,
+            "note [REDACTED: see password=Hunter2-Fake-9x] end\n",
+            &["Hunter2-Fake-9x"][..],
+        ),
+    ];
+    for (template, text, values) in cases {
+        let out = engine_with_template(template).scan(text, &ScanRequest::default());
+        for v in values {
+            assert!(
+                !out.output.contains(v),
+                "{template}: {v} survives in {}",
+                out.output
+            );
+        }
+    }
+}
+
+/// Real placeholders of a previous run stay protected, whatever the template or style:
+/// scrubbing scrubbed output changes nothing.
+#[test]
+fn scrubbing_scrubbed_output_changes_nothing() {
+    use redactor_core::PlaceholderStyle;
+    let text = "DB_PASSWORD=Orchid-Lantern-42!\n\
+                API_PASSWORD=Velvet-Harbor-77~\n\
+                url=postgres://app:Juniper-Coast-55%@db.example:5432/app\n\
+                blob=cGFzc3dvcmQ9SHVudGVyMi1GYWtlLTl4\n\
+                seen Orchid-Lantern-42! again\n";
+    for template in [
+        redactor_core::DEFAULT_TEMPLATE,
+        "\"{label}\"",
+        "<{label}{suffix}>",
+        "[{label}]",
+        "{{{label}{suffix}}}",
+        "***{label}{suffix}***",
+    ] {
+        for style in [PlaceholderStyle::Labeled, PlaceholderStyle::Generic] {
+            let engine = Engine::new(EngineConfig {
+                template: template.into(),
+                placeholder: style,
+                ..EngineConfig::default()
+            })
+            .unwrap();
+            let first = engine.scan(text, &ScanRequest::default());
+            assert!(
+                first.findings.len() >= 4,
+                "{template} {style:?}: {}",
+                first.output
+            );
+            let second = engine.scan(&first.output, &ScanRequest::default());
+            assert_eq!(
+                second.output, first.output,
+                "{template} {style:?}: {:?}",
+                second.findings
+            );
+            assert!(second.findings.is_empty(), "{template} {style:?}");
+        }
+    }
+}
+
+/// A watchlist with user-chosen labels, which it lists.
+struct Labeled(&'static str, &'static str);
+
+impl SecretMatcher for Labeled {
+    fn find(&self, text: &str) -> Vec<MatcherHit> {
+        text.match_indices(self.0)
+            .map(|(i, m)| MatcherHit {
+                start: i,
+                end: i + m.len(),
+                label: self.1.into(),
+            })
+            .collect()
+    }
+
+    fn labels(&self) -> Vec<String> {
+        vec![self.1.into()]
+    }
+}
+
+/// A matcher's own labels count as known labels, even one shaped like a password.
+#[test]
+fn matcher_labels_are_known_placeholders() {
+    let engine = engine_with_template("<{label}>")
+        .with_matcher(Arc::new(Labeled("Plum-tree47", "Vault-Key-2024x")));
+    let first = engine.scan(
+        "password=Plum-tree47
+",
+        &ScanRequest::default(),
+    );
+    assert_eq!(first.output, "password=<Vault-Key-2024x>\n");
+    let second = engine.scan(&first.output, &ScanRequest::default());
+    assert_eq!(second.output, first.output, "{:?}", second.findings);
+    assert!(second.findings.is_empty(), "{:?}", second.findings);
+    // Without the matcher the label is ordinary text in a password field.
+    let bare = engine_with_template("<{label}>").scan(&first.output, &ScanRequest::default());
+    assert_ne!(bare.output, first.output);
+}

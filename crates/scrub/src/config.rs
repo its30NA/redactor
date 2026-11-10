@@ -17,15 +17,15 @@
 //! - An allowlist entry that matches the empty string, a large share of random secret-shaped
 //!   values generated at run time, or every random token of one provider's format (`^ghp_`),
 //!   is refused as a catch-all.
-//! - [`Config::weakening`] names every allowlist entry and disabled rule (capped), for
-//!   `scrub check` to print on every run; `check` refuses a config that leaves it unable to
-//!   detect common secrets at all.
+//! - [`Config::weakening`] names every allowlist entry and disabled rule (capped) and a
+//!   template of its own, for `scrub check` to print on every run; `check` refuses a config
+//!   that leaves it unable to detect common secrets at all.
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use redactor_core::{CustomRule, EngineConfig, PlaceholderStyle, Sensitivity};
+use redactor_core::{CustomRule, EngineConfig, PlaceholderStyle, Sensitivity, DEFAULT_TEMPLATE};
 use serde::Deserialize;
 
 /// Names searched, in order, in each directory from the working directory upwards.
@@ -176,6 +176,11 @@ impl Config {
         }
         if raw.sensitivity == Some(Sensitivity::Relaxed) {
             weakening.push("sensitivity = \"relaxed\"".to_string());
+        }
+        if let Some(t) = raw.template.as_deref().filter(|t| *t != DEFAULT_TEMPLATE) {
+            weakening.push(format!(
+                "template = {t:?} (text shaped like its placeholders is skipped)"
+            ));
         }
 
         let mut engine = EngineConfig::default();
@@ -512,6 +517,14 @@ mod tests {
             ]
         );
         let c = Config::parse("sensitivity = \"paranoid\"\npii = true").unwrap();
+        assert!(c.weakening.is_empty());
+        // A template of its own: text framed like its placeholders is skipped as output.
+        let c = Config::parse("template = \"<{label}{suffix}>\"").unwrap();
+        assert_eq!(
+            c.weakening,
+            ["template = \"<{label}{suffix}>\" (text shaped like its placeholders is skipped)"]
+        );
+        let c = Config::parse("template = \"[REDACTED: {label}{suffix}]\"").unwrap();
         assert!(c.weakening.is_empty());
         // Long lists are named up to a cap.
         let ids: Vec<String> = (0..13).map(|i| format!("\"r{i}\"")).collect();
