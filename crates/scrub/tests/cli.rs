@@ -1056,3 +1056,22 @@ fn terms_come_from_the_config() {
     let (out, _, _) = run(d.path(), &["-c", &cfg], "ask Contoso about it");
     assert!(!out.contains("Contoso"), "{out}");
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_full_disk_on_stdout_is_an_error() {
+    let d = tmp();
+    let f = write(d.path(), "in.txt", &format!("DB_PASSWORD={}\n", pw()));
+    let full = fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let out = std::process::Command::new(assert_cmd::cargo::cargo_bin("scrub"))
+        .current_dir(d.path())
+        .arg(&f)
+        .stdout(full)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot write the output"));
+}

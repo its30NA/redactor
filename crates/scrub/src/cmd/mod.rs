@@ -22,7 +22,7 @@ pub fn dispatch(cli: Cli) -> Result<i32, CliError> {
         Some(Command::InstallHook(args)) => hook::run(&args),
         Some(Command::Clipboard(args)) => clipboard::run(&args),
         Some(Command::Detectors(args)) => {
-            detectors::run(&args);
+            detectors::run(&args)?;
             Ok(0)
         }
         Some(Command::Version) => {
@@ -30,7 +30,7 @@ pub fn dispatch(cli: Cli) -> Result<i32, CliError> {
             crate::out(&format!(
                 "scrub {} (engine {ENGINE_VERSION}, {rules} rules)\n",
                 env!("CARGO_PKG_VERSION")
-            ));
+            ))?;
             Ok(0)
         }
     }

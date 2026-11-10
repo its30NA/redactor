@@ -94,20 +94,56 @@ pub fn panic_line(location: Option<&std::panic::Location<'_>>) -> String {
     }
 }
 
-/// Writes to stdout, ignoring a closed pipe (`scrub file | head`).
-pub fn out(text: &str) {
-    out_bytes(text.as_bytes());
+/// Writes to stdout, ignoring a closed pipe (`scrub file | head`). Any other write error (a
+/// full disk) is an error with exit code 2: the output is incomplete.
+pub fn out(text: &str) -> Result<(), CliError> {
+    out_bytes(text.as_bytes())
 }
 
 /// [`out`] for text already encoded (UTF-16 output of a UTF-16 input).
-pub fn out_bytes(bytes: &[u8]) {
+pub fn out_bytes(bytes: &[u8]) -> Result<(), CliError> {
     let mut stdout = std::io::stdout().lock();
-    let _ = stdout.write_all(bytes);
-    let _ = stdout.flush();
+    write_ignoring_closed_pipe(&mut stdout, bytes)
+}
+
+fn write_ignoring_closed_pipe(w: &mut impl Write, bytes: &[u8]) -> Result<(), CliError> {
+    match w.write_all(bytes).and_then(|()| w.flush()) {
+        Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
+            Err(CliError::new(2, format!("cannot write the output: {e}")))
+        }
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    struct Failing(std::io::ErrorKind);
+
+    impl std::io::Write for Failing {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(self.0.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn only_a_closed_pipe_is_ignored_on_output() {
+        use std::io::ErrorKind;
+        assert!(
+            super::write_ignoring_closed_pipe(&mut Failing(ErrorKind::BrokenPipe), b"x").is_ok()
+        );
+        let e = super::write_ignoring_closed_pipe(&mut Failing(ErrorKind::StorageFull), b"x")
+            .unwrap_err();
+        assert_eq!(e.code, 2);
+        assert!(
+            e.message.contains("cannot write the output"),
+            "{}",
+            e.message
+        );
+    }
+
     #[test]
     fn the_panic_line_carries_the_location_and_nothing_else() {
         let here = std::panic::Location::caller();

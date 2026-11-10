@@ -84,9 +84,9 @@ pub fn run(args: &ScanArgs) -> Result<i32, CliError> {
                 errors = true;
                 continue;
             }
-            out(&format!("fixed  {}  ({n}: {kinds})\n", path.display()));
+            out(&format!("fixed  {}  ({n}: {kinds})\n", path.display()))?;
         } else {
-            out(&format!("{}: {n} finding(s) — {kinds}\n", path.display()));
+            out(&format!("{}: {n} finding(s) — {kinds}\n", path.display()))?;
         }
         total_files += 1;
         total_findings += n;

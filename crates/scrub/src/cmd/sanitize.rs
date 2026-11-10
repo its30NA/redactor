@@ -71,7 +71,7 @@ pub fn run(args: &SanitizeArgs) -> Result<i32, CliError> {
         resp.stats.ms = (elapsed_ms * 10.0).round() / 10.0;
         let json = serde_json::to_string(&resp)
             .map_err(|e| CliError::new(2, format!("cannot encode JSON: {e}")))?;
-        out(&format!("{json}\n"));
+        out(&format!("{json}\n"))?;
     } else if args.diff {
         let diff = TextDiff::from_lines(text.as_str(), outcome.output.as_str());
         out(&diff
@@ -80,9 +80,9 @@ pub fn run(args: &SanitizeArgs) -> Result<i32, CliError> {
                 &format!("{name} (original)"),
                 &format!("{name} (sanitized)"),
             )
-            .to_string());
+            .to_string())?;
     } else {
-        out_bytes(&text::encode(&outcome.output, encoding));
+        out_bytes(&text::encode(&outcome.output, encoding))?;
     }
 
     if args.preview {

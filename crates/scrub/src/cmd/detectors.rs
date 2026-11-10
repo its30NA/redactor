@@ -5,13 +5,13 @@ use redactor_core::{rule_infos, Family, RuleInfo};
 use crate::cli::DetectorsArgs;
 use crate::out;
 
-pub fn run(args: &DetectorsArgs) {
+pub fn run(args: &DetectorsArgs) -> Result<(), crate::CliError> {
     let infos = rule_infos();
     out(&if args.markdown {
         markdown(&infos)
     } else {
         plain(&infos)
-    });
+    })
 }
 
 fn plain(infos: &[RuleInfo]) -> String {
