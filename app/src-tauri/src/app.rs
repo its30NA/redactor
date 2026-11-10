@@ -306,9 +306,21 @@ fn code(k: Key) -> Code {
 /// Validates, applies and stores new settings. The hotkey changes first: if another app holds
 /// the new key, the old one stays registered and nothing else changes.
 pub fn apply_settings(app: &AppHandle, incoming: Settings) -> Result<Settings, String> {
+    change_settings(app, |_| incoming)
+}
+
+/// Every settings change goes through here: `change` gets the current settings and returns
+/// the new ones. One lock is held from reading the current settings to storing the new ones,
+/// so changes from the UI and the tray never interleave. Never call this on the main thread:
+/// registering a hotkey waits for the main thread while holding the lock.
+fn change_settings(
+    app: &AppHandle,
+    change: impl FnOnce(&Settings) -> Settings,
+) -> Result<Settings, String> {
     let st = state::state(app);
-    let next = incoming.validated().map_err(|e| e.to_string())?;
+    let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
     let prev = st.settings();
+    let next = change(&prev).validated().map_err(|e| e.to_string())?;
 
     if next.hotkey != prev.hotkey {
         let new_hk = Hotkey::parse(&next.hotkey).map_err(|e| e.to_string())?;
@@ -334,7 +346,8 @@ pub fn apply_settings(app: &AppHandle, incoming: Settings) -> Result<Settings, S
         tray::set_shield_checked(app, next.content_protection);
     }
     if st.engines.set_profile(Profile::of(&next)) {
-        // Build the new engine in the background; scans use the old one until it is ready.
+        // Build the new engine in the background. The old engines are dropped now, so a scan
+        // that comes first builds the new one itself.
         let warm = st.clone();
         let strip = next.strip_invisible;
         std::thread::spawn(move || {
@@ -345,12 +358,15 @@ pub fn apply_settings(app: &AppHandle, incoming: Settings) -> Result<Settings, S
     Ok(next)
 }
 
-/// The tray's shield toggle: same path as Settings, then tell the UI.
+/// The tray's shield toggle: same path as Settings, then tell the UI. The toggle reads the
+/// current value under the same lock that stores the new one, so quick clicks never get lost.
 pub fn toggle_shield(app: &AppHandle) {
-    let st = state::state(app);
-    let mut s = st.settings();
-    s.content_protection = !s.content_protection;
-    if let Ok(applied) = apply_settings(app, s) {
+    let toggled = change_settings(app, |prev| {
+        let mut s = prev.clone();
+        s.content_protection = !s.content_protection;
+        s
+    });
+    if let Ok(applied) = toggled {
         let _ = app.emit("settings-changed", applied);
     }
 }

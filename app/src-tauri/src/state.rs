@@ -20,6 +20,8 @@ pub struct AppState {
     pub tray_notice_shown: AtomicBool,
     /// Serializes clipboard scrubs (the hotkey can repeat).
     pub scrub_lock: Mutex<()>,
+    /// Held across a whole settings change (read, apply, store), so two changes never interleave.
+    pub settings_change: Mutex<()>,
 }
 
 impl AppState {
@@ -33,6 +35,7 @@ impl AppState {
             settings_file,
             tray_notice_shown: AtomicBool::new(false),
             scrub_lock: Mutex::new(()),
+            settings_change: Mutex::new(()),
         }
     }
 

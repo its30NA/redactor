@@ -42,7 +42,11 @@ pub fn build(handle: &AppHandle, shield_on: bool) -> tauri::Result<()> {
                     app::notify(&app, &r.notice());
                 });
             }
-            "shield" => app::toggle_shield(app),
+            "shield" => {
+                // Off the main thread: a settings change may wait for it while holding its lock.
+                let app = app.clone();
+                std::thread::spawn(move || app::toggle_shield(&app));
+            }
             "wipe" => state::wipe(app, WipeReason::Tray),
             "quit" => app::quit(app),
             _ => {}
