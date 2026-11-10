@@ -193,6 +193,8 @@ impl SessionStore {
         if value.len() > MAX_VALUE_BYTES {
             return Err(SessionError::TooLong);
         }
+        // Control characters go first, so the checks below see the label as it will be stored.
+        let label: String = label.chars().filter(|c| !c.is_control()).collect();
         let label = label.trim();
         let label = if label.is_empty() {
             DEFAULT_LABEL
@@ -206,7 +208,7 @@ impl SessionStore {
         if lowercase_zeroizing(&normalize(label)).contains(lowercase_zeroizing(&value).as_str()) {
             return Err(SessionError::LabelHasValue);
         }
-        let label: String = label.chars().filter(|c| !c.is_control()).collect();
+        let label = label.to_string();
         let mut g = self.write();
         if !g
             .entries
@@ -415,6 +417,10 @@ mod tests {
         assert_eq!(store.add(&secret, &label), Err(SessionError::LabelHasValue));
         let long = "L".repeat(MAX_LABEL + 1);
         assert_eq!(store.add(&secret, &long), Err(SessionError::LabelTooLong));
+        // Control characters are stripped from the label before the check, not after.
+        let split = format!("db {}\u{1}{}", &secret[..4], &secret[4..]);
+        assert_eq!(store.add(&secret, &split), Err(SessionError::LabelHasValue));
+        assert!(store.is_empty());
     }
 
     #[test]
