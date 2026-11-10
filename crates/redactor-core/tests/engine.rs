@@ -230,3 +230,60 @@ fn different_values_keep_their_numbers() {
         "{b:?}"
     );
 }
+
+fn engine_at(sensitivity: redactor_core::Sensitivity) -> Engine {
+    Engine::new(EngineConfig {
+        sensitivity,
+        ..EngineConfig::default()
+    })
+    .unwrap()
+}
+
+/// A value that only looks like a variable, a template or a config path once its digits are
+/// ignored is a password: the guard shortcuts do not throw it away, at any sensitivity.
+#[test]
+fn guard_keeps_values_with_mixed_in_digits() {
+    use redactor_core::Sensitivity;
+    let cases = [
+        ("password=$ummer2024x", "$ummer2024x"),
+        ("DB_PASS: $tr0ngPassw0rd", "$tr0ngPassw0rd"),
+        ("password=Tr0ub4dor-here", "Tr0ub4dor-here"),
+        ("password=your-Majesty-1982x", "your-Majesty-1982x"),
+        ("secret=config.Zq81mXv0pLr3", "Zq81mXv0pLr3"),
+        ("password=%Tgb6yhn7%", "Tgb6yhn7"),
+    ];
+    for s in [Sensitivity::Balanced, Sensitivity::Paranoid] {
+        for (text, value) in cases {
+            let out = engine_at(s).scan(text, &ScanRequest::default());
+            assert!(
+                !out.output.contains(value),
+                "{s:?}: {text} -> {}",
+                out.output
+            );
+        }
+    }
+}
+
+/// Real variable references, templates and plain config words stay untouched.
+#[test]
+fn guard_still_skips_references_and_config_words() {
+    use redactor_core::Sensitivity;
+    for s in [Sensitivity::Balanced, Sensitivity::Paranoid] {
+        for text in [
+            "password=$DB_PASSWORD",
+            "password=$db_password",
+            "password=${DB_PASSWORD}",
+            "password=${S3_SECRET_V2}",
+            "password=%DB_PASS%",
+            "password=$env:API_KEY",
+            "secret=config.db_password",
+            "secret=settings.oauth2.client_secret",
+            "api_key=process.env.API_KEY_V2",
+            "password=your_password_here",
+            "password={{ secrets.db_pass }}",
+        ] {
+            let out = engine_at(s).scan(text, &ScanRequest::default());
+            assert_eq!(out.output, text, "{s:?}: {:?}", out.findings);
+        }
+    }
+}

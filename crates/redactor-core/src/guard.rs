@@ -49,6 +49,12 @@ pub fn is_placeholder(value: &str) -> bool {
     if v.starts_with("[REDACTED") {
         return true;
     }
+    // The shortcuts below are for plain words. Digits mixed into the letters
+    // (`$ummer2024x`, `Tr0ub4dor-here`, `config.Zq81mXv0pLr3`) make a password
+    // that merely looks like a variable, a template or a config path.
+    if mixed_in_digits(v) {
+        return false;
+    }
     let lower = v.to_ascii_lowercase();
     if PLACEHOLDER_WORDS.contains(&lower.as_str()) {
         return true;
@@ -72,21 +78,13 @@ pub fn is_placeholder(value: &str) -> bool {
     {
         return true;
     }
-    // $VAR / $env:VAR / $db_password / $Password. A capitalized name with digits
-    // (`$CedarQuill37`) is how a password starts with `$`, not how a variable is named.
+    // $VAR / $env:VAR / $db_password / $Password / $API_KEY_V2.
     if let Some(rest) = v.strip_prefix('$') {
-        let env = rest.strip_prefix("env:");
-        let rest = env.unwrap_or(rest);
+        let rest = rest.strip_prefix("env:").unwrap_or(rest);
         let b = rest.as_bytes();
-        let variable = env.is_some()
-            || !b.iter().any(|c| c.is_ascii_lowercase())
-            || b.first()
-                .is_some_and(|c| c.is_ascii_lowercase() || *c == b'_')
-            || !b.iter().any(|c| c.is_ascii_digit());
         if !rest.is_empty()
             && b.iter().all(|c| c.is_ascii_alphanumeric() || *c == b'_')
             && !b[0].is_ascii_digit()
-            && variable
         {
             return true;
         }
@@ -118,6 +116,20 @@ pub fn is_placeholder(value: &str) -> bool {
     false
 }
 
+/// True when an alphanumeric run of `v` mixes digits into its letters: a letter after a
+/// digit (`2024x`, `b6y`) or digits in a mixed-case word (`CedarQuill37`). Identifier
+/// shapes stay plain: `API_KEY_V2`, `S3_BUCKET`, `oauth2`, `sha256`.
+pub(crate) fn mixed_in_digits(v: &str) -> bool {
+    v.split(|c: char| !c.is_ascii_alphanumeric()).any(|run| {
+        let b = run.as_bytes();
+        b.iter().any(u8::is_ascii_digit)
+            && (b
+                .windows(2)
+                .any(|w| w[0].is_ascii_digit() && w[1].is_ascii_alphabetic())
+                || b.iter().any(u8::is_ascii_uppercase) && b.iter().any(u8::is_ascii_lowercase))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +156,9 @@ mod tests {
             "null",
             "[REDACTED: Password]",
             "%PASSWORD%",
+            "${S3_SECRET_V2}",
+            "$API_KEY_V2",
+            "settings.oauth2.client_secret",
         ] {
             assert!(is_placeholder(v), "{v}");
         }
@@ -159,6 +174,13 @@ mod tests {
             "$CedarQuill37",
             "%xx",
             "envoy",
+            "$ummer2024x",
+            "$tr0ngPassw0rd",
+            "Tr0ub4dor-here",
+            "your-Majesty-1982x",
+            "config.Zq81mXv0pLr3",
+            "%Tgb6yhn7%",
+            "${Hunter2Fake9x}",
         ] {
             assert!(!is_placeholder(v), "{v}");
         }

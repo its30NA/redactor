@@ -22,7 +22,7 @@ use aho_corasick::{AhoCorasick, MatchKind};
 
 use crate::detector::Detector;
 use crate::finding::{Candidate, Source};
-use crate::guard::is_placeholder;
+use crate::guard::{is_placeholder, mixed_in_digits};
 use crate::rules::is_filler;
 
 #[allow(unused_imports)]
@@ -177,7 +177,9 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         {
             return None;
         }
-        if let Some(segs) = member_path(v) {
+        // A member path of plain words is code; a segment with digits mixed into its
+        // letters (`config.Zq81mXv0pLr3`) is a generated value behind a dotted prefix.
+        if let Some(segs) = member_path(v).filter(|s| !s[1..].iter().any(|g| mixed_in_digits(g))) {
             let shares = segs.iter().any(|s| {
                 split_key(s)
                     .iter()
