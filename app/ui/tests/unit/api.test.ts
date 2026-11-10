@@ -75,7 +75,6 @@ const settings: Settings = {
 /** Every IPC command, the call that exercises it, and the IPC payload it must send. */
 const cases: { fn: string; run: () => Promise<unknown>; cmd: string; args: Record<string, unknown> }[] = [
   { fn: 'scan', run: () => api.scan(req), cmd: 'scan', args: { req } },
-  { fn: 'scrubClipboard', run: () => api.scrubClipboard(), cmd: 'scrub_clipboard', args: {} },
   { fn: 'readClipboard', run: () => api.readClipboard(), cmd: 'read_clipboard', args: {} },
   { fn: 'copyText', run: () => api.copyText('safe'), cmd: 'copy_text', args: { text: 'safe' } },
   { fn: 'openTextFile', run: () => api.openTextFile(), cmd: 'open_text_file', args: {} },
@@ -127,7 +126,6 @@ describe('api', () => {
         'read_clipboard',
         'save_text_file',
         'scan',
-        'scrub_clipboard',
         'set_settings',
         'session_add',
         'session_clear',

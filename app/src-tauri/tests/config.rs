@@ -69,7 +69,7 @@ fn capabilities_only_whitelisted_commands() {
             assert!(!p.contains(banned), "{p} must not be granted");
         }
     }
-    assert_eq!(COMMANDS.len(), 14, "the IPC contract has 14 commands");
+    assert_eq!(COMMANDS.len(), 13, "the IPC contract has 13 commands");
 }
 
 #[test]

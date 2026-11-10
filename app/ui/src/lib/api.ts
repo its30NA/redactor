@@ -12,7 +12,6 @@ import type {
   AppEventName,
   AppEvents,
   AppInfo,
-  ClipboardScrub,
   OpenedFile,
   ScanRequest,
   ScanResponse,
@@ -23,7 +22,6 @@ import type {
 /** Whitelisted command names, as registered by `app/src-tauri` (and listed in its capabilities). */
 export const COMMANDS = {
   scan: 'scan',
-  scrubClipboard: 'scrub_clipboard',
   readClipboard: 'read_clipboard',
   copyText: 'copy_text',
   openTextFile: 'open_text_file',
@@ -42,9 +40,6 @@ export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
 
 /** Scan text. Input over 20 MiB comes back unscanned with an `inputTooLarge` warning. */
 export const scan = (req: ScanRequest): Promise<ScanResponse> => invoke(COMMANDS.scan, { req });
-
-/** Scrub the clipboard in place (also bound to the global hotkey in the shell). */
-export const scrubClipboard = (): Promise<ClipboardScrub> => invoke(COMMANDS.scrubClipboard);
 
 /** Clipboard text, or null when it is empty, not text, or marked by a password manager. */
 export const readClipboard = (): Promise<string | null> => invoke(COMMANDS.readClipboard);

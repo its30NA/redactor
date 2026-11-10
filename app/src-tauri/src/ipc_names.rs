@@ -7,7 +7,6 @@
 /// Every command the UI may call.
 pub const COMMANDS: &[&str] = &[
     "scan",
-    "scrub_clipboard",
     "read_clipboard",
     "copy_text",
     "open_text_file",

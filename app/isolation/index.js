@@ -4,7 +4,7 @@
 //
 // The hook gets the message exactly as Tauri 2 builds it (scripts/core.js `invoke` and ipc.js,
 // Tauri 2.12): { cmd, callback, error, payload, options }. It lets through only:
-//   - the app's 14 commands (app/ui/src/lib/api.ts, app/src-tauri/src/ipc_names.rs), each with
+//   - the app's 13 commands (app/ui/src/lib/api.ts, app/src-tauri/src/ipc_names.rs), each with
 //     its exact argument names, types and size limits;
 //   - the plugin commands the UI really uses: event listen/unlisten for the app's events and
 //     the window's resize event, and the title bar's window controls for the "main" window.
@@ -82,7 +82,6 @@
   /** Command name -> check of its arguments. */
   const COMMANDS = {
     scan: exactly({ req: scanRequest }),
-    scrub_clipboard: none,
     read_clipboard: none,
     copy_text: exactly({ text: isStr(MAX_OUTPUT) }),
     open_text_file: none,

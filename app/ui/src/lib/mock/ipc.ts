@@ -291,8 +291,6 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
           await delay(latency);
           return scanFor(args.req as ScanRequest, known());
         }
-        case COMMANDS.scrubClipboard:
-          return clipboard ? fixture('clipboard-cleaned') : { ...fixture('clipboard-protected'), status: 'empty' };
         case COMMANDS.readClipboard:
           return clipboard;
         case COMMANDS.copyText:

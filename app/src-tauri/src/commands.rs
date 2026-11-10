@@ -37,13 +37,6 @@ pub async fn scan(state: State<'_, Shared>, req: ScanRequestIn) -> Res<ScanRespo
 }
 
 #[tauri::command]
-pub async fn scrub_clipboard(app: AppHandle, state: State<'_, Shared>) -> Res<ClipboardScrub> {
-    state.wiper.touch(false);
-    let result = blocking(move || app::scrub_clipboard_now(&app)).await?;
-    Ok(result)
-}
-
-#[tauri::command]
 pub async fn read_clipboard(state: State<'_, Shared>) -> Res<Option<String>> {
     state.wiper.touch(true);
     blocking(clipboard::read_text_for_ui)

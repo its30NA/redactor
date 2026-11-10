@@ -118,7 +118,6 @@ const settings: Settings = {
 async function everyUiCall(): Promise<void> {
   await api.scan(req);
   await api.scan({ ...req, keep: [], manual: [] });
-  await api.scrubClipboard();
   await api.readClipboard();
   await api.copyText('safe text');
   await api.openTextFile();
@@ -161,7 +160,7 @@ describe('the isolation hook', () => {
   test('lets every call the UI makes through, unchanged', async () => {
     await everyUiCall();
     const cmds = new Set(sent.map((m) => m.cmd));
-    // All 14 app commands and the plugin commands are exercised.
+    // All 13 app commands and the plugin commands are exercised.
     for (const c of Object.values(api.COMMANDS)) expect(cmds.has(c), c).toBe(true);
     for (const m of sent) {
       expect(Object.keys(m).sort()).toEqual(['callback', 'cmd', 'error', 'options', 'payload']);
@@ -196,6 +195,8 @@ describe('the isolation hook', () => {
       '__proto__',
       'toString',
       'hasOwnProperty',
+      // The hotkey and the tray scrub the clipboard inside the shell; the UI never asks.
+      'scrub_clipboard',
     ]) {
       rejected({ ...base, cmd, payload: {} });
     }

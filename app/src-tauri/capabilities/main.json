@@ -5,7 +5,6 @@
   "windows": ["main"],
   "permissions": [
     "allow-scan",
-    "allow-scrub-clipboard",
     "allow-read-clipboard",
     "allow-copy-text",
     "allow-open-text-file",

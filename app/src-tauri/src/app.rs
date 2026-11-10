@@ -55,7 +55,6 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             commands::scan,
-            commands::scrub_clipboard,
             commands::read_clipboard,
             commands::copy_text,
             commands::open_text_file,
