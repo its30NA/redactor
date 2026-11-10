@@ -1075,3 +1075,51 @@ fn a_full_disk_on_stdout_is_an_error() {
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("cannot write the output"));
 }
+
+#[test]
+fn scan_names_pruned_directories_and_scans_editor_settings() {
+    let d = tmp();
+    let key = openai(&mut Gen::named("pruned"));
+    write(d.path(), "node_modules/pkg/index.js", &format!("k={key}\n"));
+    write(d.path(), "build/out.txt", &format!("k={key}\n"));
+    write(d.path(), ".vscode/settings.json", &format!("k={key}\n"));
+    write(d.path(), ".idea/workspace.xml", &format!("k={key}\n"));
+    let (out, err, code) = run(d.path(), &["scan", "."], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(
+        out.contains("settings.json") && out.contains("workspace.xml"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("node_modules") && !out.contains("build"),
+        "{out}"
+    );
+    let skipped = |dir: &str| {
+        err.lines()
+            .any(|l| l.starts_with("skipped  ") && l.contains(&format!("{dir}  (")))
+    };
+    assert!(skipped("node_modules") && skipped("build"), "{err}");
+    // Named explicitly, a pruned directory is scanned.
+    let (out, _, code) = run(d.path(), &["scan", "node_modules"], "");
+    assert_eq!(code, 1);
+    assert!(out.contains("index.js"), "{out}");
+}
+
+#[cfg(unix)]
+#[test]
+fn scan_reports_an_unreadable_directory() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = tmp();
+    write(d.path(), "locked/a.env", "x=1\n");
+    let locked = d.path().join("locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read_dir(&locked).is_ok() {
+        // Running as root: permissions do not apply.
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+    let (_, err, code) = run(d.path(), &["scan", "."], "");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("cannot read ./locked"), "{err}");
+}

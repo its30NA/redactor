@@ -13,23 +13,36 @@ use std::path::{Path, PathBuf};
 
 use redactor_wire::text::{self, NotText, TextEncoding};
 
-/// Directories never worth scanning: noise, dependencies, VCS internals.
-pub const SKIP_DIRS: [&str; 14] = [
-    ".git",
-    ".hg",
-    ".svn",
-    "node_modules",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".pytest_cache",
-    "dist",
-    "build",
-    ".idea",
-    ".vscode",
+/// Directories pruned while walking, with the reason printed in their `skipped` line: VCS
+/// internals, dependencies, caches and build output. Editor settings (`.vscode`, `.idea`) are
+/// scanned: they often hold credentials. A pruned directory named on the command line is
+/// scanned.
+pub const SKIP_DIRS: [(&str, &str); 12] = [
+    (".git", "version control data"),
+    (".hg", "version control data"),
+    (".svn", "version control data"),
+    ("node_modules", "dependencies"),
+    (".venv", "dependencies"),
+    ("venv", "dependencies"),
+    ("__pycache__", "cache"),
+    (".mypy_cache", "cache"),
+    (".ruff_cache", "cache"),
+    (".pytest_cache", "cache"),
+    ("dist", "build output"),
+    ("build", "build output"),
 ];
+
+/// What a walk found.
+#[derive(Debug, Default)]
+pub struct Collected {
+    pub files: Vec<PathBuf>,
+    /// Named paths that do not exist.
+    pub missing: Vec<PathBuf>,
+    /// Directories not descended into, and why.
+    pub pruned: Vec<(PathBuf, &'static str)>,
+    /// Directories or entries that could not be read, and the error.
+    pub unreadable: Vec<(PathBuf, String)>,
+}
 
 /// Files above this size are skipped.
 pub const MAX_BYTES: u64 = 5 * 1024 * 1024;
@@ -200,40 +213,59 @@ pub fn head_is_binary(head: &[u8]) -> bool {
     classify(even, true) == Decoded::Skip(Skip::Binary)
 }
 
-/// The files to scan under `paths`, in a stable order, and the paths that do not exist.
-pub fn collect(paths: &[PathBuf], recursive: bool) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let mut files = Vec::new();
-    let mut missing = Vec::new();
+/// The files to scan under `paths`, in a stable order, with what was left out. A path named
+/// here is always walked, even when its name is in [`SKIP_DIRS`].
+pub fn collect(paths: &[PathBuf], recursive: bool) -> Collected {
+    let mut c = Collected::default();
     for path in paths {
         if path.is_file() {
-            files.push(path.clone());
+            c.files.push(path.clone());
         } else if path.is_dir() {
-            walk(path, recursive, &mut files);
+            walk(path, recursive, &mut c);
         } else {
-            missing.push(path.clone());
+            c.missing.push(path.clone());
         }
     }
-    (files, missing)
+    c
 }
 
-fn walk(dir: &Path, recursive: bool, out: &mut Vec<PathBuf>) {
-    let Ok(read) = fs::read_dir(dir) else { return };
-    let mut entries: Vec<_> = read.filter_map(Result::ok).collect();
+fn walk(dir: &Path, recursive: bool, c: &mut Collected) {
+    let read = match fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(e) => {
+            c.unreadable.push((dir.to_path_buf(), e.to_string()));
+            return;
+        }
+    };
+    let mut entries = Vec::new();
+    for entry in read {
+        match entry {
+            Ok(e) => entries.push(e),
+            Err(e) => c.unreadable.push((dir.to_path_buf(), e.to_string())),
+        }
+    }
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
         let path = entry.path();
+        let kind = match entry.file_type() {
+            Ok(k) => k,
+            Err(e) => {
+                c.unreadable.push((path, e.to_string()));
+                continue;
+            }
+        };
         if kind.is_file() {
-            out.push(path);
+            c.files.push(path);
         } else if kind.is_dir() && recursive {
-            let skip = entry
-                .file_name()
-                .to_str()
-                .is_some_and(|n| SKIP_DIRS.contains(&n));
-            if !skip {
-                walk(&path, recursive, out);
+            let pruned = entry.file_name().to_str().and_then(|n| {
+                SKIP_DIRS
+                    .iter()
+                    .find(|(name, _)| *name == n)
+                    .map(|(_, why)| *why)
+            });
+            match pruned {
+                Some(why) => c.pruned.push((path, why)),
+                None => walk(&path, recursive, c),
             }
         }
     }
@@ -509,24 +541,36 @@ mod tests {
             "src/c.txt",
             "node_modules/x.js",
             ".git/config",
+            ".vscode/settings.json",
         ] {
             let f = d.path().join(p);
             fs::create_dir_all(f.parent().unwrap()).unwrap();
             fs::write(f, "x").unwrap();
         }
-        let (files, missing) = collect(&[d.path().to_path_buf()], true);
-        let names: Vec<_> = files
-            .iter()
-            .map(|f| {
-                f.strip_prefix(d.path())
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/")
-            })
-            .collect();
-        assert_eq!(names, ["a.txt", "b.txt", "src/c.txt"]);
-        assert!(missing.is_empty());
-        let (flat, _) = collect(&[d.path().to_path_buf()], false);
-        assert_eq!(flat.len(), 2);
+        let rel = |f: &PathBuf| {
+            f.strip_prefix(d.path())
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        };
+        let c = collect(&[d.path().to_path_buf()], true);
+        let names: Vec<_> = c.files.iter().map(rel).collect();
+        assert_eq!(
+            names,
+            [".vscode/settings.json", "a.txt", "b.txt", "src/c.txt"]
+        );
+        assert!(c.missing.is_empty() && c.unreadable.is_empty());
+        let pruned: Vec<_> = c.pruned.iter().map(|(p, why)| (rel(p), *why)).collect();
+        assert_eq!(
+            pruned,
+            [
+                (".git".to_string(), "version control data"),
+                ("node_modules".to_string(), "dependencies")
+            ]
+        );
+        assert_eq!(collect(&[d.path().to_path_buf()], false).files.len(), 2);
+        // Named on the command line, a pruned directory is scanned.
+        let named = collect(&[d.path().join("node_modules")], true);
+        assert_eq!(named.files.len(), 1);
     }
 }

@@ -19,15 +19,23 @@ pub fn run(args: &ScanArgs) -> Result<i32, CliError> {
     } else {
         args.paths.clone()
     };
-    let (files, missing) = collect(&paths, !args.no_recursive);
+    let found = collect(&paths, !args.no_recursive);
+    let files = found.files;
 
     let mut errors = false;
-    for path in &missing {
+    for path in &found.missing {
         eprintln!(
             "scrub: cannot read {}: no such file or directory",
             path.display()
         );
         errors = true;
+    }
+    for (path, e) in &found.unreadable {
+        eprintln!("scrub: cannot read {}: {e}", path.display());
+        errors = true;
+    }
+    for (path, why) in &found.pruned {
+        eprintln!("skipped  {}  ({why}; name it to scan it)", path.display());
     }
 
     let (mut total_files, mut total_findings, mut unfixed) = (0usize, 0usize, 0usize);
