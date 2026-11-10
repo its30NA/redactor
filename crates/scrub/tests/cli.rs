@@ -1123,3 +1123,27 @@ fn scan_reports_an_unreadable_directory() {
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("cannot read ./locked"), "{err}");
 }
+
+#[cfg(unix)]
+#[test]
+fn install_hook_never_writes_through_a_symlink() {
+    let d = tmp();
+    git(d.path(), &["init", "-q"]);
+    let outside = tmp();
+    let target = outside.path().join("planted");
+    let hook = d.path().join(".git/hooks/pre-commit");
+    fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, &hook).unwrap(); // dangling
+    let (_, err, code) = run(d.path(), &["install-hook"], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("is a symbolic link"), "{err}");
+    assert!(!target.exists());
+    let (_, err, code) = run(d.path(), &["install-hook", "--force"], "");
+    assert_eq!(code, 0, "{err}");
+    assert!(!target.exists(), "written through the link");
+    assert!(!fs::symlink_metadata(&hook)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(fs::read_to_string(&hook).unwrap(), scrub::hook::HOOK_SCRIPT);
+}

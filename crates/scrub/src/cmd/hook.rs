@@ -37,14 +37,28 @@ pub fn run(args: &HookArgs) -> Result<i32, CliError> {
     let hooks = hooks_dir().map_err(fail)?;
     fs::create_dir_all(&hooks).map_err(|e| fail(e.to_string()))?;
     let path = hooks.join("pre-commit");
-    if path.exists() && !args.force {
-        return Err(CliError::new(
-            1,
-            format!(
-                "{} already exists; re-run with --force to overwrite",
-                path.display()
-            ),
-        ));
+    // Not `exists()`: it follows links, so a dangling symlink would look absent and be
+    // written through.
+    if let Ok(meta) = fs::symlink_metadata(&path) {
+        let link = meta.file_type().is_symlink();
+        if !args.force {
+            let what = if link {
+                "is a symbolic link"
+            } else {
+                "already exists"
+            };
+            return Err(CliError::new(
+                1,
+                format!(
+                    "{} {what}; re-run with --force to overwrite",
+                    path.display()
+                ),
+            ));
+        }
+        if link {
+            // Replaced by a regular file; the link's target is never written.
+            fs::remove_file(&path).map_err(|e| fail(e.to_string()))?;
+        }
     }
     fs::write(&path, HOOK_SCRIPT).map_err(|e| fail(e.to_string()))?;
     make_executable(&path).map_err(|e| fail(e.to_string()))?;
