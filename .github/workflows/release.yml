@@ -18,8 +18,9 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   TAG: ${{ github.ref_name }}
-  # Keep the runner's checkout path out of the binaries.
-  RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/build
+  # RUSTFLAGS is not set here: each build job sets it in its "Path remapping" step, from
+  # tools/release/remap-path-flags.sh, so the runner's checkout, cargo home (dependency
+  # sources) and rustup home stay out of the binaries. Those paths are only known on the runner.
 
 # No build cache is restored or saved in this workflow: release builds start from a clean slate,
 # so a cache written by another ref cannot influence what ships.
@@ -27,7 +28,11 @@ jobs:
   preflight:
     name: Preflight
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Up to 20 minutes waiting for CI, then cargo-deny install and the tests.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read # read the CI workflow runs for the tagged commit
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,10 +44,50 @@ jobs:
         run: tools/release/check-version.sh "$TAG"
       - name: CHANGELOG has a section for this version
         run: tools/release/changelog-section.sh "$TAG" > /dev/null
+      # The latest CI run for this commit on a push to main must have succeeded. A run still in
+      # progress is waited for (up to 20 minutes); no run, or any other conclusion, fails here.
+      - name: CI passed for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            run="$(gh api -X GET "repos/$REPO/actions/workflows/ci.yml/runs" \
+              -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f per_page=1 \
+              --jq '.workflow_runs[0] // empty | [.status, (.conclusion // "none"), .html_url] | @tsv')"
+            if [ -z "$run" ]; then
+              echo "::error::no CI run found for $GITHUB_SHA on a push to main"
+              exit 1
+            fi
+            IFS=$'\t' read -r status conclusion url <<< "$run"
+            if [ "$status" = completed ]; then
+              if [ "$conclusion" = success ]; then
+                echo "CI passed for $GITHUB_SHA: $url"
+                exit 0
+              fi
+              echo "::error::CI for $GITHUB_SHA concluded '$conclusion': $url"
+              exit 1
+            fi
+            echo "CI for $GITHUB_SHA is '$status' (check $attempt of 40), waiting: $url"
+            sleep 30
+          done
+          echo "::error::CI for $GITHUB_SHA did not finish within 20 minutes"
+          exit 1
       - name: Toolchain
         run: rustup show active-toolchain || rustup toolchain install
       - name: Tests (Rust workspace)
         run: cargo test --workspace --locked
+      # The same dependency policy as CI, re-run here so an advisory published since the last
+      # CI run stops the release.
+      - name: Install cargo-deny
+        run: cargo install --locked --version 0.20.2 cargo-deny
+      - name: Dependency policy (Windows graph, includes the Tauri shell)
+        run: cargo deny check
+      - name: Dependency policy (Linux, scrub)
+        run: cargo deny --exclude redactor-app --target x86_64-unknown-linux-gnu check
+      - name: Dependency policy (macOS, scrub)
+        run: cargo deny --exclude redactor-app --target aarch64-apple-darwin check
 
   app-windows:
     name: Windows app
@@ -61,11 +106,20 @@ jobs:
           node-version: "22"
       - name: Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
       - name: Build the UI
         working-directory: app/ui
         run: |
           npm ci --no-audit --no-fund
           npm run build
+      # The Windows tests run on the commit that ships, with the release flags. The #[ignore]
+      # clipboard tests stay ignored: they need a desktop session.
+      - name: Tests (Rust workspace, Windows)
+        run: cargo test --workspace --locked
       - name: Build the NSIS installer (per-user)
         working-directory: app/src-tauri
         run: ../ui/node_modules/.bin/tauri build --ci --bundles nsis -- --locked
@@ -125,6 +179,11 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add "$TARGET"
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
       - name: musl tools
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
@@ -132,14 +191,26 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --release --locked -p scrub --target "$TARGET"
-      - name: Smoke test
-        if: matrix.target != 'x86_64-apple-darwin'
+      # Every target runs natively on its runner except x86_64-apple-darwin, which is
+      # cross-compiled on the arm64 runner and can only run there under Rosetta 2. When Rosetta
+      # is not installed on the runner image, that binary is built but not executed, and the
+      # step says so in a notice.
+      - name: Smoke test (version, and a made-up secret is redacted)
         env:
           TARGET: ${{ matrix.target }}
         run: |
+          set -euo pipefail
           bin="target/$TARGET/release/scrub"
           if [ -f "$bin.exe" ]; then bin="$bin.exe"; fi
-          "$bin" version
+          if [ "$TARGET" = x86_64-apple-darwin ]; then
+            if arch -x86_64 /usr/bin/true 2> /dev/null; then
+              tools/release/smoke-scrub.sh "$bin" arch -x86_64
+            else
+              echo "::notice::x86_64-apple-darwin was built but not executed: Rosetta 2 is not available on this arm64 runner"
+            fi
+          else
+            tools/release/smoke-scrub.sh "$bin"
+          fi
       - name: Package (tar.gz)
         if: runner.os != 'Windows'
         env:
