@@ -102,8 +102,22 @@ impl Decoded {
             .map(|p| (&self.buf[p.at..p.at + p.len], p.src.clone()))
     }
 
+    /// The pieces as (where they start in `buf`, their decoded bytes, the piece of the level
+    /// above they were decoded from), in the order they were pushed.
+    pub fn pieces(&self) -> impl Iterator<Item = (usize, &[u8], Option<usize>)> {
+        self.pieces
+            .iter()
+            .map(|p| (p.at, &self.buf[p.at..p.at + p.len], p.outer))
+    }
+
+    /// The decoded bytes of piece `i`.
+    pub fn bytes(&self, i: usize) -> &[u8] {
+        let p = &self.pieces[i];
+        &self.buf[p.at..p.at + p.len]
+    }
+
     /// The index of the piece holding all of `buf[s..e]`.
-    pub fn index(&self, s: usize, e: usize) -> Option<usize> {
+    fn index(&self, s: usize, e: usize) -> Option<usize> {
         let i = self.pieces.partition_point(|p| p.at <= s).checked_sub(1)?;
         let p = &self.pieces[i];
         (e <= p.at + p.len).then_some(i)
@@ -112,11 +126,6 @@ impl Decoded {
     /// Pieces pushed from now on were decoded from piece `outer` of the level above.
     pub fn set_outer(&mut self, outer: usize) {
         self.outer = Some(outer);
-    }
-
-    /// The outer piece a hit `buf[s..e]` was decoded from.
-    pub fn outer(&self, s: usize, e: usize) -> Option<usize> {
-        self.piece(s, e)?.outer
     }
 
     pub fn is_empty(&self) -> bool {

@@ -21,7 +21,7 @@ use crate::guard::is_placeholder;
 use crate::normalize::{normalize_value, HiddenCounts, Shadow};
 use crate::occurrences::Occurrences;
 use crate::placeholder::PlaceholderPolicy;
-use crate::propagate::{propagate, BOUNDARY_BELOW, MIN_CHARS};
+use crate::propagate::{propagate, Copies, ValueCopy, BOUNDARY_BELOW, MIN_CHARS};
 use crate::redact::{apply, Redaction, Resolved};
 use crate::resolve::{outranks, resolve};
 use crate::rules::catalog;
@@ -840,37 +840,49 @@ fn leaked(text: &str, out: &str, findings: &[Finding], spans: &[(usize, usize)])
     if values.is_empty() {
         return Vec::new();
     }
-    let occ = Occurrences::new(values.iter().map(|(v, _)| v.as_bytes()).collect());
-    let inside = |s: usize, e: usize| {
-        let i = spans.partition_point(|&(_, pe)| pe <= s);
-        i < spans.len() && spans[i].0 < e
-    };
+    let bounded: Vec<bool> = values
+        .iter()
+        .map(|(v, _)| v.chars().count() < BOUNDARY_BELOW)
+        .collect();
+    let occ = Occurrences::new(
+        values.iter().map(|(v, _)| v.as_bytes()).collect(),
+        bounded.clone(),
+    );
     let glued = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-    let mut found: Vec<Candidate> = Vec::new();
-    occ.find(out.as_bytes(), |s, e, p| {
-        let (v, f) = values[p];
-        if inside(s, e) {
-            return;
+    let mut copies = Copies::default();
+    // Between the placeholders, one stretch at a time: a copy never runs into one.
+    let mut from = 0;
+    for &(s, e) in spans.iter().chain(std::iter::once(&(out.len(), out.len()))) {
+        if s > from {
+            occ.find(&out.as_bytes()[from..s], |a, b, p| {
+                let (a, b) = (from + a, from + b);
+                if bounded[p]
+                    && (glued(out[..a].chars().next_back()) || glued(out[b..].chars().next()))
+                {
+                    return;
+                }
+                copies.add(ValueCopy::new(a, b, p, values[p].1.confidence, None));
+            });
         }
-        if v.chars().count() < BOUNDARY_BELOW
-            && (glued(out[..s].chars().next_back()) || glued(out[e..].chars().next()))
-        {
-            return;
-        }
-        found.push(Candidate {
-            start: s,
-            end: e,
-            kind: Cow::Owned(f.kind.clone()),
-            label: Cow::Owned(f.label.clone()),
-            confidence: f.confidence,
-            detector: Cow::Owned(f.detector.clone()),
-            reason: Cow::Borrowed("Same value as another finding"),
-            source: Source::Propagated,
-        });
-    });
-    found.sort_unstable_by_key(|c| (c.start, c.end));
-    found.dedup_by_key(|c| (c.start, c.end));
-    found
+        from = from.max(e);
+    }
+    copies
+        .finish()
+        .into_iter()
+        .map(|c| {
+            let f = values[c.value].1;
+            Candidate {
+                start: c.start,
+                end: c.end,
+                kind: Cow::Owned(f.kind.clone()),
+                label: Cow::Owned(f.label.clone()),
+                confidence: f.confidence,
+                detector: Cow::Owned(f.detector.clone()),
+                reason: Cow::Borrowed("Same value as another finding"),
+                source: Source::Propagated,
+            }
+        })
+        .collect()
 }
 
 /// A test of whether `[s, e)` lies inside one of `ranges` (sorted by start, possibly

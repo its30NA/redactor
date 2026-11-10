@@ -1,12 +1,16 @@
-//! Performance gates, release mode only:
-//! `cargo test -p redactor-core --release --test perf -- --ignored --nocapture`.
+//! Performance gates, release mode only, one test at a time:
+//! `cargo test -p redactor-core --release --test perf -- --ignored --nocapture --test-threads=1`.
 
 mod support;
 
 use std::time::Instant;
 
-use redactor_core::{Engine, EngineConfig, ScanRequest, Sensitivity};
+use redactor_core::{Engine, EngineConfig, ScanOutcome, ScanRequest, Sensitivity};
 use support::gen::*;
+use support::heap;
+
+#[global_allocator]
+static HEAP: heap::Counting = heap::Counting;
 
 /// ~1 MiB of realistic mixed text with a token every ~1000 lines.
 fn mixed_mib(g: &mut Gen) -> String {
@@ -49,6 +53,25 @@ fn perf_1mib_under_250ms() {
     }
     println!("1 MiB mixed text, Balanced: best {best:.1} ms over 5 runs");
     assert!(best < 250.0, "{best:.1} ms");
+}
+
+/// The audit's 649 KB of `password=abab…` lines (2026-11-10, finding 3): every value a
+/// prefix of the next, so the search for copies listed each value at every position of every
+/// longer one. It took 53.8 s on the audit's machine.
+#[test]
+#[ignore]
+fn nested_values_under_1s() {
+    let text: String = (6..801)
+        .map(|k| format!("password={}\n", "ab".repeat(k)))
+        .collect();
+    let e = Engine::new(EngineConfig::default()).unwrap();
+    let t = Instant::now();
+    let out = e.scan(&text, &ScanRequest::default());
+    let ms = t.elapsed().as_secs_f64() * 1000.0;
+    println!("649 KB of nested values: {ms:.0} ms");
+    assert!(out.verified);
+    assert_eq!(out.findings.len(), 795);
+    assert!(ms < 1000.0, "{ms:.0} ms");
 }
 
 /// 10 MiB: one line of `a`, a million zero-width spaces, nested base64 and 100k `password=`
@@ -216,6 +239,42 @@ fn shape(name: &str, size: usize) -> String {
             s.push('\n');
             s
         }),
+        // `password=abab…` lines, each value a prefix of the next (audit 2026-11-10, finding
+        // 3: the copy search was cubic here). The longest value grows with the square root of
+        // the size.
+        "nested values" => {
+            let mut s = String::with_capacity(size + (16 << 10));
+            let mut k = 6;
+            while s.len() < size {
+                s.push_str(&format!("password={}\n", "ab".repeat(k)));
+                k += 1;
+            }
+            s
+        }
+        // The same nested values, then one long `abab…` run that holds each of them at every
+        // other position (one candidate per value and position: 98 KB took 1.33 GB).
+        "nested copies" => {
+            let mut s: String = (6..181)
+                .map(|k| format!("password={}\n", "ab".repeat(k)))
+                .collect();
+            s.push_str("note ");
+            s.push_str(&"ab".repeat(size.saturating_sub(s.len()) / 2));
+            s.push('\n');
+            s
+        }
+        // Every rotation of one password, then the password again and again: a copy of a
+        // different rotation starts at every position, and the copies of one rotation touch
+        // (one candidate per byte).
+        "rotations" => {
+            let v = g.alnum(12);
+            let mut s: String = (0..12)
+                .map(|i| format!("password={}{}\n", &v[i..], &v[..i]))
+                .collect();
+            s.push_str("note ");
+            s.push_str(&v.repeat(size.saturating_sub(s.len()) / 12));
+            s.push('\n');
+            s
+        }
         // All of the above in 256 KiB pieces.
         "mix" => {
             let parts = [
@@ -225,6 +284,9 @@ fn shape(name: &str, size: usize) -> String {
                 "one value repeated",
                 "long base64",
                 "deep JSON",
+                "nested values",
+                "nested copies",
+                "rotations",
             ];
             let mut s = String::with_capacity(size + (256 << 10));
             let mut k = 0;
@@ -239,9 +301,51 @@ fn shape(name: &str, size: usize) -> String {
     }
 }
 
-/// Adversarial shapes at 1 MiB and 8 MiB (best of two runs each), Paranoid with PII on: the
-/// 8 MiB scan may take about ten times as long as the 1 MiB scan, not more (linear scaling;
-/// the bound is 12x, as caches and the allocator favour the small run by up to a fifth).
+/// The shapes of [`adversarial_shapes_scale_linearly`].
+const SHAPES: [&str; 10] = [
+    "long line",
+    "unterminated BEGIN",
+    "many distinct values",
+    "one value repeated",
+    "long base64",
+    "deep JSON",
+    "nested values",
+    "nested copies",
+    "rotations",
+    "mix",
+];
+
+/// One shape at one size: the best time of `runs` scans, and the heap the first scan held
+/// at its peak (counted, so the same every run).
+struct Measured {
+    secs: f64,
+    peak: usize,
+    out: ScanOutcome,
+}
+
+fn measure(e: &Engine, req: &ScanRequest, text: &str, runs: usize) -> Measured {
+    let mut secs = f64::MAX;
+    let mut first: Option<(ScanOutcome, usize)> = None;
+    for _ in 0..runs {
+        let t = Instant::now();
+        let (out, peak) = heap::peak(|| e.scan(text, req));
+        secs = secs.min(t.elapsed().as_secs_f64());
+        first.get_or_insert((out, peak));
+    }
+    let (out, peak) = first.expect("scanned");
+    Measured { secs, peak, out }
+}
+
+/// Adversarial shapes at 1 MiB and 8 MiB, Paranoid with PII on, must scale linearly.
+///
+/// Memory is the stable measure: the heap a scan holds at its peak is counted by the
+/// allocator, the same bytes every run. The 8 MiB scan may hold at most 10 times what the
+/// 1 MiB scan holds (plus 4 MiB), and no scan more than 32 bytes per input byte plus 1 KiB
+/// per finding (plus 4 MiB): a copy that ends up inside another finding must not cost a
+/// candidate of its own. Time is the best of five scans at 1 MiB and of three at 8 MiB. The 8 MiB scan may take at most 20 times as long: 8 is linear, caches favour the
+/// small scan of a shape with many findings by up to about 2x (the long line grew 12.5 to
+/// 17.5x), and quadratic growth is 64x. A shape that misses the time bound is measured once
+/// more before it fails, and every shape must run at 1 MiB/s or faster at 8 MiB.
 /// `REDACTOR_PERF_MIB=20` adds a run at that size; `REDACTOR_PERF_SHAPE=mix` runs one shape.
 #[test]
 #[ignore]
@@ -260,49 +364,68 @@ fn adversarial_shapes_scale_linearly() {
     let mib = 1usize << 20;
     let mut worst = f64::MAX;
     let mut failures = Vec::new();
-    for name in [
-        "long line",
-        "unterminated BEGIN",
-        "many distinct values",
-        "one value repeated",
-        "long base64",
-        "deep JSON",
-        "mix",
-    ] {
+    for name in SHAPES {
         if only.as_deref().is_some_and(|o| o != name) {
             continue;
         }
-        let mut times = Vec::new();
-        for size in [1, 8].into_iter().chain(extra) {
-            let text = shape(name, size * mib);
-            // Best of two runs.
-            let mut secs = f64::MAX;
-            let mut out = None;
-            for _ in 0..2 {
-                let t = Instant::now();
-                out = Some(e.scan(&text, &req));
-                secs = secs.min(t.elapsed().as_secs_f64());
+        let texts: Vec<(usize, String)> = [1, 8]
+            .into_iter()
+            .chain(extra)
+            .map(|size| (size, shape(name, size * mib)))
+            .collect();
+        let mut runs: Vec<Measured> = Vec::new();
+        for (size, text) in &texts {
+            let m = measure(&e, &req, text, if *size == 1 { 5 } else { 3 });
+            let rate = text.len() as f64 / mib as f64 / m.secs;
+            if *size == 8 {
+                worst = worst.min(rate);
             }
-            let out = out.expect("scanned");
-            let rate = text.len() as f64 / mib as f64 / secs;
-            worst = worst.min(rate);
             println!(
-                "{name:>20} {size:>3} MiB: {:>8.1} ms {rate:>7.1} MiB/s, {} findings, verified {}",
-                secs * 1000.0,
-                out.findings.len(),
-                out.verified
+                "{name:>20} {size:>3} MiB: {:>8.1} ms {rate:>7.1} MiB/s, peak heap {:>6.1} MiB, {} findings, verified {}",
+                m.secs * 1000.0,
+                m.peak as f64 / mib as f64,
+                m.out.findings.len(),
+                m.out.verified
             );
-            times.push(secs);
+            assert!(m.out.verified, "{name} {size} MiB");
+            let bound = 32 * text.len() + 1024 * m.out.findings.len() + 4 * mib;
+            if m.peak > bound {
+                failures.push(format!(
+                    "{name}: peak heap {} MiB at {size} MiB, bound {} MiB",
+                    m.peak / mib,
+                    bound / mib
+                ));
+            }
+            runs.push(m);
         }
-        // A floor of 5 ms keeps timer noise on tiny runs from failing the ratio.
-        if times[1] > 12.0 * times[0].max(0.005) {
+        let (small, large) = (&runs[0], &runs[1]);
+        if large.peak > 10 * small.peak + 4 * mib {
             failures.push(format!(
-                "{name}: 8 MiB {:.0} ms vs 1 MiB {:.0} ms",
-                times[1] * 1000.0,
-                times[0] * 1000.0
+                "{name}: peak heap {} MiB at 8 MiB vs {} MiB at 1 MiB",
+                large.peak / mib,
+                small.peak / mib
             ));
         }
+        // A floor of 5 ms keeps timer noise on tiny runs from failing the ratio.
+        let too_slow = |small: f64, large: f64| large > 20.0 * small.max(0.005);
+        let (mut t1, mut t8) = (small.secs, large.secs);
+        if too_slow(t1, t8) {
+            println!("{name:>20}: {:.1}x, measuring again", t8 / t1);
+            t1 = t1.min(measure(&e, &req, &texts[0].1, 5).secs);
+            t8 = t8.min(measure(&e, &req, &texts[1].1, 3).secs);
+        }
+        if too_slow(t1, t8) {
+            failures.push(format!(
+                "{name}: 8 MiB {:.0} ms vs 1 MiB {:.0} ms",
+                t8 * 1000.0,
+                t1 * 1000.0
+            ));
+        }
+        let rate = texts[1].1.len() as f64 / mib as f64 / t8;
+        if rate < 1.0 {
+            failures.push(format!("{name}: {rate:.2} MiB/s at 8 MiB"));
+        }
     }
-    println!("worst throughput: {worst:.1} MiB/s");
+    println!("worst throughput at 8 MiB: {worst:.1} MiB/s");
     assert!(failures.is_empty(), "not linear: {failures:?}");
 }
