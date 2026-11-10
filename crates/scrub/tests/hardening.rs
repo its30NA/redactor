@@ -404,3 +404,70 @@ fn a_world_writable_config_is_refused() {
     assert_eq!((out.as_str(), code), ("", 2), "{err}");
     assert!(err.contains("refusing config"), "{err}");
 }
+
+// ---------------------------------------------------------------------------------------------
+// Binary or text: one stray NUL does not hide a file
+// ---------------------------------------------------------------------------------------------
+
+/// Text with one NUL byte and two secrets, as in a hand-edited env file.
+fn nul_text() -> Vec<u8> {
+    let mut raw = b"x\0\n".to_vec();
+    raw.extend_from_slice(Gen::named("nul").github("ghp_").as_bytes());
+    raw.extend_from_slice(format!("\nDB_PASSWORD={}\n", pw()).as_bytes());
+    raw
+}
+
+#[test]
+fn check_scans_text_with_a_stray_nul() {
+    let d = repo();
+    put(d.path(), "nul.env", nul_text());
+    git(d.path(), &["add", "nul.env"]);
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("nul.env: 2 finding(s)"), "{err}");
+    assert!(!err.contains("skipped"), "{err}");
+}
+
+#[test]
+fn check_blocks_large_text_with_a_nul_in_its_head() {
+    let d = repo();
+    let mut raw = nul_text();
+    raw.resize(5 * 1024 * 1024 + 10, b'a');
+    put(d.path(), "big.env", raw);
+    git(d.path(), &["add", "big.env"]);
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("cannot check big.env"), "{err}");
+}
+
+#[test]
+fn check_scans_bomless_utf16_that_is_mostly_not_ascii() {
+    let d = repo();
+    let mut text = String::new();
+    for _ in 0..20 {
+        text.push_str("日本語のテキストと説明の行です\r\n");
+    }
+    text.push_str(&format!("パスワード\r\nDB_PASSWORD={}\r\n", pw()));
+    put(
+        d.path(),
+        "ja.txt",
+        encode(&text, TextEncoding::Utf16Le { bom: false }),
+    );
+    git(d.path(), &["add", "ja.txt"]);
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("ja.txt: 1 finding(s)"), "{err}");
+}
+
+#[test]
+fn scan_finds_secrets_next_to_a_nul_and_write_leaves_the_file_alone() {
+    let d = tempfile::tempdir().unwrap();
+    put(d.path(), "nul.env", nul_text());
+    let (out, err, code) = run(d.path(), &["scan", "."], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(out.contains("nul.env: 2 finding(s)"), "{out}");
+    let (_, err, code) = run(d.path(), &["scan", "--write", "."], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("contains NUL bytes, left unchanged"), "{err}");
+    assert_eq!(fs::read(d.path().join("nul.env")).unwrap(), nul_text());
+}

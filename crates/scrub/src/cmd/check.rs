@@ -10,7 +10,8 @@
 //! - Deletions are ignored, submodules (gitlinks) are skipped with a line, and a staged
 //!   symlink is checked as what git stores for it: the link's target path, never the file it
 //!   points to.
-//! - Binary blobs are skipped with a line. A text blob that cannot be read (too large, a BOM
+//! - Binary blobs are skipped with a line, by the same rule as `scan` ([`files::decode`]: a
+//!   share of control bytes, not one NUL). A text blob that cannot be read (too large, a BOM
 //!   that does not decode, a conflict) blocks the commit: the check never passes text unread.
 
 use std::io::{BufRead, BufReader, Read, Write};

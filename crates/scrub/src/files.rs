@@ -2,8 +2,10 @@
 //! read, and which are skipped.
 //!
 //! Binary and oversized files are skipped, each with a line on stderr: they are not text anyone
-//! pastes into an assistant, and rewriting them risks corruption. UTF-16 files (what Windows
-//! PowerShell 5.1 writes with `>`) are text and are scanned. Symlinks found while walking are
+//! pastes into an assistant, and rewriting them risks corruption. Binary is decided by one rule
+//! for every command ([`decode`]): a share of control bytes, never a single NUL. UTF-16 files
+//! (what Windows PowerShell 5.1 writes with `>`), with or without a BOM, are text and are
+//! scanned. Symlinks found while walking are
 //! not followed, so `--write` never reaches outside the tree.
 
 use std::fs;
@@ -32,8 +34,16 @@ pub const SKIP_DIRS: [&str; 14] = [
 /// Files above this size are skipped.
 pub const MAX_BYTES: u64 = 5 * 1024 * 1024;
 
-/// How much of a file decides "binary": a NUL byte in this first chunk.
-const SNIFF_BYTES: usize = 1024;
+/// How much of a file decides "binary": the first 8 KiB (git looks at about as much).
+const SNIFF_BYTES: usize = 8 * 1024;
+
+/// Binary means at least this share, in percent, of the sample is NUL or another control byte
+/// that text does not use (tab, line feed, vertical tab, form feed, carriage return and escape
+/// are allowed). Random, compressed or encrypted bytes have about 11% such bytes (28 of 256
+/// values), and executables, images and archives far more; text has next to none, and a few
+/// stray NULs in a file that holds a secret stay far below 5%. Half the floor of random data
+/// keeps both sides well apart.
+const BINARY_PERCENT: usize = 5;
 
 /// File bytes, read as text or set aside with a reason.
 #[derive(Debug, PartialEq, Eq)]
@@ -76,9 +86,11 @@ impl std::fmt::Display for Skip {
     }
 }
 
-/// Reads file bytes as text: UTF-8 (BOM or not), UTF-16LE/BE (see [`redactor_wire::text`]),
-/// or, failing those, a legacy 8-bit text decoded lossily. Binary means a NUL byte in the first
-/// KiB that is not UTF-16 text.
+/// Reads file bytes as text: UTF-8 (BOM or not), UTF-16LE/BE (with a BOM, or without one when
+/// the bytes decode as UTF-16 text, see [`bomless_utf16`]), or, failing those, a legacy 8-bit
+/// text decoded lossily. Binary means a sample with a meaningful share of control bytes (see
+/// [`BINARY_PERCENT`]): one stray NUL does not make a text file binary. `scan`, `check` and
+/// sanitizing all decide through here.
 pub fn decode(raw: &[u8]) -> Decoded {
     if raw.len() as u64 > MAX_BYTES {
         return Decoded::Skip(Skip::TooLarge);
@@ -88,6 +100,11 @@ pub fn decode(raw: &[u8]) -> Decoded {
 
 /// [`decode`] without the size limit.
 pub fn decode_any_size(raw: &[u8]) -> Decoded {
+    classify(raw, false)
+}
+
+/// `partial`: `raw` is the head of a larger file, so it may end inside a character.
+fn classify(raw: &[u8], partial: bool) -> Decoded {
     match text::decode(raw) {
         Ok((text, encoding)) => Decoded::Text {
             text,
@@ -96,10 +113,38 @@ pub fn decode_any_size(raw: &[u8]) -> Decoded {
         },
         Err(NotText::BadEncoding(e)) => Decoded::Skip(Skip::Undecodable(e)),
         Err(NotText::Binary) => {
-            if raw.iter().take(SNIFF_BYTES).any(|&b| b == 0) {
+            let sample = &raw[..raw.len().min(SNIFF_BYTES)];
+            let binary_looking = mostly_control(sample);
+            if raw.contains(&0) {
+                for (unit, encoding) in [
+                    (
+                        u16::from_le_bytes as fn([u8; 2]) -> u16,
+                        TextEncoding::Utf16Le { bom: false },
+                    ),
+                    (u16::from_be_bytes, TextEncoding::Utf16Be { bom: false }),
+                ] {
+                    if let Some(text) = bomless_utf16(raw, unit, partial) {
+                        // ASCII text with a stray NUL can happen to decode as UTF-16 too (pairs
+                        // of ASCII letters are valid CJK characters). In real UTF-16 text the
+                        // line feed bytes are line feed units; in misread 8-bit text they are
+                        // not. (A single line of mostly non-ASCII UTF-16 without a BOM is not
+                        // recognised: too little to tell it from binary data.)
+                        let lf_bytes = raw.iter().filter(|&&b| b == b'\n').count();
+                        let lf_units = text.matches('\n').count();
+                        if lf_units > 0 && lf_units * 2 >= lf_bytes {
+                            return Decoded::Text {
+                                text,
+                                encoding,
+                                lossy: false,
+                            };
+                        }
+                    }
+                }
+            }
+            if binary_looking {
                 return Decoded::Skip(Skip::Binary);
             }
-            // UTF-8 with a NUL further on, or a legacy encoding (Latin-1, Windows-1252).
+            // UTF-8 with a few stray NULs, or a legacy encoding (Latin-1, Windows-1252).
             match std::str::from_utf8(raw) {
                 Ok(t) => Decoded::Text {
                     text: t.to_owned(),
@@ -116,10 +161,43 @@ pub fn decode_any_size(raw: &[u8]) -> Decoded {
     }
 }
 
-/// Whether a file too large to scan is binary, judged from its first bytes.
+/// Whether at least [`BINARY_PERCENT`] of `sample` are control bytes that text does not use.
+fn mostly_control(sample: &[u8]) -> bool {
+    let control = sample
+        .iter()
+        .filter(|&&b| {
+            (b < 0x20 && !matches!(b, b'\t' | b'\n' | 0x0B | 0x0C | b'\r' | 0x1B)) || b == 0x7F
+        })
+        .count();
+    !sample.is_empty() && control * 100 >= sample.len() * BINARY_PERCENT
+}
+
+/// UTF-16 without a BOM, in any script: an even length, valid surrogate pairs, no NUL unit and
+/// no control unit other than tab, line feed, form feed and carriage return. Random bytes fail
+/// on unpaired surrogates within a few hundred bytes; binary formats fail on NUL units. With
+/// `partial`, a high surrogate cut off at the end is allowed.
+fn bomless_utf16(raw: &[u8], unit: fn([u8; 2]) -> u16, partial: bool) -> Option<String> {
+    if !raw.len().is_multiple_of(2) || raw.is_empty() {
+        return None;
+    }
+    let mut units: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| unit(*c)).collect();
+    if partial && units.last().is_some_and(|u| (0xD800..0xDC00).contains(u)) {
+        units.pop();
+    }
+    if units
+        .iter()
+        .any(|&u| u < 0x20 && !matches!(u, 0x09 | 0x0A | 0x0C | 0x0D) || u == 0x7F)
+    {
+        return None;
+    }
+    String::from_utf16(&units).ok()
+}
+
+/// Whether a file too large to scan is binary, judged from its first bytes by the same rule
+/// as [`decode`].
 pub fn head_is_binary(head: &[u8]) -> bool {
     let even = &head[..head.len().min(4096) & !1];
-    decode_any_size(even) == Decoded::Skip(Skip::Binary)
+    classify(even, true) == Decoded::Skip(Skip::Binary)
 }
 
 /// The files to scan under `paths`, in a stable order, and the paths that do not exist.
@@ -291,7 +369,7 @@ mod tests {
 
     #[test]
     fn binary_and_large_are_skipped() {
-        assert_eq!(skip(b"text\x00more"), Some(Skip::Binary));
+        assert_eq!(skip(b"text\x00\x01more"), Some(Skip::Binary));
         assert_eq!(skip(b"just text"), None);
         assert_eq!(
             skip(&vec![b'a'; MAX_BYTES as usize + 1]),
@@ -304,6 +382,85 @@ mod tests {
         let mut raw = vec![b'a'; 1024];
         raw.push(0);
         assert_eq!(skip(&raw), None);
+    }
+
+    #[test]
+    fn a_few_stray_nuls_do_not_make_text_binary() {
+        let mut raw = b"x\0\n".to_vec();
+        raw.extend_from_slice(b"DB_PASSWORD=Plumtree47-Kite\nTOKEN=abc\n");
+        let Decoded::Text { text, lossy, .. } = decode(&raw) else {
+            panic!("not text")
+        };
+        assert!(!lossy && text.contains("DB_PASSWORD=Plumtree47-Kite"));
+    }
+
+    /// Both sides of [`BINARY_PERCENT`]: 4% control bytes is text, 6% is binary.
+    #[test]
+    fn the_binary_threshold_is_a_share_of_control_bytes() {
+        let with = |controls: usize| {
+            let mut raw = vec![b'a'; 1000];
+            for i in 0..controls {
+                raw[i * 16 + 3] = if i % 2 == 0 { 0 } else { 1 };
+            }
+            raw
+        };
+        assert_eq!(skip(&with(40)), None);
+        assert_eq!(skip(&with(60)), Some(Skip::Binary));
+        // Random bytes (compressed or encrypted data) are about 11% control bytes.
+        let mut state = 7u64;
+        let random: Vec<u8> = (0..8192)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                (state >> 56) as u8
+            })
+            .collect();
+        assert_eq!(skip(&random), Some(Skip::Binary));
+        assert!(head_is_binary(&random[..4096]));
+        // A large text with a NUL in its head is text (blocked as too large, not passed).
+        let mut head = vec![b'a'; 4096];
+        head[10] = 0;
+        assert!(!head_is_binary(&head));
+    }
+
+    #[test]
+    fn bomless_utf16_in_any_script_is_text() {
+        for (s, enc) in [
+            (
+                "Привет мир\nпароль: ключ\n",
+                TextEncoding::Utf16Le { bom: false },
+            ),
+            (
+                "日本語のテキスト\r\n次の行\r\n",
+                TextEncoding::Utf16Le { bom: false },
+            ),
+            (
+                "日本語のテキスト\n次の行\n",
+                TextEncoding::Utf16Be { bom: false },
+            ),
+        ] {
+            let raw = text::encode(s, enc);
+            assert_eq!(
+                decode(&raw),
+                Decoded::Text {
+                    text: s.into(),
+                    encoding: enc,
+                    lossy: false
+                },
+                "{s}"
+            );
+            assert!(!head_is_binary(&raw));
+        }
+        // ASCII text with a NUL after a line break does not turn into UTF-16.
+        let mut raw = b"ab\n\0c".to_vec();
+        raw.extend_from_slice(&b"d\nline of text\n".repeat(4));
+        raw.push(b'.'); // even length: it is also valid UTF-16LE
+        assert!(bomless_utf16(&raw, u16::from_le_bytes, false).is_some());
+        let Decoded::Text { encoding, .. } = decode(&raw) else {
+            panic!("not text")
+        };
+        assert_eq!(encoding, TextEncoding::Utf8 { bom: false });
     }
 
     #[test]

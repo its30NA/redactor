@@ -69,6 +69,15 @@ pub fn run(args: &ScanArgs) -> Result<i32, CliError> {
                 unfixed += 1;
                 continue;
             }
+            if text.contains('\0') {
+                // Text with stray NUL bytes may be a binary format after all: never rewritten.
+                eprintln!(
+                    "skipped  {}  (contains NUL bytes, left unchanged; {n} finding(s) — {kinds})",
+                    path.display()
+                );
+                unfixed += 1;
+                continue;
+            }
             let bytes = text::encode(&outcome.output, encoding);
             if let Err(e) = files::replace(path, &bytes, &meta) {
                 eprintln!("scrub: cannot write {}: {e}", path.display());
