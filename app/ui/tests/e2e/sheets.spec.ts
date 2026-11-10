@@ -202,6 +202,24 @@ test.describe('settings-changed event', () => {
   });
 });
 
+test.describe('clipboard-scrubbed event', () => {
+  test('a verified scrub says removed; an unverified one says check before pasting', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await page.evaluate(() =>
+      window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'cleaned', removed: 2, byLabel: [], historyCleaned: true }),
+    );
+    const verified = page.locator('.toast', { hasText: '2 secrets removed · history cleaned' });
+    await expect(verified).toBeVisible();
+    await expect(verified).toHaveClass(/success/);
+    await page.evaluate(() =>
+      window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'unverified', removed: 1, byLabel: [], historyCleaned: true }),
+    );
+    const unverified = page.locator('.toast', { hasText: '1 secret removed · check before pasting · history cleaned' });
+    await expect(unverified).toBeVisible();
+    await expect(unverified).toHaveClass(/warning/);
+  });
+});
+
 test.describe('wipe event', () => {
   test('wipe_event_clears_both_panes', async ({ page, problems: _ }) => {
     await openApp(page);

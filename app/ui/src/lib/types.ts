@@ -85,7 +85,8 @@ export interface ScanResponse {
   stats: ScanStats;
 }
 
-export type ClipboardStatus = 'cleaned' | 'clean' | 'empty' | 'protected' | 'tooLarge' | 'error';
+/** `unverified`: rewritten, but the engine could not verify the output (check before pasting). */
+export type ClipboardStatus = 'cleaned' | 'unverified' | 'clean' | 'empty' | 'protected' | 'tooLarge' | 'error';
 
 export interface ClipboardScrub {
   status: ClipboardStatus;

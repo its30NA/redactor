@@ -75,6 +75,12 @@
             title: 'Clipboard scrubbed',
             detail: `${s.removed} ${s.removed === 1 ? 'secret' : 'secrets'} removed${s.historyCleaned ? ' · history cleaned' : ''}`,
           });
+        else if (s.status === 'unverified')
+          toasts.show({
+            tone: 'warning',
+            title: 'Clipboard scrubbed',
+            detail: `${s.removed} ${s.removed === 1 ? 'secret' : 'secrets'} removed · check before pasting${s.historyCleaned ? ' · history cleaned' : ''}`,
+          });
         else if (s.status === 'clean') toasts.show({ tone: 'info', title: 'Clipboard is clean' });
         else if (s.status === 'protected')
           toasts.show({ tone: 'warning', title: 'Left alone', detail: 'A password manager marked that copy private.' });

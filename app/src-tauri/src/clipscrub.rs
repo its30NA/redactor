@@ -5,7 +5,9 @@
 //! copied out of the clipboard; the clipboard is rewritten only when the scan redacted
 //! something, and only if nobody changed the clipboard meanwhile (checked inside the same open
 //! clipboard session that writes). After a rewrite the raw item is removed from the clipboard
-//! history (best effort, `historyCleaned`).
+//! history (best effort, `historyCleaned`). When the engine could not verify its output (the
+//! verify loop hit its cap), the redacted text is still written, as it is safer than the
+//! original, but the result is `unverified` and never claims the text is safe to paste.
 
 use redactor_core::{Engine, Sensitivity};
 use serde::Serialize;
@@ -78,7 +80,10 @@ impl std::error::Error for ClipError {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ClipStatus {
+    /// Rewritten, and the rescan of the output came back clean.
     Cleaned,
+    /// Rewritten, but the engine could not verify the output: check before pasting.
+    Unverified,
     Clean,
     Empty,
     Protected,
@@ -118,6 +123,16 @@ impl ClipboardScrub {
                     "secrets"
                 }
             ),
+            ClipStatus::Unverified if self.removed > 0 => format!(
+                "{} {} removed, check before pasting",
+                self.removed,
+                if self.removed == 1 {
+                    "secret"
+                } else {
+                    "secrets"
+                }
+            ),
+            ClipStatus::Unverified => "Check before pasting".to_string(),
             ClipStatus::Clean => "Nothing sensitive found".to_string(),
             ClipStatus::Empty => "The clipboard holds no text".to_string(),
             ClipStatus::Protected => {
@@ -138,6 +153,19 @@ pub fn scrub(
     sensitivity: Sensitivity,
     pii: bool,
     strip_invisible: bool,
+) -> ClipboardScrub {
+    scrub_with(cb, sensitivity, pii, strip_invisible, |req| {
+        bridge::scan(engine, req)
+    })
+}
+
+/// [`scrub`] with the scan passed in, so tests can hand back any engine result.
+fn scrub_with(
+    cb: &impl Clipboard,
+    sensitivity: Sensitivity,
+    pii: bool,
+    strip_invisible: bool,
+    scan: impl FnOnce(&bridge::ScanRequestIn) -> bridge::ScanResponseOut,
 ) -> ClipboardScrub {
     let seq = cb.sequence();
     let mut text = match cb.read() {
@@ -160,10 +188,14 @@ pub fn scrub(
     if req.text.len() > bridge::MAX_INPUT_BYTES {
         return ClipboardScrub::status(ClipStatus::TooLarge);
     }
-    let resp = bridge::scan(engine, &req);
+    let resp = scan(&req);
     let removed = resp.removed();
     if removed == 0 {
-        return ClipboardScrub::status(ClipStatus::Clean);
+        return ClipboardScrub::status(if resp.verified {
+            ClipStatus::Clean
+        } else {
+            ClipStatus::Unverified
+        });
     }
     // Someone copied something else while we scanned: leave their copy alone.
     match cb.write_if_unchanged(&resp.output, seq) {
@@ -172,7 +204,11 @@ pub fn scrub(
     }
     let history_cleaned = cb.delete_from_history(&req.text);
     ClipboardScrub {
-        status: ClipStatus::Cleaned,
+        status: if resp.verified {
+            ClipStatus::Cleaned
+        } else {
+            ClipStatus::Unverified
+        },
         removed,
         by_label: resp.stats.by_label,
         history_cleaned,
@@ -371,6 +407,31 @@ mod tests {
         assert_eq!(r.status, ClipStatus::TooLarge);
         assert_eq!(serde_json::to_value(&r).unwrap()["status"], "tooLarge");
         assert!(r.notice().contains("20 MiB"));
+    }
+
+    #[test]
+    fn unverified_output_is_written_but_never_called_safe() {
+        let (text, pw) = secret_text();
+        let cb = FakeClipboard::new(Fake::Text(text.clone()));
+        // The engine's verify loop hit its cap: the output is redacted but not verified.
+        let r = scrub_with(&cb, Sensitivity::Balanced, false, true, |req| {
+            let mut resp = bridge::scan(&engine(), req);
+            resp.verified = false;
+            resp.warnings.push(bridge::WarningOut {
+                kind: bridge::WarningKindOut::VerifyCapHit,
+                count: 1,
+            });
+            resp
+        });
+        assert_eq!(r.status, ClipStatus::Unverified);
+        assert_eq!(r.removed, 1);
+        assert!(r.history_cleaned);
+        // Still written: the redacted text is safer than the original.
+        assert_eq!(cb.writes.get(), 1);
+        assert!(!cb.text().unwrap().contains(&pw));
+        assert_eq!(r.notice(), "1 secret removed, check before pasting");
+        assert!(!r.notice().contains("safe"));
+        assert_eq!(serde_json::to_value(&r).unwrap()["status"], "unverified");
     }
 
     #[test]
