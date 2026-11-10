@@ -179,7 +179,7 @@ impl Config {
         }
         if let Some(t) = raw.template.as_deref().filter(|t| *t != DEFAULT_TEMPLATE) {
             weakening.push(format!(
-                "template = {t:?} (text shaped like its placeholders is skipped)"
+                "template = {t:?} (text shaped like its placeholders, with a label scrub emits, is not redacted again)"
             ));
         }
 
@@ -522,7 +522,7 @@ mod tests {
         let c = Config::parse("template = \"<{label}{suffix}>\"").unwrap();
         assert_eq!(
             c.weakening,
-            ["template = \"<{label}{suffix}>\" (text shaped like its placeholders is skipped)"]
+            ["template = \"<{label}{suffix}>\" (text shaped like its placeholders, with a label scrub emits, is not redacted again)"]
         );
         let c = Config::parse("template = \"[REDACTED: {label}{suffix}]\"").unwrap();
         assert!(c.weakening.is_empty());
