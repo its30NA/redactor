@@ -177,6 +177,7 @@ fn read_blobs(ids: &[&str]) -> Result<Vec<Blob>, CliError> {
 pub fn run(args: &CheckArgs) -> Result<i32, CliError> {
     let loaded = super::load(&args.engine)?;
     super::warn_weakening(&loaded.config);
+    super::require_detection(&loaded.engine, &loaded.config)?;
     let engine = loaded.engine;
     let (mut offending, mut unreadable) = (0usize, 0usize);
     let mut to_read = Vec::new();

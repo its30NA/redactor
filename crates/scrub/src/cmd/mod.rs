@@ -71,16 +71,44 @@ pub fn load(args: &EngineArgs) -> Result<Loaded, CliError> {
     Ok(Loaded { engine, config })
 }
 
-/// Warns, on stderr, about every setting in the loaded config file that lowers detection.
+/// Warns, on stderr, about every setting in the loaded config file that lowers detection, one
+/// line each, naming every allowlist entry and disabled rule (capped with "+N more").
 pub fn warn_weakening(config: &Config) {
     let (Some(path), false) = (&config.source, config.weakening.is_empty()) else {
         return;
     };
     eprintln!(
-        "scrub: warning: {} lowers detection for this check: {}",
-        path.display(),
-        config.weakening.join("; ")
+        "scrub: warning: {} lowers detection for this check:",
+        path.display()
     );
+    for w in &config.weakening {
+        eprintln!("scrub:   {w}");
+    }
+}
+
+/// Refuses an engine that finds none of a set of common secrets: a config that leaves
+/// `scrub check` unable to block anything is an error, not a warning.
+pub fn require_detection(engine: &Engine, config: &Config) -> Result<(), CliError> {
+    let canary = crate::config::canary_text();
+    if !engine
+        .scan(&canary, &redactor_core::ScanRequest::default())
+        .findings
+        .is_empty()
+    {
+        return Ok(());
+    }
+    let from = config
+        .source
+        .as_ref()
+        .map_or_else(|| "these settings".to_string(), |p| p.display().to_string());
+    Err(CliError::new(
+        2,
+        format!(
+            "{from} leaves `scrub check` unable to block anything: with it, not even a \
+             password, an AWS key, an OpenAI key, a bearer token or a private key is detected; \
+             re-enable rules or narrow the allowlist"
+        ),
+    ))
 }
 
 /// Sorted, de-duplicated labels joined for the one-line reports.

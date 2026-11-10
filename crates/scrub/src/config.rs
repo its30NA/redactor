@@ -14,9 +14,12 @@
 //! - Every loaded file is named on stderr (`scrub: using config: PATH`).
 //! - On Unix a file writable by every user, or owned by another user (other than root), is
 //!   refused: on a shared machine someone else could have planted it.
-//! - An allowlist entry that matches the empty string, or a large share of random
-//!   secret-shaped values generated at run time, is refused as a catch-all.
-//! - [`Config::weakening`] lists the keys that lower detection, for `scrub check` to warn about.
+//! - An allowlist entry that matches the empty string, a large share of random secret-shaped
+//!   values generated at run time, or every random token of one provider's format (`^ghp_`),
+//!   is refused as a catch-all.
+//! - [`Config::weakening`] names every allowlist entry and disabled rule (capped), for
+//!   `scrub check` to print on every run; `check` refuses a config that leaves it unable to
+//!   detect common secrets at all.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -157,8 +160,7 @@ impl Config {
         for (i, pattern) in allowlist.iter().enumerate() {
             if let Some(why) = catch_all(pattern) {
                 return Err(ConfigError(format!(
-                    "allowlist entry {} (`{pattern}`) {why}, so it would let nearly every \
-                     secret through; use a narrower pattern",
+                    "allowlist entry {} (`{pattern}`) {why}; use a narrower pattern",
                     i + 1
                 )));
             }
@@ -166,10 +168,11 @@ impl Config {
 
         let mut weakening = Vec::new();
         if !allowlist.is_empty() {
-            weakening.push(format!("allowlist: {} pattern(s)", allowlist.len()));
+            let quoted: Vec<String> = allowlist.iter().map(|p| format!("`{p}`")).collect();
+            weakening.push(format!("allowlist: {}", capped(&quoted)));
         }
         if !raw.disabled.is_empty() {
-            weakening.push(format!("disabled rules: {}", raw.disabled.join(", ")));
+            weakening.push(format!("disabled rules: {}", capped(&raw.disabled)));
         }
         if raw.sensitivity == Some(Sensitivity::Relaxed) {
             weakening.push("sensitivity = \"relaxed\"".to_string());
@@ -213,6 +216,17 @@ impl Config {
             weakening,
         })
     }
+}
+
+/// How many items of one weakening list are named before "+N more".
+const SHOWN: usize = 10;
+
+fn capped(items: &[String]) -> String {
+    let mut s = items[..items.len().min(SHOWN)].join(", ");
+    if items.len() > SHOWN {
+        s.push_str(&format!(" (+{} more)", items.len() - SHOWN));
+    }
+    s
 }
 
 fn home() -> Option<PathBuf> {
@@ -264,17 +278,110 @@ pub fn trusted(_file: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Why an allowlist pattern is a catch-all, if it is one: it matches the empty string, or at
-/// least a quarter of a set of random secret-shaped values made at run time. Patterns that are
-/// not valid regexes are left to the engine, which reports them.
-pub fn catch_all(pattern: &str) -> Option<&'static str> {
+/// Why an allowlist pattern is a catch-all, if it is one: it matches the empty string, at
+/// least a quarter of a set of random secret-shaped values made at run time, or every random
+/// value of some provider's token format (`^ghp_`, `AKIA`, `xox[bp]-`: a whole kind of secret
+/// let through). Patterns that are not valid regexes are left to the engine, which reports them.
+pub fn catch_all(pattern: &str) -> Option<String> {
     let re = regex::Regex::new(pattern).ok()?;
     if re.is_match("") {
-        return Some("matches the empty string");
+        return Some("matches the empty string, so it would let every secret through".into());
     }
     let samples = secret_shaped_samples();
     let hits = samples.iter().filter(|s| re.is_match(s)).count();
-    (hits * 4 >= samples.len()).then_some("matches many random secret-shaped values")
+    if hits * 4 >= samples.len() {
+        return Some(
+            "matches many random secret-shaped values, so it would let nearly every secret \
+             through"
+                .into(),
+        );
+    }
+    let mut draw = sample_rng(0x9F0B_1DE5);
+    for prefix in provider_prefixes() {
+        let all = (0..PER_PREFIX).all(|_| re.is_match(&format!("{prefix}{}", draw(ALNUM, 40))));
+        if all {
+            return Some(format!(
+                "matches every random token that starts with `{prefix}`, so it would let that \
+                 whole kind of secret through"
+            ));
+        }
+    }
+    None
+}
+
+/// Random values tried per provider prefix; all of them must match for a pattern to count as
+/// prefix-wide, so a narrow pattern never trips it by chance.
+const PER_PREFIX: usize = 4;
+
+const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+/// The literal prefixes of the built-in token formats, read from the rule catalog
+/// (`ghp_ + 36 base62`, `AKIA/ASIA/... + 16 [A-Z2-7]`), so a new rule is covered without a list
+/// to keep in step. GitHub's family is spelt `gh?_` there and is added by hand.
+pub fn provider_prefixes() -> Vec<String> {
+    let mut out: Vec<String> = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+        .map(String::from)
+        .to_vec();
+    for info in redactor_core::rule_infos() {
+        let Some((head, _)) = info.example_shape.split_once(" + ") else {
+            continue;
+        };
+        for p in head.split('/') {
+            let literal = p.len() >= 3
+                && p.bytes().any(|b| b.is_ascii_alphabetic())
+                && p.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'));
+            if literal && !out.iter().any(|o| o == p) {
+                out.push(p.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Common secrets, made fresh on every run (a config cannot be tuned to the exact values): a
+/// password assignment, an AWS key id, an OpenAI key, a bearer token and a private key block.
+/// `scrub check` refuses a config under which the engine finds none of them.
+pub fn canary_text() -> String {
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as u64)
+        ^ u64::from(std::process::id()).rotate_left(32);
+    let mut draw = sample_rng(seed);
+    const B32: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let pem = ["-----BEGIN ", "RSA PRIVATE KEY-----"].concat();
+    let pem_end = ["-----END ", "RSA PRIVATE KEY-----"].concat();
+    format!(
+        "DB_PASSWORD={}-{}7\nAWS_ACCESS_KEY_ID={}{}\nOPENAI_API_KEY={}{}\n\
+         Authorization: Bearer {}\n{pem}\n{}\n{}\n{pem_end}\n",
+        draw(ALNUM, 10),
+        draw(ALNUM, 6),
+        ["AK", "IA"].concat(),
+        draw(B32, 16),
+        ["sk-", "proj-"].concat(),
+        draw(ALNUM, 48),
+        draw(ALNUM, 40),
+        draw(B64, 64),
+        draw(B64, 64),
+    )
+}
+
+/// A splitmix64 stream drawing strings from an alphabet. A fixed seed keeps verdicts stable.
+fn sample_rng(seed: u64) -> impl FnMut(&[u8], usize) -> String {
+    let mut state = seed;
+    move |alphabet: &[u8], n: usize| {
+        (0..n)
+            .map(|_| {
+                state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = state;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D1_049B_1331_11EB);
+                z ^= z >> 31;
+                alphabet[(z % alphabet.len() as u64) as usize] as char
+            })
+            .collect()
+    }
 }
 
 /// Random values shaped like the secrets the engine finds: tokens in several alphabets,
@@ -399,13 +506,52 @@ mod tests {
         assert_eq!(
             c.weakening,
             [
-                "allowlist: 1 pattern(s)",
+                "allowlist: `fixture`",
                 "disabled rules: jwt, bearer_token",
                 "sensitivity = \"relaxed\""
             ]
         );
         let c = Config::parse("sensitivity = \"paranoid\"\npii = true").unwrap();
         assert!(c.weakening.is_empty());
+        // Long lists are named up to a cap.
+        let ids: Vec<String> = (0..13).map(|i| format!("\"r{i}\"")).collect();
+        let c = Config::parse(&format!("disabled = [{}]", ids.join(", "))).unwrap();
+        assert_eq!(
+            c.weakening,
+            ["disabled rules: r0, r1, r2, r3, r4, r5, r6, r7, r8, r9 (+3 more)"]
+        );
+    }
+
+    #[test]
+    fn the_default_engine_finds_every_canary() {
+        let engine = redactor_core::Engine::new(EngineConfig::default()).unwrap();
+        let text = canary_text();
+        let found = engine
+            .scan(&text, &redactor_core::ScanRequest::default())
+            .findings;
+        assert!(
+            found.len() >= 5,
+            "{:?}",
+            found.iter().map(|f| &f.label).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn prefix_wide_allowlists_are_refused() {
+        let prefixes = provider_prefixes();
+        for p in ["ghp_", "AKIA", "sk-", "xoxb-", "glpat-", "github_pat_"] {
+            assert!(prefixes.iter().any(|x| x == p), "{p} missing");
+        }
+        for p in [
+            "^(ghp_|gho_|github_pat_|AKIA|sk-|xox[bpa]-|glpat-)",
+            "^ghp_",
+            "AKIA",
+            "(?i)^xoxb-",
+            "glpat-.*",
+        ] {
+            let why = catch_all(p).unwrap_or_else(|| panic!("{p} should be refused"));
+            assert!(why.contains("starts with"), "{p}: {why}");
+        }
     }
 
     #[test]

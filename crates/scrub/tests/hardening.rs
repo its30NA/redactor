@@ -383,7 +383,7 @@ fn a_loaded_config_is_named_and_check_warns_about_weakening() {
     assert_eq!(code, 0, "{err}");
     assert!(err.contains("scrub: using config: "), "{err}");
     assert!(err.contains("lowers detection"), "{err}");
-    for key in ["allowlist: 1 pattern(s)", "disabled rules: jwt", "relaxed"] {
+    for key in ["allowlist: `fixture`", "disabled rules: jwt", "relaxed"] {
         assert!(err.contains(key), "{key}: {err}");
     }
     // A narrow allowlist still works.
@@ -470,4 +470,77 @@ fn scan_finds_secrets_next_to_a_nul_and_write_leaves_the_file_alone() {
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("contains NUL bytes, left unchanged"), "{err}");
     assert_eq!(fs::read(d.path().join("nul.env")).unwrap(), nul_text());
+}
+
+// ---------------------------------------------------------------------------------------------
+// A committed config cannot switch the check off
+// ---------------------------------------------------------------------------------------------
+
+fn staged_github_and_aws(d: &Path) {
+    let mut g = Gen::named("weakened");
+    let aws = format!(
+        "{}{}",
+        ["AK", "IA"].concat(),
+        g.from(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16)
+    );
+    put(
+        d,
+        "keys.env",
+        format!("GH={}\nAWS_ACCESS_KEY_ID={aws}\n", g.github("ghp_")),
+    );
+    git(d, &["add", "keys.env"]);
+}
+
+#[test]
+fn a_committed_prefix_wide_allowlist_is_refused() {
+    let d = repo();
+    put(
+        d.path(),
+        "redactor.toml",
+        "allowlist = [\"^(ghp_|gho_|github_pat_|AKIA|sk-|xox[bpa]-|glpat-)\"]\n",
+    );
+    staged_github_and_aws(d.path());
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("narrower pattern"), "{err}");
+}
+
+#[test]
+fn a_config_that_disables_every_rule_is_an_error_for_check() {
+    let d = repo();
+    let mut ids: Vec<String> = redactor_core::rule_infos()
+        .iter()
+        .map(|i| format!("{:?}", i.id))
+        .collect();
+    ids.extend(["\"context\"", "\"classifier\"", "\"terms\""].map(String::from));
+    put(
+        d.path(),
+        "redactor.toml",
+        format!("disabled = [{}]\n", ids.join(", ")),
+    );
+    staged_github_and_aws(d.path());
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("unable to block anything"), "{err}");
+    assert!(
+        err.contains("more)"),
+        "the disabled list is named, capped: {err}"
+    );
+}
+
+#[test]
+fn check_names_every_allowlist_entry_and_a_narrow_one_keeps_working() {
+    let d = repo();
+    put(
+        d.path(),
+        "redactor.toml",
+        "allowlist = [\"fixture\", \"^example\\\\.invalid$\"]\n",
+    );
+    staged_github_and_aws(d.path());
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(
+        err.contains("allowlist: `fixture`, `^example\\.invalid$`"),
+        "{err}"
+    );
 }
