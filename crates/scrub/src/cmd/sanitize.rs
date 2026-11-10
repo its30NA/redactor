@@ -65,6 +65,7 @@ pub fn run(args: &SanitizeArgs) -> Result<i32, CliError> {
     let outcome = engine.scan(&text, &ScanRequest::default());
     let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
     let rows = rows_of(&text, &outcome.findings);
+    let verified = outcome.verified;
 
     if args.json {
         let mut resp = redactor_wire::response_from_outcome(&text, outcome);
@@ -100,5 +101,9 @@ pub fn run(args: &SanitizeArgs) -> Result<i32, CliError> {
     if args.summary {
         eprintln!("{}", summary(&rows));
     }
-    Ok(0)
+    Ok(if super::warn_unverified(name, verified) {
+        2
+    } else {
+        0
+    })
 }

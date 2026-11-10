@@ -1147,3 +1147,54 @@ fn install_hook_never_writes_through_a_symlink() {
         .is_symlink());
     assert_eq!(fs::read_to_string(&hook).unwrap(), scrub::hook::HOOK_SCRIPT);
 }
+
+/// Text whose last secret only the verify loop finds (`x9k2prod` reads as an identifier
+/// until the cookie around its other use is redacted).
+const NEEDS_A_VERIFY_ROUND: &str = "password = x9k2prod\nCookie: sid=1,x9k2prod,z\n";
+
+/// An outcome the engine could not verify clean is no success: a warning on stderr, exit 2,
+/// and the output still has everything the engine found redacted. The cap is lowered through
+/// a hook that only debug builds have.
+#[cfg(debug_assertions)]
+#[test]
+fn unverified_output_warns_and_exits_2() {
+    let d = tmp();
+    let capped = |args: &[&str], stdin: &str| {
+        let out = scrub_in(d.path())
+            .env("SCRUB_TEST_VERIFY_CAP", "0")
+            .args(args)
+            .write_stdin(stdin.to_string())
+            .output()
+            .unwrap();
+        (
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+            out.status.code().unwrap_or(-1),
+        )
+    };
+    // Sanitize.
+    let (out, err, code) = capped(&[], NEEDS_A_VERIFY_ROUND);
+    assert_eq!(code, 2, "{err}");
+    assert!(!out.contains("x9k2prod"), "{out}");
+    assert!(err.contains("could not be verified"), "{err}");
+    // Scan reports the file and exits 2, not 1.
+    let f = write(d.path(), "app.env", NEEDS_A_VERIFY_ROUND);
+    let (_, err, code) = capped(&["scan", &f], "");
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("could not be verified") && err.contains("app.env"),
+        "{err}"
+    );
+    // Scan --write still writes what was found, and exits 2.
+    let (_, err, code) = capped(&["scan", "--write", &f], "");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("could not be verified"), "{err}");
+    assert!(!fs::read_to_string(&f).unwrap().contains("x9k2prod"));
+    // Without the hook the same text verifies.
+    let (out, err, code) = run(d.path(), &[], NEEDS_A_VERIFY_ROUND);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        !out.contains("x9k2prod") && !err.contains("verified"),
+        "{out}{err}"
+    );
+}

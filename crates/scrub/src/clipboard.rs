@@ -55,6 +55,8 @@ pub enum ClipOutcome {
     Cleaned {
         removed: usize,
         summary: String,
+        /// False when the engine stopped rescanning at its limit: a secret may remain.
+        verified: bool,
     },
     Clean,
     /// No secrets, but invisible, bidi or tag characters were removed and written back.
@@ -91,6 +93,7 @@ pub fn scrub_clipboard(clip: &mut dyn Clipboard, engine: &Engine) -> Result<Clip
         Finish::Written => ClipOutcome::Cleaned {
             removed: rows.len(),
             summary: crate::audit::summary(&rows),
+            verified: outcome.verified,
         },
         Finish::Changed | Finish::Untouched => ClipOutcome::Changed,
     })
@@ -306,6 +309,31 @@ mod tests {
         );
         assert_eq!(f.written, ["DB_PASSWORD=[REDACTED: Password]"]);
         assert_eq!(f.finished, 1);
+    }
+
+    /// An unverified outcome is written back (it has every finding redacted) and says so.
+    #[test]
+    fn an_unverified_scrub_says_so() {
+        let text = "password = x9k2prod\nCookie: sid=1,x9k2prod,z\n";
+        let mut f = Fake::new(ClipRead::Text(text.into()));
+        let out = scrub_clipboard(&mut f, &engine().with_verify_cap(0)).unwrap();
+        assert!(
+            matches!(
+                out,
+                ClipOutcome::Cleaned {
+                    verified: false,
+                    ..
+                }
+            ),
+            "{out:?}"
+        );
+        assert!(!f.written[0].contains("x9k2prod"), "{:?}", f.written);
+        let mut f = Fake::new(ClipRead::Text(text.into()));
+        let out = scrub_clipboard(&mut f, &engine()).unwrap();
+        assert!(
+            matches!(out, ClipOutcome::Cleaned { verified: true, .. }),
+            "{out:?}"
+        );
     }
 
     #[test]

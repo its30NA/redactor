@@ -392,6 +392,31 @@ fn a_loaded_config_is_named_and_check_warns_about_weakening() {
     assert_eq!(out, fixture);
 }
 
+/// `check` names a staged file the engine could not verify clean (debug builds lower the
+/// cap through a hook).
+#[cfg(debug_assertions)]
+#[test]
+fn check_names_an_unverified_file() {
+    let d = repo();
+    put(
+        d.path(),
+        "app.env",
+        "password = x9k2prod\nCookie: sid=1,x9k2prod,z\n",
+    );
+    git(d.path(), &["add", "app.env"]);
+    let out = support::scrub_in(d.path())
+        .env("SCRUB_TEST_VERIFY_CAP", "0")
+        .arg("check")
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_ne!(out.status.code(), Some(0), "{err}");
+    assert!(
+        err.contains("could not be verified") && err.contains("app.env"),
+        "{err}"
+    );
+}
+
 #[test]
 fn check_warns_about_a_template_of_its_own() {
     let d = repo();

@@ -88,6 +88,8 @@ pub struct Engine {
     placeholder_res: Vec<Regex>,
     /// Every label the engine itself can put in a placeholder (`known_labels`).
     labels: Vec<String>,
+    /// Verify rounds before the outcome is `verified = false` (`VERIFY_CAP`).
+    verify_cap: usize,
 }
 
 impl fmt::Debug for Engine {
@@ -156,6 +158,7 @@ impl Engine {
             matcher: None,
             placeholder_res,
             labels,
+            verify_cap: VERIFY_CAP,
         })
     }
 
@@ -169,6 +172,13 @@ impl Engine {
     /// its template (or the default one) around a label it emits.
     pub fn is_placeholder(&self, text: &str) -> bool {
         self.protected(text, &[]) == [(0, text.len())]
+    }
+
+    /// Lowers the verify cap (never raises it past the default), so tests can reach it.
+    #[doc(hidden)]
+    pub fn with_verify_cap(mut self, cap: usize) -> Engine {
+        self.verify_cap = cap.min(VERIFY_CAP);
+        self
     }
 
     /// Number of active detection rules (PII rules included).
@@ -229,13 +239,16 @@ impl Engine {
             if new.is_empty() {
                 break;
             }
-            if rounds == VERIFY_CAP {
-                verified = false;
-                break;
-            }
+            // At the cap the last round is still applied (redact more, never less), but no
+            // rescan confirms the result: the outcome is not verified.
+            let capped = rounds == self.verify_cap;
             rounds += 1;
             raw.extend(new);
             rendered = self.render(text, raw.clone(), req.keep, &aliases);
+            if capped {
+                verified = false;
+                break;
+            }
         }
 
         let mut warnings = Vec::new();
@@ -721,7 +734,8 @@ fn one_label_per_value(spans: &mut [(Candidate, ValueKey, bool)]) {
     }
 }
 
-/// Verify rounds after the first redaction; then `VerifyCapHit`.
+/// Verify rounds after the first redaction; a further round's findings are applied, then
+/// `VerifyCapHit`.
 const VERIFY_CAP: usize = 3;
 
 /// An encoded copy: its span, and the key of the value it encodes.

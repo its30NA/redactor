@@ -236,3 +236,29 @@ fn emoji_before_secret_offsets() {
         }
     }
 }
+
+/// At the verify cap the last round's findings are still redacted; the outcome says it is
+/// not verified, with a warning.
+#[test]
+fn verify_cap_applies_the_last_round() {
+    use redactor_core::WarningKind;
+    let text = "password = x9k2prod\nCookie: sid=1,x9k2prod,z\n";
+    let out = scan_at(&engine().with_verify_cap(0), text, Sensitivity::Balanced);
+    assert!(!out.output.contains("x9k2prod"), "{}", out.output);
+    assert!(!out.verified);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.kind == WarningKind::VerifyCapHit),
+        "{:?}",
+        out.warnings
+    );
+    assert_well_formed(text, &out);
+    // Below the cap the same text verifies.
+    let out = scan_at(&engine().with_verify_cap(1), text, Sensitivity::Balanced);
+    assert!(
+        out.verified && out.warnings.is_empty(),
+        "{:?}",
+        out.warnings
+    );
+}

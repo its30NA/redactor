@@ -63,6 +63,9 @@ pub fn run(args: &ScanArgs) -> Result<i32, CliError> {
             }
         };
         let outcome = scan_text(&engine, &text);
+        if super::warn_unverified(&path.display().to_string(), outcome.verified) {
+            errors = true;
+        }
         if outcome.findings.is_empty() {
             continue;
         }

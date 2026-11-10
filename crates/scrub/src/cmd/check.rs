@@ -226,7 +226,7 @@ pub fn run(args: &CheckArgs) -> Result<i32, CliError> {
     super::warn_weakening(&loaded.config);
     super::require_detection(&loaded.engine, &loaded.config)?;
     let engine = loaded.engine;
-    let (mut offending, mut unreadable) = (0usize, 0usize);
+    let (mut offending, mut unreadable, mut unverified) = (0usize, 0usize, 0usize);
     let mut to_read = Vec::new();
     for entry in staged_entries(&top)? {
         if entry.status == 'D' {
@@ -286,6 +286,9 @@ pub fn run(args: &CheckArgs) -> Result<i32, CliError> {
             ""
         };
         let outcome = engine.scan(&text, &ScanRequest::default());
+        if super::warn_unverified(&format!("{name}{what}"), outcome.verified) {
+            unverified += 1;
+        }
         if !outcome.findings.is_empty() {
             offending += 1;
             let kinds = super::kinds(outcome.findings.iter().map(|f| f.label.clone()));
@@ -303,7 +306,7 @@ pub fn run(args: &CheckArgs) -> Result<i32, CliError> {
     }
     Ok(if offending > 0 {
         1
-    } else if unreadable > 0 {
+    } else if unreadable + unverified > 0 {
         2
     } else {
         0

@@ -68,7 +68,37 @@ pub fn load(args: &EngineArgs) -> Result<Loaded, CliError> {
     }
     let engine =
         Engine::new(engine).map_err(|e| CliError::new(2, format!("invalid config: {e}")))?;
-    Ok(Loaded { engine, config })
+    Ok(Loaded {
+        engine: test_hooks(engine),
+        config,
+    })
+}
+
+/// Debug builds only: `SCRUB_TEST_VERIFY_CAP` lowers the engine's verify cap, so the tests
+/// can reach it. Release builds have no such hook.
+fn test_hooks(engine: Engine) -> Engine {
+    #[cfg(debug_assertions)]
+    if let Some(cap) = std::env::var("SCRUB_TEST_VERIFY_CAP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        return engine.with_verify_cap(cap);
+    }
+    engine
+}
+
+/// Warns on stderr when the engine could not verify the output for `name` clean: it stopped
+/// rescanning at its limit, so a secret may remain. True when it warned; the run then ends
+/// with exit code 2, like any output that cannot be trusted complete.
+pub fn warn_unverified(name: &str, verified: bool) -> bool {
+    if verified {
+        return false;
+    }
+    eprintln!(
+        "scrub: warning: {name}: the output could not be verified clean (the rescan limit was \
+         reached); a secret may remain, review it before sharing"
+    );
+    true
 }
 
 /// Warns, on stderr, about every setting in the loaded config file that lowers detection, one
