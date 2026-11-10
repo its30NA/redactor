@@ -544,3 +544,56 @@ fn check_names_every_allowlist_entry_and_a_narrow_one_keeps_working() {
         "{err}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// check: git config that changes git's output does not change what is checked
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn check_from_a_subfolder_sees_the_whole_index_despite_diff_relative() {
+    let d = repo();
+    for (k, v) in [
+        ("diff.relative", "true"),
+        ("diff.noprefix", "true"),
+        ("diff.mnemonicPrefix", "true"),
+        ("core.quotePath", "true"),
+        ("color.ui", "always"),
+        ("color.diff", "always"),
+        ("diff.external", "false"),
+    ] {
+        git(d.path(), &["config", k, v]);
+    }
+    put(d.path(), "sub/ok.txt", "nothing\n");
+    put(d.path(), "top.env", env_file(&pw()));
+    put(d.path(), "grüße.env", env_file(&pw()));
+    git(d.path(), &["add", "sub/ok.txt", "top.env", "grüße.env"]);
+    let (_, err, code) = run(&d.path().join("sub"), &["check"], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("top.env: 1 finding(s)"), "{err}");
+    assert!(err.contains("grüße.env: 1 finding(s)"), "{err}");
+}
+
+#[test]
+fn check_reads_the_staged_blob_not_a_replacement() {
+    let d = repo();
+    put(d.path(), "app.env", env_file(&pw()));
+    git(d.path(), &["add", "app.env"]);
+    let staged = git(d.path(), &["rev-parse", ":app.env"]);
+    put(d.path(), "clean.tmp", "NOTHING=here\n");
+    let clean = git(d.path(), &["hash-object", "-w", "clean.tmp"]);
+    fs::remove_file(d.path().join("clean.tmp")).unwrap();
+    git(d.path(), &["replace", staged.trim(), clean.trim()]);
+    let (_, err, code) = run(d.path(), &["check"], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("app.env: 1 finding(s)"), "{err}");
+}
+
+#[test]
+fn check_outside_a_repository_prints_one_line() {
+    let d = tempfile::tempdir().unwrap();
+    put(d.path(), "x.toml", "pii = true\n");
+    let (out, err, code) = run(d.path(), &["check", "-c", "x.toml"], "");
+    assert_eq!((out.as_str(), code), ("", 2), "{err}");
+    assert_eq!(err.lines().count(), 1, "{err}");
+    assert!(err.contains("not inside a git work tree"), "{err}");
+}

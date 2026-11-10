@@ -15,6 +15,7 @@
 //!   that does not decode, a conflict) blocks the commit: the check never passes text unread.
 
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use redactor_core::ScanRequest;
@@ -82,9 +83,52 @@ pub fn parse_raw(out: &[u8]) -> Result<Vec<Staged>, String> {
     Ok(entries)
 }
 
-/// Every staged entry, relative to the repository root.
-fn staged_entries() -> Result<Vec<Staged>, CliError> {
+/// `git`, run at the repository top level, with the settings that could change what the
+/// check reads turned off whatever the user or repository config says: replace refs (which
+/// would show other content for a blob id), relative diffs (`diff.relative` limits the diff to
+/// the current folder), prefixes, path quoting and colour.
+fn git(top: &Path) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(top).args([
+        "--no-replace-objects",
+        "-c",
+        "diff.relative=false",
+        "-c",
+        "diff.noprefix=false",
+        "-c",
+        "diff.mnemonicPrefix=false",
+        "-c",
+        "core.quotePath=false",
+        "-c",
+        "color.ui=never",
+        "-c",
+        "color.diff=never",
+    ]);
+    cmd
+}
+
+/// The repository's top-level folder, or one clear error outside a repository (instead of the
+/// usage text `git diff` prints there).
+fn top_level() -> Result<PathBuf, CliError> {
     let out = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| CliError::new(2, format!("cannot run git: {e}")))?;
+    let top = String::from_utf8_lossy(&out.stdout)
+        .trim_end_matches('\n')
+        .to_string();
+    if !out.status.success() || top.is_empty() {
+        return Err(CliError::new(
+            2,
+            "not inside a git work tree: `scrub check` checks what is staged for a commit",
+        ));
+    }
+    Ok(PathBuf::from(top))
+}
+
+/// Every staged entry, relative to the repository root.
+fn staged_entries(top: &Path) -> Result<Vec<Staged>, CliError> {
+    let out = git(top)
         .args([
             "diff",
             "--cached",
@@ -93,6 +137,8 @@ fn staged_entries() -> Result<Vec<Staged>, CliError> {
             "--no-renames",
             "--no-abbrev",
             "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
             "--ignore-submodules=none",
         ])
         .output()
@@ -115,8 +161,8 @@ enum Blob {
 }
 
 /// Reads blobs by id through one `git cat-file --batch`.
-fn read_blobs(ids: &[&str]) -> Result<Vec<Blob>, CliError> {
-    let mut child = Command::new("git")
+fn read_blobs(top: &Path, ids: &[&str]) -> Result<Vec<Blob>, CliError> {
+    let mut child = git(top)
         .args(["cat-file", "--batch"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -175,13 +221,14 @@ fn read_blobs(ids: &[&str]) -> Result<Vec<Blob>, CliError> {
 }
 
 pub fn run(args: &CheckArgs) -> Result<i32, CliError> {
+    let top = top_level()?;
     let loaded = super::load(&args.engine)?;
     super::warn_weakening(&loaded.config);
     super::require_detection(&loaded.engine, &loaded.config)?;
     let engine = loaded.engine;
     let (mut offending, mut unreadable) = (0usize, 0usize);
     let mut to_read = Vec::new();
-    for entry in staged_entries()? {
+    for entry in staged_entries(&top)? {
         if entry.status == 'D' {
             continue;
         }
@@ -207,7 +254,7 @@ pub fn run(args: &CheckArgs) -> Result<i32, CliError> {
     let blobs = if ids.is_empty() {
         Vec::new()
     } else {
-        read_blobs(&ids)?
+        read_blobs(&top, &ids)?
     };
     for (entry, blob) in to_read.iter().zip(blobs) {
         let name = entry.name();
