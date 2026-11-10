@@ -188,8 +188,12 @@ pub async fn session_remember(
 ) -> Res<Vec<SessionSecret>> {
     state.wiper.touch(true);
     let st = state.inner().clone();
+    // A wipe (lock, sleep, idle, tray) that runs while this call waits for a worker wins.
+    let since = st.session.generation();
     blocking(move || {
-        let r = st.session.remember(&text, start, end, &label);
+        let r = st
+            .session
+            .remember_unless_cleared(since, &text, start, end, &label);
         text.zeroize();
         r.map_err(|e| e.to_string())
     })

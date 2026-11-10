@@ -48,6 +48,8 @@ pub enum SessionError {
     LabelTooLong,
     LabelHasValue,
     Full,
+    /// The session was cleared (a wipe, Forget all) while the call was on its way.
+    Cleared,
 }
 
 impl std::fmt::Display for SessionError {
@@ -61,6 +63,9 @@ impl std::fmt::Display for SessionError {
                 f.write_str("The label contains the secret itself; choose another label.")
             }
             SessionError::Full => write!(f, "This session holds up to {MAX_SECRETS} secrets."),
+            SessionError::Cleared => {
+                f.write_str("The session was wiped meanwhile. Nothing was remembered.")
+            }
         }
     }
 }
@@ -113,6 +118,8 @@ struct Entry {
 struct Inner {
     entries: Vec<Entry>,
     next_id: u64,
+    /// Counts the clears (wipes, Forget all).
+    generation: u64,
 }
 
 /// The session's secrets. Shared by the IPC commands and the engine's matcher.
@@ -144,6 +151,12 @@ impl SessionStore {
         self.read().entries.is_empty()
     }
 
+    /// Changes whenever the session is cleared. A command reads it when it starts and passes it
+    /// to [`SessionStore::remember_unless_cleared`], so a wipe that runs meanwhile wins.
+    pub fn generation(&self) -> u64 {
+        self.read().generation
+    }
+
     /// Remembers `text[start..end]` (UTF-16 offsets, as the UI has them), trimmed of whitespace.
     pub fn remember(
         &self,
@@ -151,6 +164,30 @@ impl SessionStore {
         start: usize,
         end: usize,
         label: &str,
+    ) -> Result<Vec<SessionSecret>, SessionError> {
+        self.remember_range(text, start, end, label, None)
+    }
+
+    /// [`SessionStore::remember`], unless the session was cleared since `generation` was read
+    /// ([`SessionError::Cleared`]). Checked under the same lock that stores the value.
+    pub fn remember_unless_cleared(
+        &self,
+        generation: u64,
+        text: &str,
+        start: usize,
+        end: usize,
+        label: &str,
+    ) -> Result<Vec<SessionSecret>, SessionError> {
+        self.remember_range(text, start, end, label, Some(generation))
+    }
+
+    fn remember_range(
+        &self,
+        text: &str,
+        start: usize,
+        end: usize,
+        label: &str,
+        unless_cleared_since: Option<u64>,
     ) -> Result<Vec<SessionSecret>, SessionError> {
         if end <= start {
             return Err(SessionError::BadRange);
@@ -160,12 +197,17 @@ impl SessionStore {
             return Err(SessionError::BadRange);
         }
         let (s, e) = (map.to_byte(start), map.to_byte(end));
-        self.insert(text[s..e].trim(), label, MIN_REMEMBERED)
+        self.insert(
+            text[s..e].trim(),
+            label,
+            MIN_REMEMBERED,
+            unless_cleared_since,
+        )
     }
 
     /// Remembers a value typed into the masked field.
     pub fn add(&self, secret: &str, label: &str) -> Result<Vec<SessionSecret>, SessionError> {
-        self.insert(secret.trim(), label, MIN_TYPED)
+        self.insert(secret.trim(), label, MIN_TYPED, None)
     }
 
     pub fn forget(&self, id: &str) -> Vec<SessionSecret> {
@@ -176,7 +218,9 @@ impl SessionStore {
 
     /// Forgets everything (Forget all, and every wipe).
     pub fn clear(&self) -> Vec<SessionSecret> {
-        self.write().entries.clear();
+        let mut g = self.write();
+        g.entries.clear();
+        g.generation += 1;
         Vec::new()
     }
 
@@ -185,6 +229,7 @@ impl SessionStore {
         raw: &str,
         label: &str,
         min_chars: usize,
+        unless_cleared_since: Option<u64>,
     ) -> Result<Vec<SessionSecret>, SessionError> {
         let value = normalize(raw);
         if value.chars().count() < min_chars {
@@ -210,6 +255,9 @@ impl SessionStore {
         }
         let label = label.to_string();
         let mut g = self.write();
+        if unless_cleared_since.is_some_and(|since| since != g.generation) {
+            return Err(SessionError::Cleared);
+        }
         if !g
             .entries
             .iter()
@@ -519,6 +567,32 @@ mod tests {
         assert!(changed.is_empty());
         assert!(store.is_empty());
         assert!(WIPES.load(std::sync::atomic::Ordering::SeqCst) > before);
+    }
+
+    #[test]
+    fn a_remember_that_started_before_a_wipe_adds_nothing() {
+        let store = Arc::new(SessionStore::new());
+        let wiper = crate::wipe::Wiper::new(store.clone());
+        let secret = fake_secret(13);
+        let text = format!("pw {secret}");
+        let end = text.encode_utf16().count();
+        // The command starts, then a lock wipe runs before the value is stored.
+        let since = store.generation();
+        wiper.wipe();
+        assert_eq!(
+            store.remember_unless_cleared(since, &text, 3, end, "Late"),
+            Err(SessionError::Cleared)
+        );
+        assert!(store.is_empty());
+        // A remember that starts after the wipe goes through.
+        let since = store.generation();
+        assert_eq!(
+            store
+                .remember_unless_cleared(since, &text, 3, end, "Fresh")
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
