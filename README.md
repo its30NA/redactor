@@ -11,6 +11,10 @@ private keys in it and swaps each one for a placeholder like `[REDACTED: Passwor
 is safe to send to a chat assistant, a ticket or a colleague. Nothing leaves your machine: there is no
 network code, no account and no telemetry.
 
+**At a glance:** 181 detectors · all 811 planted secrets found in the [test corpus](docs/ACCURACY.md), 0 false
+alarms on 62 clean files · no network code (the build fails if an HTTP library is added) · releases built only
+by GitHub Actions, with checksums and [build provenance attestations](#verify-the-download)
+
 <p align="center">
   <img src="assets/hero-dark.png" alt="Redactor on Windows: the pasted text on the left with the secrets highlighted, the safe output in the middle, the findings list on the right" width="900">
 </p>
@@ -48,21 +52,61 @@ download first (below), then choose "More info" and "Run anyway". See the
 [threat model](docs/THREAT_MODEL.md#the-unsigned-binary-and-smartscreen) for why that is a limit, not a
 formality.
 
+### Install `scrub`
+
+`scrub` is one file. Unpack the archive and put the file in a folder that is on your `PATH`.
+
+```bash
+# Linux
+tar -xzf scrub-v<version>-x86_64-unknown-linux-musl.tar.gz
+install -m 755 scrub ~/.local/bin/scrub        # ~/.local/bin must be on your PATH
+
+# macOS (Apple silicon shown; use the x86_64 file on an Intel Mac)
+tar -xzf scrub-v<version>-aarch64-apple-darwin.tar.gz
+install -m 755 scrub /usr/local/bin/scrub      # or any folder on your PATH
+xattr -d com.apple.quarantine /usr/local/bin/scrub   # only if macOS refuses to open it
+```
+
+```powershell
+# Windows (PowerShell)
+Expand-Archive .\scrub-v<version>-x86_64-pc-windows-msvc.zip -DestinationPath $env:LOCALAPPDATA\scrub
+# then add %LOCALAPPDATA%\scrub to your PATH (Settings > System > About > Advanced system settings > Environment Variables)
+```
+
+The macOS binary is not signed or notarized, so macOS marks a downloaded copy as quarantined and may refuse to
+open it ("cannot be opened because the developer cannot be verified"). Verify the download first (below);
+the `xattr` line removes the mark. Check with `scrub version`.
+
 ### Verify the download
 
 Every file is built by GitHub Actions from a tagged commit, and the release carries a checksum list and
-build provenance attestations.
+build provenance attestations. The checksum needs no extra tools. The attestation needs the
+[GitHub CLI](https://cli.github.com/) (`gh`), signed in with `gh auth login`.
 
 ```bash
 # 1. The checksum matches (run in the folder with the downloads)
-sha256sum --check --ignore-missing SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS      # Linux
+shasum -a 256 --check --ignore-missing SHA256SUMS  # macOS
 # PowerShell: (Get-FileHash .\<file> -Algorithm SHA256).Hash   and compare with the line in SHA256SUMS
 
-# 2. GitHub signed a statement that this exact file was built by this repository's workflow
+# 2. Sign in to GitHub once (needed by the next command)
+gh auth login
+
+# 3. GitHub signed a statement that this exact file was built by this repository's workflow
 gh attestation verify <file> --repo its30NA/redactor
 ```
 
 Verify `SHA256SUMS` the same way if you want to be sure the checksum list is genuine.
+
+### Uninstall
+
+- **Desktop app:** Windows Settings > Apps > Installed apps > Redactor > Uninstall. The installer is per-user,
+  so no administrator rights are needed. The portable zip has nothing to uninstall: delete the file.
+- **Your settings stay behind.** The app keeps `%APPDATA%\Redactor\settings.json`, which holds your settings and
+  your always-redact word list in plain text. Delete the `Redactor` folder in `%APPDATA%` if you want it gone.
+- **`scrub`:** delete the `scrub` file. If you ran `scrub install-hook`, delete the `pre-commit` file it wrote
+  (in `.git/hooks/` or the folder `core.hooksPath` names) in each repository. A `redactor.toml` you wrote
+  stays where it is, and so does a file you passed to `--audit`.
 
 ## What it catches
 
@@ -75,7 +119,7 @@ Verify `SHA256SUMS` the same way if you want to be sure the checksum list is gen
   and the second and third copy of a secret elsewhere in the text.
 - **Optional personal data:** e-mail, phone, IBAN, card numbers, IP addresses, SSN.
 
-The full catalog (170+ rules, each with its pattern and confidence) is in [docs/DETECTORS.md](docs/DETECTORS.md).
+The full catalog (181 rules, each with its pattern and confidence) is in [docs/DETECTORS.md](docs/DETECTORS.md).
 Detection is heuristic, so Redactor shows every finding with its reason and lets you keep one, redact
 more, or remember a value. Measured recall and false positives are in [docs/ACCURACY.md](docs/ACCURACY.md).
 
@@ -107,7 +151,7 @@ The engine is a pure Rust library with no I/O. The desktop app and `scrub` are t
   security policy allows fetch, XHR and WebSocket connections only to the app's IPC endpoint and loads
   nothing from elsewhere. WebRTC, which that policy does not cover, is removed from the page at start-up,
   and WebView2 starts with non-proxied WebRTC UDP, DNS prefetching and background networking switched
-  off. The window is granted only the 14 commands of the app, with no file, shell, HTTP or opener
+  off. The window is granted only the 13 commands of the app, with no file, shell, HTTP or opener
   permission, and every IPC message must pass an allowlist of the UI's own calls in the isolation frame.
   No HTTP client crate is linked into the Windows app or into `scrub`: `cargo deny` fails the build if one
   appears (`deny.toml`). These limits are checked by tests (`app/src-tauri/tests/config.rs`,
@@ -123,7 +167,8 @@ The engine is a pure Rust library with no I/O. The desktop app and `scrub` are t
   clearly labeled in the app. Secrets you ask Redactor to remember live in memory only. The window runs
   in WebView2's private mode and the UI has no local storage.
 - **Wipes.** Remembered secrets are zeroed in memory when you forget them, quit, lock Windows, put the
-  PC to sleep, or after the idle timeout (10 minutes by default). The text panes are cleared at the same
+  PC to sleep, or after the idle timeout (10 minutes by default; idle means no scan, copy or settings
+  change from the window, so reading the output does not count). The text panes are cleared at the same
   moments. Zeroing covers the shell's own buffers (remembered secrets, request and clipboard text, opened
   files), not the engine's working copies, Tauri's IPC buffers or JavaScript strings, which cannot be
   wiped; the [threat model](docs/THREAT_MODEL.md#what-is-not-protected) lists exactly what is and is not
@@ -138,7 +183,8 @@ The engine is a pure Rust library with no I/O. The desktop app and `scrub` are t
   which runs in linear time, and the rest of the engine scales linearly with the size of the input too,
   so crafted input cannot stall it. A release test (`adversarial_shapes_scale_linearly`,
   `crates/redactor-core/tests/perf.rs`) times long lines, unterminated blocks, many distinct values,
-  nested encodings and similar shapes; the slowest runs at about 3.5 MiB/s.
+  nested encodings and similar shapes, and fails below 1 MiB/s; the slowest ran at about 3.9 MiB/s when
+  last measured.
 
 What Redactor does not protect against is written down in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 In short: another program running as you can read the window while it is open.
@@ -152,13 +198,15 @@ scrub app.log --summary             # counts per label on stderr
 scrub app.log --preview             # where each redaction happened (values masked)
 scrub scan .                        # report secrets in a folder, exit 1 if any
 scrub scan . --write                # rewrite files in place with placeholders
-scrub install-hook                  # block commits that contain secrets
+scrub install-hook                  # pre-commit hook: block commits that contain secrets
 scrub clipboard                     # clean the clipboard in place (Windows)
 scrub --sensitivity paranoid --pii  # flag more
 scrub detectors                     # list every rule
 ```
 
-Every command and the config file are described in the [user guide](docs/GUIDE.md).
+Exit codes: 0 success; 1 `scan` or `check` found secrets; 2 an error, or no secret was found but part of the
+input could not be checked (binary or unreadable file, an encoded part left undecoded, output not verified
+clean). The [user guide](docs/GUIDE.md) describes every command and the config file.
 
 ## Build from source
 
