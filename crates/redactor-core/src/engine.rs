@@ -17,7 +17,7 @@ use crate::detector::Detector;
 use crate::finding::{
     Candidate, Finding, ScanOutcome, SecretMatcher, Source, Tier, ValueKey, Warning, WarningKind,
 };
-use crate::guard::is_placeholder;
+use crate::guard::{is_placeholder, is_placeholder_at};
 use crate::normalize::{normalize_value, HiddenCounts, Shadow};
 use crate::occurrences::Occurrences;
 use crate::placeholder::{PlaceholderPolicy, GENERIC_LABEL};
@@ -757,7 +757,7 @@ impl Engine {
             return false;
         }
         let value = normalize_value(&text[c.start..c.end]);
-        if is_placeholder(&value) {
+        if is_placeholder_at(text, c.start, c.end, &value) {
             return false;
         }
         if let Some(allow) = &self.allowlist {

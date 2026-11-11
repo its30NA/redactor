@@ -1688,3 +1688,25 @@ fn weak_keys_skip_lowercase_word_names() {
     }
     assert_redacted("auth: Zq81mXv0pLr3TfK9wQe2\n", "Zq81mXv0pLr3TfK9wQe2");
 }
+
+/// A `$` inside single quotes is literal (`'$ecretPlum'`), and a `config.` prefix is a
+/// reference only before a member path (`config.db.password`, not `Config.2024!x`).
+#[test]
+fn guard_keeps_literal_dollars_and_non_paths() {
+    assert_redacted("DB_PASSWORD='$ummer2024'\n", "$ummer2024");
+    assert_redacted("PASSWORD='$ecretPlum'\n", "$ecretPlum");
+    assert_redacted("DB_PASSWORD=Config.2024!x\n", "Config.2024!x");
+    for text in [
+        "DB_PASSWORD='$DB_PASS'\n",
+        "DB_PASSWORD=$ummer2024\n",
+        "password = config.db.password\n",
+        "token = config.get('api.token')\n",
+    ] {
+        let out = scan_at(text, Sensitivity::Balanced);
+        assert!(
+            out.findings.iter().all(|f| f.kept),
+            "{text:?}: {:?}",
+            out.findings
+        );
+    }
+}

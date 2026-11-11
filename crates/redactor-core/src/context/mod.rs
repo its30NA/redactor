@@ -23,7 +23,7 @@ use aho_corasick::{AhoCorasick, MatchKind};
 use crate::detector::Detector;
 use crate::engine::is_builtin_placeholder;
 use crate::finding::{Candidate, Source};
-use crate::guard::{is_placeholder, mixed_in_digits};
+use crate::guard::{is_placeholder, is_placeholder_at, mixed_in_digits};
 use crate::rules::is_filler;
 
 #[allow(unused_imports)]
@@ -234,7 +234,17 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         });
     }
     // `DB_PASSWORD=[DATABASE]`; an option's `--password PASSWORD`.
-    if never_a_value(v, label) || bracketed_name(v) || flag && metavariable(v) {
+    // `PASSWORD='$ecretPlum'`: a `$` inside single quotes is literal.
+    let literal_dollar = v
+        .strip_prefix('$')
+        .and_then(|r| r.bytes().next())
+        .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && v.chars().count() >= 3
+        && text[..r.start].ends_with('\'')
+        && text[r.end..].starts_with('\'')
+        && !is_placeholder_at(text, r.start, r.end, v);
+    let never = never_a_value(v, label) && !literal_dollar;
+    if never || bracketed_name(v) || flag && metavariable(v) {
         return None;
     }
     let found = |confidence: f32, reason: &'static str, ident_check: bool| Found {

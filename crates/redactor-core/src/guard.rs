@@ -42,9 +42,10 @@ const PLACEHOLDER_WORDS: &[&str] = &[
 /// the engine's to tell (`Engine::is_placeholder`, labels it emits only): it keeps candidates
 /// out of them before the guards run, so text merely framed like one is no exception here.
 pub fn is_placeholder(value: &str) -> bool {
-    let v = value
-        .trim()
-        .trim_matches(|c| c == '"' || c == '\'' || c == '`');
+    let t = value.trim();
+    // `'$ecretPlum'`: shells, YAML and `.env` files read `$` inside single quotes literally.
+    let single_quoted = t.len() >= 2 && t.starts_with('\'') && t.ends_with('\'');
+    let v = t.trim_matches(|c| c == '"' || c == '\'' || c == '`');
     if v.is_empty() {
         return true;
     }
@@ -77,14 +78,18 @@ pub fn is_placeholder(value: &str) -> bool {
     {
         return true;
     }
-    // $VAR / $env:VAR / $db_password / $Password / $API_KEY_V2.
+    // $VAR / $env:VAR / $db_password / $Password / $API_KEY_V2. In single quotes only an
+    // environment-style name (`'$DB_PASS'`, which Compose still expands) or a stand-in word
+    // (`'$password'`) is one; `'$ecretPlum'` is a literal value.
     if let Some(rest) = v.strip_prefix('$') {
         let rest = rest.strip_prefix("env:").unwrap_or(rest);
         let b = rest.as_bytes();
-        if !rest.is_empty()
+        let name = !rest.is_empty()
             && b.iter().all(|c| c.is_ascii_alphanumeric() || *c == b'_')
-            && !b[0].is_ascii_digit()
-        {
+            && !b[0].is_ascii_digit();
+        let env_style = !b.iter().any(u8::is_ascii_lowercase);
+        let word = PLACEHOLDER_WORDS.contains(&rest.to_ascii_lowercase().as_str());
+        if name && (!single_quoted || env_style || word) {
             return true;
         }
     }
@@ -101,7 +106,10 @@ pub fn is_placeholder(value: &str) -> bool {
         "config.",
         "settings.",
     ] {
-        if lower.starts_with(p) {
+        // `config.db.password` is a reference; `Config.2024!x` is a value that starts
+        // like one. A prefix with a `.` holds a member path (names, then an optional call or
+        // index at the end).
+        if lower.starts_with(p) && (!p.ends_with('.') || member_path(&v[p.len()..])) {
             return true;
         }
     }
@@ -113,6 +121,37 @@ pub fn is_placeholder(value: &str) -> bool {
         return true;
     }
     false
+}
+
+/// [`is_placeholder`] for `text[start..end]`, read with the single quotes around it when it
+/// has them (`'$ecretPlum'` is a literal, `$ecretPlum` a variable).
+pub fn is_placeholder_at(text: &str, start: usize, end: usize, value: &str) -> bool {
+    let quoted = text[..start].ends_with('\'') && text[end..].starts_with('\'');
+    if quoted && value.trim_start().starts_with('$') {
+        is_placeholder(&format!("'{}'", value.trim()))
+    } else {
+        is_placeholder(value)
+    }
+}
+
+/// `db.password`, `GITHUB_TOKEN`, `get('db.password')`, `items[0]`: names joined by `.`,
+/// with an optional call or index at the end.
+fn member_path(rest: &str) -> bool {
+    let (path, tail) = match rest.find(['(', '[']) {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, ""),
+    };
+    let closed = tail.is_empty() || tail.ends_with(')') || tail.ends_with(']');
+    closed
+        && !path.is_empty()
+        && path.split('.').all(|seg| {
+            seg.bytes()
+                .next()
+                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                && seg
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        })
 }
 
 /// True when an alphanumeric run of `v` mixes digits into its letters: a letter after a
@@ -157,6 +196,10 @@ mod tests {
             "${S3_SECRET_V2}",
             "$API_KEY_V2",
             "settings.oauth2.client_secret",
+            "config.db.password",
+            "config.get('db.password')",
+            "'$DB_PASS'",
+            "'$password'",
         ] {
             assert!(is_placeholder(v), "{v}");
         }
@@ -177,6 +220,11 @@ mod tests {
             "Tr0ub4dor-here",
             "your-Majesty-1982x",
             "config.Zq81mXv0pLr3",
+            "Config.2024!x",
+            "settings.2024-Summer",
+            "'$ummer2024'",
+            "'$ecretPlum'",
+            "'$ecret-Plum47'",
             "%Tgb6yhn7%",
             "${Hunter2Fake9x}",
             // Earlier placeholders are the engine's to tell (known labels only).

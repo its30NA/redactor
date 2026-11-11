@@ -1,0 +1,9 @@
+# references the guard keeps: variables, environment names in single quotes, member paths
+DB_PASSWORD='$DB_PASS'
+DB_PASSWORD='$password'
+DB_PASSWORD="$ummer"
+DB_PASSWORD=$dbPassword
+password = config.db.password
+password = settings.DATABASES.default.PASSWORD
+token = config.get('api.token')
+secret = env.SECRET_KEY

@@ -1,0 +1,6 @@
+# values that only start like a reference: a $ inside single quotes, a config. prefix without a member path
+DB_PASSWORD='⟦Password|$ummer2024⟧'
+PASSWORD='⟦Password|$ecretPlum⟧'
+password: '⟦Password|$ilverBirch⟧'
+DB_PASSWORD=⟦Password|Config.2024!x⟧
+API_PASSWORD=⟦Password|settings.2031-Autumn⟧
