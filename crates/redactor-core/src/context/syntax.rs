@@ -456,7 +456,14 @@ fn build_key<'t>(
     // negative words (`public key`, `password reset`).
     let mut start = ks;
     let mut end = ke;
-    if words.len() == 1 && dashes == 0 {
+    // An XML tag name (`<wsse:Password Type="…">`) stands alone: its attributes are no
+    // words of it.
+    let xml_tag = match char_before(text, token_start) {
+        Some('<') => true,
+        Some(':') => xml_ns_prefix(&text[line_start(text, token_start)..token_start]),
+        _ => false,
+    };
+    if words.len() == 1 && dashes == 0 && !xml_tag {
         let p1 = word_before(text, ks);
         let p2 = p1.and_then(|(a, _)| word_before(text, a));
         let n1 = word_after(text, ke);
@@ -734,16 +741,22 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
     // kind closes the string, it does not open a value.
     let closing = open_quote(prefix);
 
-    // <KEY>v</KEY>
+    // <KEY>v</KEY>, <ns2:KEY>v</ns2:KEY>, <KEY attr="x">v</KEY>, <KEY><![CDATA[v]]></KEY>
     // Strong keys only: `<code>…</code>` and `<key>…</key>` are HTML and plist markup.
-    if before == Some('<')
-        && b.get(key.end) == Some(&b'>')
-        && key.class.strength == Strength::Strong
-    {
-        let vs = key.end + 1;
+    let xml_open = before == Some('<') || before == Some(':') && xml_ns_prefix(prefix);
+    let start_tag_end = if xml_open && key.class.strength == Strength::Strong {
+        xml_start_tag_end(text, key.end)
+    } else {
+        None
+    };
+    if let Some(gt) = start_tag_end {
+        let vs = gt + 1;
         let hi = ceil(text, vs + MAX_XML);
         let close = text[vs..hi].find('<').map(|p| vs + p);
         let value = close.and_then(|c| {
+            if text[c..].starts_with("<![CDATA[") {
+                return cdata_value(text, c);
+            }
             if !text[c..].starts_with("</") {
                 // `<AdministratorPassword>⏎  <Value>v</Value>`: the value in a child.
                 return text[vs..c]
@@ -797,8 +810,25 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                 let seg = &text[key.end..tag_end];
                 let Some(at) = seg.to_ascii_lowercase().find("value=") else {
                     // `<setting name="SmtpPassword">⏎  <value>v</value>`: a child element.
-                    if b.get(tag_end) != Some(&b'>') {
+                    if b.get(tag_end) != Some(&b'>') || text[..tag_end].ends_with('/') {
                         return None;
+                    }
+                    // `<property name="db.password">v</property>`, `<entry key="…">v</entry>`:
+                    // the element's own text.
+                    if let Some(value) = element_text(text, tag_end + 1) {
+                        return Some(RawPair {
+                            scanned: value.end,
+                            value: Some(value),
+                            syntax: Syntax::Xml,
+                            quoted: true,
+                            sep: Sep::None,
+                            tight: true,
+                            line_start,
+                            code: false,
+                            args: false,
+                            stmt_end: false,
+                            literal: false,
+                        });
                     }
                     let hi = ceil(text, tag_end + 1 + MAX_CELL_GAP);
                     let gap = &text[tag_end + 1..hi];
@@ -1349,6 +1379,71 @@ fn fallback_literal(text: &str, p: usize) -> Option<Range<usize>> {
 }
 
 /// `<value>v</value>` (any case) at `p`: the range of `v`.
+/// `<ns2:` right before a key: an XML namespace prefix.
+fn xml_ns_prefix(prefix: &str) -> bool {
+    let Some(rest) = prefix.strip_suffix(':') else {
+        return false;
+    };
+    let name = rest
+        .bytes()
+        .rev()
+        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+        .count();
+    name > 0 && rest[..rest.len() - name].ends_with('<')
+}
+
+/// The `>` that closes a start tag whose name ends at `p`: right there, or after attributes
+/// (`<password encrypted="false">`). `None` for an empty element (`<password/>`), a name
+/// that goes on (`<passwordPolicy>`) or no tag end within 512 bytes.
+fn xml_start_tag_end(text: &str, p: usize) -> Option<usize> {
+    let b = text.as_bytes();
+    match b.get(p)? {
+        b'>' => return Some(p),
+        b' ' | b'\t' => {}
+        _ => return None,
+    }
+    let hi = ceil(text, p + 512);
+    let mut quote: Option<u8> = None;
+    for (i, &c) in b[p..hi].iter().enumerate() {
+        match (quote, c) {
+            (Some(q), _) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, b'"' | b'\'') => quote = Some(c),
+            (None, b'<' | b'\n') => return None,
+            (None, b'>') => return (b[p + i - 1] != b'/').then_some(p + i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `<![CDATA[v]]>` at `p`: the range of `v`.
+fn cdata_value(text: &str, p: usize) -> Option<Range<usize>> {
+    const OPEN: &str = "<![CDATA[";
+    let vs = p + OPEN.len();
+    let e = vs + text[vs..ceil(text, vs + MAX_XML)].find("]]>")?;
+    let raw = &text[vs..e];
+    let s = vs + (raw.len() - raw.trim_start().len());
+    let e = vs + raw.trim_end().len();
+    (e > s).then_some(s..e)
+}
+
+/// The text of an element whose start tag ends right before `p`: up to its closing tag,
+/// or a CDATA section.
+fn element_text(text: &str, p: usize) -> Option<Range<usize>> {
+    let c = p + text[p..ceil(text, p + MAX_XML)].find('<')?;
+    if text[c..].starts_with("<![CDATA[") {
+        return cdata_value(text, c);
+    }
+    if !text[c..].starts_with("</") {
+        return None;
+    }
+    let raw = &text[p..c];
+    let s = p + (raw.len() - raw.trim_start().len());
+    let e = p + raw.trim_end().len();
+    (e > s && !text[s..e].contains('\n')).then_some(s..e)
+}
+
 fn value_element(text: &str, p: usize) -> Option<Range<usize>> {
     const OPEN: &str = "<value>";
     if !text[p..].get(..OPEN.len())?.eq_ignore_ascii_case(OPEN) {

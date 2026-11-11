@@ -1536,3 +1536,28 @@ fn escaped_json_keys_and_values() {
         assert_clean(text);
     }
 }
+
+/// XML beyond `<KEY>v</KEY>`: namespace prefixes, attributes, CDATA, and the element text of
+/// `<property name="…password">` / `<entry key="…">`.
+#[test]
+fn xml_prefixes_attributes_and_cdata() {
+    for text in [
+        "<ns2:password>Hunter2-Fake-9x</ns2:password>\n",
+        "<wsse:Password Type=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText\">Hunter2-Fake-9x</wsse:Password>\n",
+        "<password encrypted=\"false\">Hunter2-Fake-9x</password>\n",
+        "<password><![CDATA[Hunter2-Fake-9x]]></password>\n",
+        "<property name=\"hibernate.connection.password\">Hunter2-Fake-9x</property>\n",
+        "<entry key=\"db.password\">Hunter2-Fake-9x</entry>\n",
+    ] {
+        assert_redacted(text, "Hunter2-Fake-9x");
+    }
+    for text in [
+        "<password encrypted=\"true\"/>\n",
+        "<ns2:passwordExpired>false</ns2:passwordExpired>\n",
+        "<xs:element name=\"password\" type=\"xs:string\" minOccurs=\"0\"/>\n",
+        "<property name=\"hibernate.connection.password\">${DB_PASSWORD}</property>\n",
+        "<password><![CDATA[]]></password>\n",
+    ] {
+        assert_clean(text);
+    }
+}

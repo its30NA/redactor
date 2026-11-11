@@ -1,0 +1,27 @@
+<!-- XML config, schemas and SOAP envelopes without secrets -->
+<?xml version="1.0" encoding="UTF-8"?>
+<hibernate-configuration>
+  <session-factory>
+    <property name="hibernate.connection.username">sa</property>
+    <property name="hibernate.connection.password"></property>
+    <property name="hibernate.connection.password">${DB_PASSWORD}</property>
+    <property name="hibernate.connection.url">jdbc:h2:mem:test</property>
+  </session-factory>
+</hibernate-configuration>
+<entry key="db.password"/>
+<entry key="db.user">admin</entry>
+<password encrypted="true"/>
+<password><![CDATA[]]></password>
+<password>${db.password}</password>
+<ns2:password xsi:nil="true"/>
+<ns2:passwordExpired>false</ns2:passwordExpired>
+<xs:element name="password" type="xs:string" minOccurs="0"/>
+<xsd:element name="clientSecret" type="xsd:string"/>
+<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">{{ soap_password }}</wsse:Password>
+<passwordEncoder class="org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder"/>
+<add key="PasswordMinLength" value="12" />
+<label for="password">Password</label>
+<input type="password" name="password" placeholder="Password">
+<token-lifetime unit="minutes">30</token-lifetime>
+<secret-ref name="db-credentials"/>
+<password-policy><min-length>12</min-length></password-policy>
