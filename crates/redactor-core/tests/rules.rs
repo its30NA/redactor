@@ -109,6 +109,9 @@ macro_rules! rule_cases {
 
 rule_cases! {
     // ---- AI ----------------------------------------------------------------------------
+    rule_elevenlabs_api_key_hits rule_elevenlabs_api_key_ignores_lookalike "elevenlabs_api_key"
+        |g| ctx("xi-api-key header value ", format!("sk_{}", g.hex(48)), "\n");
+        format!("sk_{}\n", g.hex(20));
     rule_openai_project_key_hits rule_openai_project_key_ignores_lookalike "openai_project_key"
         |g| env(format!("sk-proj-{}", g.alnum(60)));
         format!("OPENAI_API_KEY=sk-proj-{}\n", g.alnum(12));
@@ -165,6 +168,9 @@ rule_cases! {
         "fw_update_firmware_version_now\n".to_string();
 
     // ---- Code hosting and dev -----------------------------------------------------------
+    rule_databricks_token_hits rule_databricks_token_ignores_lookalike "databricks_token"
+        |g| ctx("databricks configure --token   # paste: ", format!("dapi{}", g.hex(32)), "\n");
+        "dapi_version = 2\n".to_string();
     rule_github_pat_hits rule_github_pat_ignores_lookalike "github_pat"
         |g| env(g.github("ghp_"));
         format!("ghp_{}\n", g.alnum(20));
@@ -383,6 +389,12 @@ rule_cases! {
     rule_slack_legacy_token_hits rule_slack_legacy_token_ignores_lookalike "slack_legacy_token"
         |g| env(format!("xoxs-{}", g.alnum(40)));
         "xoxs-abc\n".to_string();
+    rule_slack_client_token_hits rule_slack_client_token_ignores_lookalike "slack_client_token"
+        |g| ctx("my slack session: ", format!("xoxc-{}-{}-{}-{}", g.digits(13), g.digits(13), g.digits(13), g.hex(128)), "\n");
+        format!("xoxc-{}-{}\n", g.digits(13), g.hex(20));
+    rule_hubspot_private_app_token_hits rule_hubspot_private_app_token_ignores_lookalike "hubspot_private_app_token"
+        |g| ctx("hubspot: ", format!("pat-na1-{}-{}-{}-{}-{}", g.hex(8), g.hex(4), g.hex(4), g.hex(4), g.hex(12)), "\n");
+        "pat-na1-team-review-notes\n".to_string();
     rule_slack_app_token_hits rule_slack_app_token_ignores_lookalike "slack_app_token"
         |g| env(format!("xapp-1-{}-{}-{}", g.from(UPPER_ALNUM, 11), g.digits(13), g.hex(64)));
         format!("xapp-1-{}\n", g.from(UPPER_ALNUM, 11));

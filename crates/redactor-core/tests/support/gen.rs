@@ -317,6 +317,29 @@ pub fn corpus_token(g: &mut Gen, name: &str) -> Option<(String, Option<&'static 
             format!("xoxb-{}-{}-{}", g.digits(12), g.digits(13), g.alnum(24)),
             "Slack Token",
         ),
+        "slack_client" => l(
+            format!(
+                "xoxc-{}-{}-{}-{}",
+                g.digits(13),
+                g.digits(13),
+                g.digits(13),
+                g.hex(128)
+            ),
+            "Slack Token",
+        ),
+        "databricks" => l(format!("dapi{}", g.hex(32)), "Databricks Token"),
+        "elevenlabs" => l(format!("sk_{}", g.hex(48)), "ElevenLabs API Key"),
+        "hubspot_pat" => l(
+            format!(
+                "pat-na1-{}-{}-{}-{}-{}",
+                g.hex(8),
+                g.hex(4),
+                g.hex(4),
+                g.hex(4),
+                g.hex(12)
+            ),
+            "HubSpot Token",
+        ),
         "slack_user" => l(
             format!(
                 "xoxp-{}-{}-{}-{}",

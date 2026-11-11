@@ -1592,7 +1592,7 @@ fn arrays_next_lines_and_keyless_credentials() {
         ("password = \"\"\"Tulip-Harbor-91\"\"\"\n", "Tulip-Harbor-91"),
         (
             "apiVersion: v1\nkind: Secret\ndata:\n  smtp-relay: VHVsaXAtSGFyYm9yLTkx\n  username: YWRtaW4=\n",
-            "YWRtaW4=",
+            "VHVsaXAtSGFyYm9yLTkx",
         ),
         (
             "$ kubectl get secret db -o jsonpath='{.data.pw}' | base64 -d\nTulip-Harbor-91\n",
@@ -1621,5 +1621,30 @@ fn arrays_next_lines_and_keyless_credentials() {
         "github.com:22 git@github.com:org/repo.git\n",
     ] {
         assert_clean(text);
+    }
+}
+
+/// A TOTP seed next to its QR code or authenticator, and a grouped key on a license line.
+/// The shapes alone (base32 words, dashed groups) stay untouched.
+#[test]
+fn totp_seeds_and_license_keys() {
+    assert_redacted(
+        "Scan the QR or enter JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP manually.\n",
+        "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+    );
+    assert_redacted(
+        "License: QW3RT-Y7U8I-O9P0A-S1D2F-G3H4J\n",
+        "QW3RT-Y7U8I-O9P0A-S1D2F-G3H4J",
+    );
+    // The shapes alone stay untouched at Balanced (the classifier may flag them at Paranoid).
+    for text in [
+        "Build JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP finished.\n",
+        "Order QW3RT-Y7U8I-O9P0A-S1D2F-G3H4J shipped.\n",
+        "License: MIT OR Apache-2.0\n",
+        "Scan the QR code with your phone to open the page.\n",
+        "Fixed in commit 9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c (see the notes).\n",
+    ] {
+        let out = scan_at(text, Sensitivity::Balanced);
+        assert!(out.findings.is_empty(), "{text:?}: {:?}", out.findings);
     }
 }

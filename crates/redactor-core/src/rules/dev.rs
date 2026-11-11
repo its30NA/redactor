@@ -42,6 +42,15 @@ fn github(
 
 pub(super) fn rules() -> Vec<Rule> {
     vec![
+        r(
+            "databricks_token",
+            "Databricks Token",
+            "dapi + 32 hex (+ -n)",
+            &["dapi"],
+            r"dapi[a-f0-9]{32}(?:-[0-9]{1,2})?",
+            0.95,
+        )
+        .check(check::random),
         github(
             "github_pat",
             "GitHub Token",

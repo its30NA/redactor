@@ -91,6 +91,7 @@ impl Detector for ContextDetector {
         secret_manifest_data(text, &mut found);
         decoded_secret_output(text, &mut found);
         credential_lines(text, &mut found);
+        seeds_and_license_keys(text, &mut found);
         drop_identifiers(text, &mut found);
         out.extend(found.into_iter().map(|f| Candidate {
             start: f.start,
@@ -167,6 +168,8 @@ const R_WEBHOOK: &str = "Random path segment of a webhook URL";
 const R_K8S_DATA: &str = "Data of a Kubernetes Secret";
 const R_DECODED: &str = "Output of a command that prints a secret";
 const R_CRED_LINE: &str = "Password of a user:password line";
+const R_TOTP: &str = "Base32 seed next to a QR code or authenticator";
+const R_LICENSE: &str = "Grouped key on a license or product key line";
 
 /// The first path or query segment of a URL that reads as a generated secret (16+
 /// characters, letters and digits, random-looking).
@@ -482,14 +485,17 @@ fn lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
     })
 }
 
-/// `kind: Secret` manifests: every value under the top-level `data:` (base64) or
-/// `stringData:` is a secret, whatever its key is named. Documents split at `---`.
+/// `kind: Secret` manifests: a value under the top-level `data:` (base64) or `stringData:`
+/// is a secret whatever its key is named, when it (decoded) looks like a password, a random
+/// token or a multi-line key; `username: ZGVtbw==` (`demo`) and `log-level: info` are not.
+/// Documents split at `---`.
 fn secret_manifest_data(text: &str, found: &mut Vec<Found>) {
     if !text.contains("kind: Secret") {
         return;
     }
     let mut secret = false;
     let mut block = false;
+    let mut encoded = false;
     let mut values: Vec<std::ops::Range<usize>> = Vec::new();
     let mut flush = |secret: bool, values: &mut Vec<std::ops::Range<usize>>| {
         if secret {
@@ -519,6 +525,7 @@ fn secret_manifest_data(text: &str, found: &mut Vec<Found>) {
                 secret = true;
             }
             block = l == "data:" || l == "stringData:";
+            encoded = l == "data:";
             continue;
         }
         if !block {
@@ -534,6 +541,25 @@ fn secret_manifest_data(text: &str, found: &mut Vec<Found>) {
             .and_then(|r| r.strip_suffix(['"', '\'']))
             .unwrap_or(v);
         if k.contains(char::is_whitespace) || v.is_empty() || never_a_value(v, Label::Secret) {
+            continue;
+        }
+        let plain = if encoded {
+            let chars = v.trim_end_matches('=');
+            if !chars.bytes().all(crate::encoded::b64_char) {
+                continue;
+            }
+            let mut out = Vec::new();
+            crate::encoded::b64_into(chars.as_bytes(), &mut out);
+            String::from_utf8_lossy(&out).into_owned()
+        } else {
+            v.to_string()
+        };
+        let p = plain.trim();
+        if !(looks_like_password(p)
+            || value_score(p) >= 0.5
+            || p.contains('\n')
+            || p.chars().count() >= 32)
+        {
             continue;
         }
         let s = at + line.len() - t.len() + t.find(v).unwrap_or(0);
@@ -598,6 +624,99 @@ fn credential_lines(text: &str, found: &mut Vec<Found>) {
             });
         }
     }
+}
+
+/// Words on a line that names a one-time-password seed.
+const TOTP_WORDS: &[&str] = &[
+    "qr",
+    "authenticator",
+    "totp",
+    "2fa",
+    "two-factor",
+    "mfa",
+    "one-time",
+    "setup key",
+    "manually",
+    "manual entry",
+];
+
+/// Words on a line that names a license or product key.
+const LICENSE_WORDS: &[&str] = &[
+    "license",
+    "licence",
+    "lizenz",
+    "product key",
+    "serial",
+    "activation",
+    "cd key",
+    "cd-key",
+];
+
+/// A TOTP seed shown for manual entry (`Scan the QR or enter JBSWY3DPEHPK3PXP manually`)
+/// and a grouped license key (`License: QW3RT-Y7U8I-O9P0A-S1D2F-G3H4J`). Both shapes alone
+/// are common enough in ordinary text; the word on the same line is the signal.
+fn seeds_and_license_keys(text: &str, found: &mut Vec<Found>) {
+    for (at, line) in lines(text) {
+        if line.len() > 512 || line.len() < 16 {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        let totp = TOTP_WORDS.iter().any(|w| lower.contains(w));
+        let license = LICENSE_WORDS.iter().any(|w| lower.contains(w));
+        if !totp && !license {
+            continue;
+        }
+        let mut i = 0;
+        for word in line.split([' ', '\t']) {
+            let ws = i;
+            i += word.len() + 1;
+            let w = word.trim_matches(|c: char| {
+                matches!(c, '.' | ',' | ';' | ':' | '(' | ')' | '"' | '\'' | '`')
+            });
+            if w.is_empty() {
+                continue;
+            }
+            let reason = if totp && base32_seed(w) {
+                R_TOTP
+            } else if license && license_key(w) {
+                R_LICENSE
+            } else {
+                continue;
+            };
+            let s = at + ws + word.find(w).unwrap_or(0);
+            found.push(Found {
+                start: s,
+                end: s + w.len(),
+                label: Label::Secret,
+                confidence: 0.75,
+                reason,
+                ident_check: false,
+            });
+        }
+    }
+}
+
+/// 16-64 base32 characters in one case, with digits (2-7) among at least 8 letters.
+fn base32_seed(w: &str) -> bool {
+    let b = w.as_bytes();
+    let upper = b.iter().all(|c| matches!(c, b'A'..=b'Z' | b'2'..=b'7'));
+    let lower = b.iter().all(|c| matches!(c, b'a'..=b'z' | b'2'..=b'7'));
+    let digits = b.iter().filter(|c| c.is_ascii_digit()).count();
+    (16..=64).contains(&b.len()) && (upper || lower) && digits >= 1 && b.len() - digits >= 8
+}
+
+/// `QW3RT-Y7U8I-O9P0A-S1D2F-G3H4J`: 4 to 8 groups of 4-6 capitals and digits, digits and
+/// letters both.
+fn license_key(w: &str) -> bool {
+    let groups: Vec<&str> = w.split('-').collect();
+    (4..=8).contains(&groups.len())
+        && groups.iter().all(|g| {
+            (4..=6).contains(&g.len())
+                && g.bytes()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        })
+        && w.bytes().any(|c| c.is_ascii_digit())
+        && w.bytes().filter(|c| c.is_ascii_uppercase()).count() >= 4
 }
 
 /// `admin:Hunter2-Fake-9x`.

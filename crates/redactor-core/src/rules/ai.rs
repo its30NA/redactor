@@ -16,6 +16,15 @@ fn r(
 pub(super) fn rules() -> Vec<Rule> {
     vec![
         r(
+            "elevenlabs_api_key",
+            "ElevenLabs API Key",
+            "sk_ + 48 hex",
+            &["sk_"],
+            r"sk_[a-f0-9]{48}",
+            0.9,
+        )
+        .check(check::random),
+        r(
             "openai_project_key",
             "OpenAI API Key",
             "sk-proj- + 40+ [A-Za-z0-9_-]",

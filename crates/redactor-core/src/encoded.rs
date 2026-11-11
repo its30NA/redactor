@@ -244,7 +244,7 @@ fn take(budget: &mut usize, n: usize) -> bool {
     }
 }
 
-fn b64_char(b: u8) -> bool {
+pub(crate) fn b64_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'-' | b'_')
 }
 
@@ -261,7 +261,7 @@ fn b64_val(c: u8) -> u32 {
 
 /// Decodes base64 characters (either alphabet, no padding) onto `out`; a last single
 /// character holds no whole byte.
-fn b64_into(chars: &[u8], out: &mut Vec<u8>) {
+pub(crate) fn b64_into(chars: &[u8], out: &mut Vec<u8>) {
     for chunk in chars.chunks(4) {
         if chunk.len() == 1 {
             break;

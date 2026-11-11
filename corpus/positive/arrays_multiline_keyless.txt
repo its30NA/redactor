@@ -33,7 +33,7 @@ metadata:
 type: Opaque
 data:
   smtp-relay: ⟦*|VHVsaXAtSGFyYm9yLTkx⟧
-  username: ⟦*|YWRtaW4=⟧
+  username: YWRtaW4=
 
 $ kubectl get secret db -o jsonpath='{.data.pw}' | base64 -d
 ⟦Password|Marble-Fox-46⟧

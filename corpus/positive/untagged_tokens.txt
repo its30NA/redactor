@@ -1,0 +1,11 @@
+# tokens without a key name: vendor shapes with no rule before, a TOTP seed next to its QR code, a grouped license key
+
+databricks configure --token   # paste: ⟦gen:databricks⟧
+my slack session: ⟦gen:slack_client⟧
+xi-api-key header value ⟦gen:elevenlabs⟧
+hubspot: ⟦gen:hubspot_pat⟧
+Scan the QR or enter ⟦Secret|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP⟧ manually.
+Can't scan? Enter this setup key in your authenticator app: ⟦Secret|KRUGS4ZANFZSAYJAONSWG4TFOQ⟧
+License: ⟦Secret|QW3RT-Y7U8I-O9P0A-S1D2F-G3H4J⟧
+Product key: ⟦Secret|VK7JG-NPHTM-C97JM-9MPGT-3V66T⟧
+Use ⟦!|9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c⟧ to authenticate against the API.

@@ -26,6 +26,23 @@ fn mailgun_context(h: &Hit) -> Verdict {
 pub(super) fn rules() -> Vec<Rule> {
     vec![
         r(
+            "slack_client_token",
+            "Slack Token",
+            "xoxc- + 3 number groups + 64+ hex; xoxd- + 40+ cookie characters",
+            &["xoxc-", "xoxd-"],
+            r"xoxc-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-f0-9]{64,}|xoxd-[A-Za-z0-9%+/=]{40,}",
+            0.98,
+        )
+        .check(check::random),
+        r(
+            "hubspot_private_app_token",
+            "HubSpot Token",
+            "pat- + region + n- + UUID",
+            &["pat-na", "pat-eu", "pat-ap"],
+            r"pat-(?:na|eu|ap)[0-9]-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}",
+            0.95,
+        ),
+        r(
             "notion_integration_secret",
             "Notion Token",
             "secret_ + 43 [A-Za-z0-9]",
