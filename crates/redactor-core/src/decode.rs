@@ -484,13 +484,24 @@ fn json_escapes(text: &str, bytes: &[u8], budget: &mut Budget, out: &mut Vec<Lay
         let mut pending_high: Option<u32> = None;
         while k < bytes.len() && !matches!(bytes[k], b'"' | b'\n' | b'\r' | b'\'') {
             if bytes[k] == b'\\' {
-                let Some(&next) = bytes.get(k + 1) else {
-                    break;
+                // An escape JSON does not know (`\x`, `\u` without four hex digits, a
+                // backslash at the end) is copied through as it stands; the run goes on.
+                let next = bytes.get(k + 1).copied();
+                let cp = if next == Some(b'u') {
+                    hex4(&bytes[k + 2..])
+                } else {
+                    None
                 };
-                if next == b'u' {
-                    let Some(cp) = hex4(&bytes[k + 2..]) else {
-                        break;
-                    };
+                let simple = match next {
+                    Some(b'n') => Some('\n'),
+                    Some(b't') => Some('\t'),
+                    Some(b'r') => Some('\r'),
+                    Some(b'b') => Some('\u{8}'),
+                    Some(b'f') => Some('\u{c}'),
+                    Some(c @ (b'"' | b'\\' | b'/')) => Some(c as char),
+                    _ => None,
+                };
+                if let Some(cp) = cp {
                     escapes += 1;
                     k += 6;
                     match (pending_high.take(), cp) {
@@ -513,21 +524,14 @@ fn json_escapes(text: &str, bytes: &[u8], budget: &mut Budget, out: &mut Vec<Lay
                     }
                     continue;
                 }
-                let c = match next {
-                    b'n' => '\n',
-                    b't' => '\t',
-                    b'r' => '\r',
-                    b'b' => '\u{8}',
-                    b'f' => '\u{c}',
-                    b'"' | b'\\' | b'/' => next as char,
-                    _ => break,
-                };
-                if pending_high.take().is_some() {
-                    decoded.push('\u{FFFD}');
+                if let Some(c) = simple {
+                    if pending_high.take().is_some() {
+                        decoded.push('\u{FFFD}');
+                    }
+                    decoded.push(c);
+                    k += 2;
+                    continue;
                 }
-                decoded.push(c);
-                k += 2;
-                continue;
             }
             if pending_high.take().is_some() {
                 decoded.push('\u{FFFD}');
@@ -594,6 +598,18 @@ mod tests {
         ] {
             assert_eq!(layers(text), Vec::new(), "{text}");
         }
+    }
+
+    #[test]
+    fn unknown_escape_does_not_stop_the_run() {
+        // `\x` is no JSON escape: it is copied through, and the `\u` after it still counts.
+        let text = concat!(r"note: C:\\dir\x gl", r"pat\u002dQz7Wm3Xk9Pld2VteR5yN");
+        let got = layers(text);
+        let want = concat!(r"C:\dir\x gl", "pat-Qz7Wm3Xk9Pld2VteR5yN");
+        assert!(got.iter().any(|(_, d)| d.ends_with(want)), "{got:?}");
+        // So does a `\u` without four hex digits, and a backslash at the end.
+        let got = layers(r"a\uZZ b\u0041bc\");
+        assert!(got.iter().any(|(_, d)| d.ends_with(r"ZZ bAbc\")), "{got:?}");
     }
 
     #[test]

@@ -521,3 +521,20 @@ fn term_values_get_encoded_copy_search() {
         assert!(!out.output.contains(copy), "{copy} left: {}", out.output);
     }
 }
+
+/// An escape JSON does not know (`\x`) does not stop the `\u` escapes after it from being
+/// decoded (2026-11-10 audit, finding 9).
+#[test]
+fn unknown_escape_does_not_hide_a_later_unicode_escape() {
+    let text = concat!(
+        r"note: C:\\dir\x gl",
+        r"pat\u002dQz7Wm3Xk9Pld2VteR5yN",
+        "\n"
+    );
+    let out = engine().scan(text, &ScanRequest::default());
+    assert!(
+        !out.output.contains("Qz7Wm3Xk9Pld2VteR5yN"),
+        "{}",
+        out.output
+    );
+}
