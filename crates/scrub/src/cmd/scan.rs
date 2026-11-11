@@ -22,7 +22,11 @@ pub fn run(args: &ScanArgs) -> Result<i32, CliError> {
     let found = collect(&paths, !args.no_recursive);
     let files = found.files;
 
+    // A path that could not be read or written: exit 2 whatever was found.
     let mut errors = false;
+    // An engine warning (a part left undecoded, output not verified clean): exit 2 only when
+    // nothing was found, so found secrets keep exit 1 (as in `check`).
+    let mut warned = false;
     for path in &found.missing {
         eprintln!(
             "scrub: cannot read {}: no such file or directory",
@@ -64,7 +68,7 @@ pub fn run(args: &ScanArgs) -> Result<i32, CliError> {
         };
         let outcome = scan_text(&engine, &text);
         if super::warn_engine(&path.display().to_string(), &outcome.warnings) {
-            errors = true;
+            warned = true;
         }
         if outcome.findings.is_empty() {
             continue;
@@ -111,7 +115,13 @@ pub fn run(args: &ScanArgs) -> Result<i32, CliError> {
     // Report mode signals findings through the exit code (handy for CI); fix mode succeeds
     // unless a file had to be left alone.
     let findings_left = if args.write { unfixed } else { total_findings };
-    Ok(i32::from(findings_left > 0))
+    Ok(if findings_left > 0 {
+        1
+    } else if warned {
+        2
+    } else {
+        0
+    })
 }
 
 fn scan_text(engine: &Engine, text: &str) -> redactor_core::ScanOutcome {

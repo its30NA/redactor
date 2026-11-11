@@ -1177,15 +1177,15 @@ fn unverified_output_warns_and_exits_2() {
     assert_eq!(code, 2, "{err}");
     assert!(!out.contains("x9k2prod"), "{out}");
     assert!(err.contains("could not be verified"), "{err}");
-    // Scan reports the file and exits 2, not 1.
+    // Scan reports the file and exits 1, like check: found secrets win over the warning.
     let f = write(d.path(), "app.env", NEEDS_A_VERIFY_ROUND);
     let (_, err, code) = capped(&["scan", &f], "");
-    assert_eq!(code, 2, "{err}");
+    assert_eq!(code, 1, "{err}");
     assert!(
         err.contains("could not be verified") && err.contains("app.env"),
         "{err}"
     );
-    // Scan --write still writes what was found, and exits 2.
+    // Scan --write still writes what was found, and exits 2 (nothing left unfixed).
     let (_, err, code) = capped(&["scan", "--write", &f], "");
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("could not be verified"), "{err}");
@@ -1248,4 +1248,34 @@ fn engine_warnings_are_printed_and_undecoded_parts_exit_2() {
     let (_, err, code) = run(d.path(), &["scan", "--write", &deep], "");
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("not decoded"), "{err}");
+}
+
+/// `scan` reports found secrets with exit 1 even when another file had a part left
+/// undecoded (CI must not lose "found secrets"), as `check` does; the warning is still
+/// printed. A file that could not be read keeps exit 2.
+#[test]
+fn scan_findings_exit_1_over_engine_warnings() {
+    let d = tmp();
+    let deep = write(d.path(), "deep.txt", &too_deep());
+    let leak = write(d.path(), "app.env", "DB_PASSWORD=Plum-tree47-Ox\n");
+    let (out, err, code) = run(d.path(), &["scan", &deep, &leak], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(out.contains("app.env"), "{out}");
+    assert!(
+        err.contains("deep.txt") && err.contains("not decoded"),
+        "{err}"
+    );
+    // A secret and a part left undecoded in one file: still 1.
+    let both = write(
+        d.path(),
+        "both.txt",
+        &format!("{}DB_PASSWORD=Plum-tree47-Ox\n", too_deep()),
+    );
+    let (_, err, code) = run(d.path(), &["scan", &both], "");
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("not decoded"), "{err}");
+    // A path that cannot be read: 2, findings or not.
+    let missing = d.path().join("missing.txt");
+    let (_, err, code) = run(d.path(), &["scan", &leak, missing.to_str().unwrap()], "");
+    assert_eq!(code, 2, "{err}");
 }
