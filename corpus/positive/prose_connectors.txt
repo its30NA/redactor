@@ -1,0 +1,47 @@
+# a password named in a sentence, with the connectors people use
+
+Your new password is: ⟦Password|Tulip-Harbor-91⟧
+
+Your password has been reset to: ⟦Password|Cedar-Quill-37⟧
+
+Your password was reset to ⟦Password|Maple-Stone-58⟧
+
+The root password has been set to ⟦Password|Birch-Lantern-24⟧
+
+I've set your password to ⟦Password|Amber-Raven-75⟧
+
+I changed the password to ⟦Password|Copper-Delta-48⟧ yesterday.
+
+I changed the pwd to "⟦Password|Walnut-Ferry-63⟧" yesterday
+
+The password will be ⟦Password|Orchid-Pine-17⟧
+
+password should be ⟦Password|Glacier-Falcon-29⟧
+
+Password (prod): ⟦Password|Zebra-Lamp-42⟧
+
+DB password prod: ⟦Password|Harbor-Tulip-33⟧
+
+Password - ⟦Password|Quill-Cedar-51⟧
+
+"⟦Password|Stone-Maple-64⟧" is the password
+
+⟦Password|Lantern-Birch-86⟧ is the new admin password
+
+Ich habe das Passwort auf ⟦Password|Raven-Amber-19⟧ geändert.
+
+La password è ⟦Password|Delta-Copper-27⟧
+
+le mot de passe c'est ⟦Password|Ferry-Walnut-38⟧
+
+رمز عبور سرور: ⟦Password|Pine-Orchid-45⟧
+
+پسورد سرور: ⟦Password|Falcon-Glacier-56⟧
+
+پسورد دیتابیس: ⟦Password|Lamp-Zebra-67⟧
+
+رمز ورود: ⟦Password|Tulip-Stone-78⟧
+
+رمز عبور را به ⟦Password|Cedar-Birch-89⟧ تغییر دادم
+
+کلمه‌ی عبور: ⟦Password|Maple-Raven-90⟧

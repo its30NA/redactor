@@ -1135,3 +1135,37 @@ fn word_like_passwords_outside_code() {
     assert_clean("{\"password\": \"userPassword\"}\n");
     assert_clean("login(username=user1, password=pass1)\n");
 }
+
+/// Prose connectors: `is:`, `set/reset/changed … to`, `will/should be`, `-`, a qualifier with
+/// a colon, the value before `is the password`, and the German, Italian, French and Persian
+/// forms.
+#[test]
+fn prose_connectors_name_the_value() {
+    for text in [
+        "Your new password is: Tulip-Harbor-91\n",
+        "Your password has been reset to: Tulip-Harbor-91\n",
+        "Your password was reset to Tulip-Harbor-91\n",
+        "I changed the password to Tulip-Harbor-91 yesterday.\n",
+        "The password will be Tulip-Harbor-91\n",
+        "Password (prod): Tulip-Harbor-91\n",
+        "Password - Tulip-Harbor-91\n",
+        "\"Tulip-Harbor-91\" is the password\n",
+        "Tulip-Harbor-91 is the new admin password\n",
+        "Ich habe das Passwort auf Tulip-Harbor-91 geändert.\n",
+        "La password è Tulip-Harbor-91\n",
+        "le mot de passe c'est Tulip-Harbor-91\n",
+        "پسورد سرور: Tulip-Harbor-91\n",
+        "رمز عبور را به Tulip-Harbor-91 تغییر دادم\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    for text in [
+        "The password will be emailed to you.\n",
+        "Your password has been reset to the default policy.\n",
+        "This is the password field.\n",
+        "the password for the account was changed: yesterday at noon\n",
+    ] {
+        let out = scan_at(text, Sensitivity::Balanced);
+        assert!(out.findings.is_empty(), "{text:?}: {:?}", out.findings);
+    }
+}

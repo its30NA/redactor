@@ -368,7 +368,10 @@ fn build_key<'t>(
         let n2 = n1.and_then(|(_, b)| word_after(text, b));
         for nb in [p1, n1].into_iter().flatten() {
             let w = text[nb.0..nb.1].to_lowercase();
-            if is_negative(&w) && !CONNECTORS.contains(&w.as_str()) {
+            // `password has been reset to v`: after the key, `has` starts a sentence's verb;
+            // before it (`has password`) it names a flag.
+            let verb = nb.0 > ke && matches!(w.as_str(), "has" | "have" | "had");
+            if is_negative(&w) && !CONNECTORS.contains(&w.as_str()) && !verb {
                 // Unless the neighbour completes a phrase (`database url`).
                 let mut both = words.clone();
                 if nb.0 < ks {

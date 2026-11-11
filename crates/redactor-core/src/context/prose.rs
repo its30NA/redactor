@@ -4,7 +4,7 @@
 use std::ops::Range;
 
 use super::lexicon::{CONNECTORS, TRAILING_CONNECTORS};
-use super::syntax::{is_cjk, line_end, Key};
+use super::syntax::{is_cjk, line_end, line_start, Key};
 
 /// A value found after a key in prose.
 #[derive(Clone, Debug)]
@@ -51,6 +51,13 @@ pub(crate) fn prose_value(text: &str, key: &Key) -> Option<ProseHit> {
             between: Vec::new(),
         });
     }
+    // `"v" is the password.`: the key ends the sentence.
+    if matches!(
+        b.get(key.end),
+        None | Some(b'\n' | b'\r' | b'.' | b'!' | b',' | b';')
+    ) {
+        return value_before(text, key);
+    }
     if !matches!(b.get(key.end), Some(b' ' | b'\t')) {
         return None;
     }
@@ -72,8 +79,8 @@ pub(crate) fn prose_value(text: &str, key: &Key) -> Option<ProseHit> {
             toks.push(st..i);
         }
     }
-    if toks.is_empty() {
-        return None;
+    if toks.is_empty() || text[toks[0].clone()].starts_with(['.', ',', '!', ';', ')']) {
+        return value_before(text, key);
     }
     // The look-ahead window only finds the connector: a value token it cuts runs on to its
     // blank, however long.
@@ -87,26 +94,68 @@ pub(crate) fn prose_value(text: &str, key: &Key) -> Option<ProseHit> {
         }
     }
     let lower = |r: &Range<usize>| text[r.clone()].to_lowercase();
+    // Words between the key and the connector that only carry tense or a change verb
+    // (`has been reset to`): not a description of the key, so never a negative word.
+    let between = |toks: &[Range<usize>]| -> Vec<Range<usize>> {
+        toks.iter()
+            .filter(|r| {
+                let w = lower(r);
+                let w = w.trim_end_matches([',', '.', ':']);
+                !(AUXILIARIES.contains(&w) || CHANGE_VERBS.contains(&w))
+            })
+            .cloned()
+            .collect()
+    };
+    let line = &text[line_start(text, key.start)..le];
     for j in 0..toks.len().min(7) {
-        // `Das Passwort fuer das Backup: v`: a colon ends the description.
-        let colon = j > 0 && text[toks[j].clone()].ends_with(':') && toks[j].len() > 1;
+        // `Das Passwort fuer das Backup: v`, `Password (prod): v`, `پسورد سرور: v`: a colon
+        // ends the description.
+        let colon = text[toks[j].clone()].ends_with(':') && toks[j].len() > 1;
         // Connectors are short; skip lowercasing longer tokens.
         if toks[j].len() > 16 && !colon {
             continue;
         }
         let w = lower(&toks[j]);
         let w = w.trim_end_matches([',', '.']);
-        let w = if colon { ":" } else { w };
+        // `is:`, `to:`: the connector with a colon after it.
+        let bare = w.strip_suffix(':').filter(|b| !b.is_empty()).unwrap_or(w);
+        let prev = j.checked_sub(1).map(|i| lower(&toks[i]));
+        let prev = prev.as_deref();
+        // `set/reset/changed … to v`, `will/should be v`, `auf v … geändert`, `را به v`.
+        let conditional = match bare {
+            "to" => CHANGE_VERBS.iter().any(|v| contains_word(line, v)),
+            "be" => prev.is_some_and(|p| MODALS.contains(&p)),
+            "auf" => GERMAN_CHANGE
+                .iter()
+                .any(|v| contains_word(&line.to_lowercase(), v)),
+            "به" => prev == Some("را"),
+            _ => false,
+        };
+        // `was changed: yesterday` reports a change, it does not give the value.
+        let verb = AUXILIARIES.contains(&bare) || CHANGE_VERBS.contains(&bare);
+        let w = if CONNECTORS.contains(&bare) || conditional {
+            bare
+        } else if colon && !verb {
+            ":"
+        } else {
+            w
+        };
         // Persian puts the verb last: `رمز عبور X است`, so a trailing verb after a word
         // points back at it.
-        if CONNECTORS.contains(&w) && !(j >= 1 && TRAILING_CONNECTORS.contains(&w)) {
+        if CONNECTORS.contains(&w) && !(j >= 1 && TRAILING_CONNECTORS.contains(&w)) || conditional {
             let v = toks.get(j + 1)?;
+            // `was reset to v`, `is now v`: the connector starts a longer verb.
+            let next = lower(v);
+            let next = next.trim_end_matches([',', '.', ':']);
+            if AUXILIARIES.contains(&next) || CHANGE_VERBS.contains(&next) {
+                continue;
+            }
             return Some(ProseHit {
                 value: clean(text, v.start, v.end)?,
                 raw: v.clone(),
                 connector: true,
                 conn: w.to_string(),
-                between: toks[..j].to_vec(),
+                between: between(&toks[..j]),
             });
         }
         if j >= 1 && TRAILING_CONNECTORS.contains(&w) {
@@ -136,6 +185,115 @@ pub(crate) fn prose_value(text: &str, key: &Key) -> Option<ProseHit> {
         conn: String::new(),
         between: Vec::new(),
     })
+}
+
+/// Tense and modal words between a key and its connector (`has been`, `will`).
+const AUXILIARIES: &[&str] = &[
+    "has",
+    "have",
+    "had",
+    "been",
+    "was",
+    "were",
+    "is",
+    "will",
+    "be",
+    "being",
+    "should",
+    "must",
+    "now",
+    "just",
+    "also",
+    "then",
+    "temporarily",
+];
+
+/// Verbs that make `to` a connector (`set to`, `reset to`, `changed it to`).
+const CHANGE_VERBS: &[&str] = &[
+    "set", "sets", "reset", "resets", "change", "changes", "changed", "changing", "update",
+    "updated", "rotate", "rotated", "switched",
+];
+
+/// Words that make `be` a connector (`will be v`, `should be v`).
+const MODALS: &[&str] = &[
+    "will", "should", "must", "shall", "would", "to", "can", "could",
+];
+
+/// German change verbs that make `auf` a connector (`das Passwort auf v geändert`).
+const GERMAN_CHANGE: &[&str] = &[
+    "geändert",
+    "gesetzt",
+    "zurückgesetzt",
+    "setze",
+    "setzen",
+    "ändere",
+    "ändern",
+    "umgestellt",
+];
+
+/// Determiners between `is` and a key named after its value (`v is the password`).
+const DETERMINERS: &[&str] = &["the", "my", "your", "our", "his", "her", "their", "its"];
+
+/// `v` as a whole word in `hay` (lowercase).
+fn contains_word(hay: &str, w: &str) -> bool {
+    hay.match_indices(w).any(|(i, _)| {
+        let before = hay[..i].chars().next_back();
+        let after = hay[i + w.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
+/// `"v" is the password`, `v is the new admin password`: the key ends its sentence and the
+/// value stands before `is the`, at most two words before the key.
+fn value_before(text: &str, key: &Key) -> Option<ProseHit> {
+    let ls = line_start(text, key.start);
+    let lo = floor_char(text, ls.max(key.start.saturating_sub(256)));
+    let toks: Vec<Range<usize>> = {
+        let mut v = Vec::new();
+        let b = text.as_bytes();
+        let mut i = lo;
+        while i < key.start {
+            while i < key.start && matches!(b[i], b' ' | b'\t') {
+                i += 1;
+            }
+            let st = i;
+            while i < key.start && !matches!(b[i], b' ' | b'\t') {
+                i += 1;
+            }
+            if i > st {
+                v.push(st..i);
+            }
+        }
+        v
+    };
+    let n = toks.len();
+    for gap in 0..=2 {
+        // value, `is`/`was`, determiner, `gap` words, key
+        let Some(vi) = n.checked_sub(3 + gap) else {
+            break;
+        };
+        let conn = text[toks[vi + 1].clone()].to_lowercase();
+        let det = text[toks[vi + 2].clone()].to_lowercase();
+        if matches!(conn.as_str(), "is" | "was") && DETERMINERS.contains(&det.as_str()) {
+            let v = &toks[vi];
+            return Some(ProseHit {
+                value: clean(text, v.start, v.end)?,
+                raw: v.clone(),
+                connector: true,
+                conn: conn.clone(),
+                between: toks[vi + 3..].to_vec(),
+            });
+        }
+    }
+    None
+}
+
+/// The char boundary at or before `i`.
+fn floor_char(text: &str, mut i: usize) -> usize {
+    while !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
 }
 
 fn skip_ws(text: &str, mut p: usize) -> usize {

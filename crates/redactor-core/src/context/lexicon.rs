@@ -103,6 +103,8 @@ pub(crate) const ENTRIES: &[Entry] = &[
     // two words
     s(&["رمز", "عبور"], Password),
     s(&["کلمه", "عبور"], Password),
+    // `کلمه‌ی عبور` with the ezafe `ی` (the ZWNJ before it is removed before detection).
+    s(&["کلمهی", "عبور"], Password),
     s(&["كلمة", "المرور"], Password),
     s(&["كلمة", "السر"], Password),
     s(&["key", "content"], Password),
@@ -405,7 +407,7 @@ pub(crate) const NEGATIVE: &[&str] = &[
 /// Words that connect a key to its value in prose.
 pub(crate) const CONNECTORS: &[&str] = &[
     "is", "was", "are", "ist", "lautet", "heißt", "war", "est", "es", "é", "است", "هست", "هو",
-    "是", "は", ":", "=", "→", "->", "=>",
+    "是", "は", ":", "=", "→", "->", "=>", "-", "–", "—", "è", "c'est", "c’est",
 ];
 
 /// Persian puts the verb last (`رمز عبور من X است`): the value comes before these.
