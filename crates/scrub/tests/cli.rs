@@ -777,14 +777,10 @@ fn audit_dash_goes_to_stderr_and_names_the_file() {
 
 #[test]
 fn v1_config_loads() {
-    // The v1 example file (verbatim copy in tests/fixtures) and the updated example in
-    // examples/ both parse, with the same meaning: three allowlist patterns, everything else
-    // default.
+    // The v1 example file (verbatim copy in tests/fixtures) parses: three allowlist patterns,
+    // everything else default.
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for path in [
-        root.join("tests/fixtures/redactor.v1.toml"),
-        root.join("../../examples/redactor.example.toml"),
-    ] {
+    for path in [root.join("tests/fixtures/redactor.v1.toml")] {
         let cfg = scrub::config::Config::load(Some(&path)).unwrap();
         let aws_docs_key = ["AK", "IA", "IOSFODNN7EXAMPLE"].concat();
         assert_eq!(
@@ -807,6 +803,20 @@ fn v1_config_loads() {
         let (out, _, _) = run(d.path(), &["-c", &p], &format!("{fake} {real}"));
         assert_eq!(out, format!("{fake} [REDACTED: GitHub Token]"));
     }
+}
+
+#[test]
+fn the_example_config_loads_and_changes_nothing() {
+    // examples/redactor.example.toml has every line commented out, so it parses to the defaults
+    // without a notice or a warning.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cfg = scrub::config::Config::load(Some(&root.join("../../examples/redactor.example.toml")))
+        .unwrap();
+    assert!(cfg.engine.allowlist.is_empty() && cfg.engine.custom_rules.is_empty());
+    assert!(cfg.engine.disabled.is_empty() && cfg.engine.terms.is_empty());
+    assert!(!cfg.engine.pii && cfg.engine.strip_invisible);
+    assert_eq!(cfg.engine.template, "[REDACTED: {label}{suffix}]");
+    assert!(cfg.notices.is_empty() && cfg.weakening.is_empty());
 }
 
 #[test]
