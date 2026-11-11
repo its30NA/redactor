@@ -2,56 +2,56 @@
 
 DBPASS=⟦*|Hunter2-Fake-9x⟧
 
-dbpass = ⟦*|Hunter2-Fake-9x⟧
+dbpass = ⟦*|Tundra5-Mint-4d⟧
 
-$dbpass = '⟦*|Hunter2-Fake-9x⟧';
+$dbpass = '⟦*|Donkey9-Hawk-3k⟧';
 
-userpass: ⟦*|Hunter2-Fake-9x⟧
+userpass: ⟦*|Bucket1-Bolt-5z⟧
 
-rootpw: ⟦*|Hunter2-Fake-9x⟧
+rootpw: ⟦*|Lagoon3-Fern-9n⟧
 
-DBPWD=⟦*|Hunter2-Fake-9x⟧
+DBPWD=⟦*|Falcon2-Vale-2v⟧
 
-psw=⟦*|Hunter2-Fake-9x⟧
+psw=⟦*|Rocket9-Reef-6n⟧
 
-pswd: ⟦*|Hunter2-Fake-9x⟧
+pswd: ⟦*|Velvet3-Gold-8f⟧
 
-passwrd: ⟦*|Hunter2-Fake-9x⟧
+passwrd: ⟦*|Dagger5-Rust-1r⟧
 
-SECRETKEY=⟦*|Hunter2-Fake-9x⟧
+SECRETKEY=⟦*|Donkey8-Wren-9b⟧
 
-passkey: ⟦*|Hunter2-Fake-9x⟧
+passkey: ⟦*|Velvet6-Jade-2c⟧
 
-VPN_IPSEC_PSK=⟦*|Hunter2-Fake-9x⟧
+VPN_IPSEC_PSK=⟦*|Falcon0-Fern-7d⟧
 
 [wifi-security]
 key-mgmt=wpa-psk
-psk=⟦*|Hunter2-Fake-9x⟧
+psk=⟦*|Marble4-Iris-5s⟧
 
-    psk="⟦*|Hunter2-Fake-9x⟧"
+    psk="⟦*|Copper3-Rust-4t⟧"
 
-ldap_default_authtok = ⟦*|Hunter2-Fake-9x⟧
+ldap_default_authtok = ⟦*|Copper3-Iris-1v⟧
 
 WLAN-Schlüssel: ⟦*|Tulip-Harbor-91⟧
 
 API-Schlüssel: ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
 
-Geheimer Schlüssel: ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+Geheimer Schlüssel: ⟦*|s7f8w9t9h7z2d3r2s8f5w4n4x5r9j2g6⟧
 
-Zugangscode: ⟦*|Tulip-Harbor-91⟧
+Zugangscode: ⟦*|Brook-Pepper-85⟧
 
-Clé API : ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+Clé API : ⟦*|f6f5w6h9z9r2t4d2d3h9v4q5x4s5s4r7⟧
 
-Jeton d'accès : ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+Jeton d'accès : ⟦*|b5p7j6j2v4z5s9j5s3m5g9p7w8z7q5h4⟧
 
-کلید API: ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+کلید API: ⟦*|h4k3x5t4j6x7v8g6s8m6b2w3n4d7h9f6⟧
 
 Authorization: ⟦*|9f8e7d6c5b4a39281706f5e4d3c2b1a0⟧
 
 ROOTPASS=⟦*|Cedar-Quill-37⟧
 
-adminpass: ⟦*|Cedar-Quill-37⟧
+adminpass: ⟦*|Pearl-Cliff-41⟧
 
-Netzwerkschlüssel: ⟦*|Cedar-Quill-37⟧
+Netzwerkschlüssel: ⟦*|Maple-Yacht-12⟧
 
-Clé secrète : ⟦*|Cedar-Quill-37⟧
+Clé secrète : ⟦*|Lemon-Otter-26⟧

@@ -4,7 +4,7 @@ kurze Info zum neuen Testsystem (Adresse 10.0.4.30, Port 8080).
 Das Passwort ist ⟦Password|Tr0ub4dor&3⟧ und bitte nicht weitergeben.
 Mein Passwort: ⟦Password|Hunter2-Fake-9x⟧
 Das Kennwort lautet ⟦Password|Winter2024!⟧ fuer den Admin-Zugang.
-Mein Passwort ist ⟦Password|Tr0ub4dor&3⟧ bitte nicht teilen.
+Mein Passwort ist ⟦Password|Lb5wm9ntb&0⟧ bitte nicht teilen.
 Der Benutzer heisst demo, das Passwort fuer die Datenbank ist ⟦Password|Zebra!Lamp(42)⟧.
 
 Das Wartungsfenster ist Donnerstag von 22 bis 23:30 Uhr.

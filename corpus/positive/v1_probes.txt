@@ -47,8 +47,8 @@ Header from a proxy dump:
 X-Api-Key: ⟦gen:hex32⟧
 
 Reused later (both occurrences):
-DB_PASSWORD=⟦Password|Hunter2-Fake-9x⟧
-... login failed for ⟦*|Hunter2-Fake-9x⟧
+DB_PASSWORD=⟦Password|Tundra2-Pine-9g⟧
+... login failed for ⟦*|Tundra2-Pine-9g⟧
 
 Split-key probe, plain form:
 key: ⟦gen:github_pat⟧

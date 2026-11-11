@@ -2,9 +2,9 @@
 
 Credentials: admin / ⟦*|Tulip-Harbor-91⟧
 
-Zugangsdaten: admin / ⟦*|Tulip-Harbor-91⟧
+Zugangsdaten: admin / ⟦*|Olive-Cactus-14⟧
 
-Identifiants : admin / ⟦*|Tulip-Harbor-91⟧
+Identifiants : admin / ⟦*|Brook-Donkey-64⟧
 
 Login: admin / ⟦Password|Maple-Lantern-58⟧
 

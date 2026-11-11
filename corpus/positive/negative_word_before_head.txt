@@ -2,65 +2,65 @@
 
 APPLE_ID_PASSWORD=⟦*|Hunter2-Fake-9x⟧
 
-SCHEMA_REGISTRY_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+SCHEMA_REGISTRY_PASSWORD=⟦*|Meadow4-Jade-8f⟧
 
-FILE_ENCRYPTION_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+FILE_ENCRYPTION_PASSWORD=⟦*|Dagger4-Iris-6t⟧
 
-ZIP_FILE_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+ZIP_FILE_PASSWORD=⟦*|Rocket2-Bolt-4r⟧
 
-EMAIL_PROVIDER_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+EMAIL_PROVIDER_PASSWORD=⟦*|Lagoon3-Opal-9m⟧
 
-SMS_PROVIDER_API_KEY=⟦*|Hunter2-Fake-9x⟧
+SMS_PROVIDER_API_KEY=⟦*|Cactus7-Reef-3j⟧
 
-MESSAGE_BROKER_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+MESSAGE_BROKER_PASSWORD=⟦*|Bucket0-Gold-0p⟧
 
-TIME_SERIES_DB_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+TIME_SERIES_DB_PASSWORD=⟦*|Silver5-Reef-8f⟧
 
-INPUT_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+INPUT_PASSWORD=⟦*|Rocket6-Vale-8d⟧
 
-STATUS_PAGE_API_KEY=⟦*|Hunter2-Fake-9x⟧
+STATUS_PAGE_API_KEY=⟦*|Cactus9-Sage-6r⟧
 
-HELP_SCOUT_API_KEY=⟦*|Hunter2-Fake-9x⟧
+HELP_SCOUT_API_KEY=⟦*|Candle7-Kite-3j⟧
 
-URL_SIGNING_SECRET=⟦*|Hunter2-Fake-9x⟧
+URL_SIGNING_SECRET=⟦*|Candle1-Mild-3z⟧
 
-TF_STATE_ENCRYPTION_PASSPHRASE=⟦*|Hunter2-Fake-9x⟧
+TF_STATE_ENCRYPTION_PASSPHRASE=⟦*|Silver6-Iris-1p⟧
 
-SECRETS_MANAGER_TOKEN=⟦*|Hunter2-Fake-9x⟧
+SECRETS_MANAGER_TOKEN=⟦*|Copper5-Bolt-8n⟧
 
-ERROR_TRACKING_AUTH_TOKEN=⟦*|Hunter2-Fake-9x⟧
+ERROR_TRACKING_AUTH_TOKEN=⟦*|Zephyr4-Jade-2d⟧
 
-PUBLIC_SITE_ADMIN_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+PUBLIC_SITE_ADMIN_PASSWORD=⟦*|Rocket2-Reef-0t⟧
 
-PROD_ENV_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+PROD_ENV_PASSWORD=⟦*|Wombat1-Moss-2v⟧
 
-ENCRYPTION_AT_REST_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+ENCRYPTION_AT_REST_PASSWORD=⟦*|Saddle7-Iris-1p⟧
 
-API_VERSION_2_SECRET=⟦*|Hunter2-Fake-9x⟧
+API_VERSION_2_SECRET=⟦*|Bucket8-Reef-2r⟧
 
-id_rsa_passphrase: ⟦*|Hunter2-Fake-9x⟧
+id_rsa_passphrase: ⟦*|Pepper5-Rust-5k⟧
 
 one_time_password: ⟦*|Kx9mPq2vL7⟧
 
-clearTextPassword: ⟦*|Hunter2-Fake-9x⟧
+clearTextPassword: ⟦*|Velvet7-Pine-5l⟧
 
-plain_text_password = ⟦*|Hunter2-Fake-9x⟧
+plain_text_password = ⟦*|Walnut0-Rust-7l⟧
 
-password_text: ⟦*|Hunter2-Fake-9x⟧
+password_text: ⟦*|Wombat8-Opal-3h⟧
 
-{"username": "jdoe", "passwordText": "⟦*|Hunter2-Fake-9x⟧"}
+{"username": "jdoe", "passwordText": "⟦*|Bucket2-Rust-1c⟧"}
 
 <packageSourceCredentials>
   <MyFeed>
     <add key="Username" value="build" />
-    <add key="ClearTextPassword" value="⟦*|Hunter2-Fake-9x⟧" />
+    <add key="ClearTextPassword" value="⟦*|Wombat6-Tide-1k⟧" />
   </MyFeed>
 </packageSourceCredentials>
 
-export TF_VAR_db_password="⟦*|Hunter2-Fake-9x⟧"
+export TF_VAR_db_password="⟦*|Tundra1-Fern-3j⟧"
 
-TF_VAR_api_token=⟦*|Hunter2-Fake-9x⟧
+TF_VAR_api_token=⟦*|Silver8-Mild-1g⟧
 
-env.DB_PASSWORD = '⟦*|Hunter2-Fake-9x⟧'
+env.DB_PASSWORD = '⟦*|Copper4-Jade-6r⟧'
 
 VAULT_SECRET_ID=⟦*|84896a0c-1347-aa90-a4f6-aca8b7558780⟧

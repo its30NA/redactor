@@ -2,7 +2,7 @@
 machine api.example.org login demo password ⟦Password|N3trcFakePw⟧
 machine git.example.com
   login alice
-  password ⟦Password in URL|Hunter2-Fake-9x⟧
+  password ⟦Password|Hunter2-Fake-9x⟧
 machine ftp.example.net login bob password ⟦Password|Winter2024!⟧
 
 # ~/.pgpass  host:port:db:user:password
@@ -11,6 +11,6 @@ localhost:5432:*:postgres:⟦*|Tr0ub4dor&3⟧
 10.0.4.13:5432:audit:audit:⟦*|S3cr3t!Pass⟧
 
 # ~/.git-credentials
-https://alice:⟦*|Hunter2-Fake-9x⟧@git.example.com
+https://alice:⟦*|Saddle3-Pine-6l⟧@git.example.com
 https://ci-bot:⟦gen:github_pat⟧@github.example.com
 https://bob:⟦*|p%40ss-Fake-12⟧@git.example.org

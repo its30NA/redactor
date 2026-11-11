@@ -9,7 +9,7 @@ Driver={ODBC Driver 18 for SQL Server};Server=10.0.4.12,1433;Database=shop;Uid=s
 # URLs
 mongodb://app:⟦*|Tr0ub4dor%263⟧@10.0.4.15:27017/shop?authSource=admin
 postgres://admin:⟦*|S3cr3t!Pass⟧@db.internal.example:5432/prod
-redis://:⟦*|Winter2024!⟧@10.0.4.20:6379/0
+redis://:⟦*|Garnet8527!⟧@10.0.4.20:6379/0
 amqp://worker:⟦*|a%b^c*d(e)f1⟧@10.0.4.21:5672/vhost
 # harmless
 Server=10.0.4.12;Database=shop;Integrated Security=true;

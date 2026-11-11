@@ -9,7 +9,7 @@ cmd = ['vault', 'login', '--token', '⟦*|Zq81mXv0pLr3TfK9wQe2Lm4x⟧']
           - ⟦Password|Dune-Harbor-45⟧
           - --port=6379
 {"passwords": ["⟦Password|Ember-Willow-56⟧", "⟦Password|Fjord-Pepper-67⟧"]}
-api_keys = ["⟦*|Zq81mXv0pLr3TfK9wQe2Lm4x⟧", "⟦*|kT9mQ2xL7pW4zR8vB3nCq5Ye⟧"]
+api_keys = ["⟦*|Lx53rZd8hSg5KjC2hBx4Zd3z⟧", "⟦*|kT9mQ2xL7pW4zR8vB3nCq5Ye⟧"]
 
 Password:
   ⟦Password|Granite-Owl-78⟧

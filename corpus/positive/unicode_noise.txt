@@ -8,5 +8,5 @@ password: ⟦Password|Zebra!Lamp(42)⟧ 🔒
 passwd: ⟦Password|Hunter2​-Fake-9x⟧
 → token: ⟦gen:github_pat⟧ ←
 ✨ build 9f8e7d6c5b4a3f2e1d0c9b8a7654321000abcdef
-日本語のメモ: password=⟦Password|Zebra!Lamp(42)⟧
+日本語のメモ: password=⟦Password|Mango!Tide(07)⟧
 🌍 region eu-west-1, port 8080
