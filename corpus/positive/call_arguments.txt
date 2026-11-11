@@ -1,0 +1,29 @@
+# a secret passed as a call argument, a fallback, a plan diff or a dump
+
+define( 'DB_PASSWORD', '⟦Password|Tulip-Harbor-91⟧' );
+
+define('DB_PASSWORD', '⟦Password|Cedar-Quill-37⟧');
+
+define('AUTH_KEY',         '⟦*|kT9#mQ2$xL7!pW4z@fR6^hN8&jB3*vC5(⟧');
+
+dataSource.setPassword("⟦Password|Maple-Stone-58⟧");
+
+os.environ.setdefault("DB_PASSWORD", "⟦Password|Birch-Lantern-24⟧")
+
+password = os.getenv("DB_PASSWORD", "⟦Password|Amber-Raven-75⟧")
+
+const password = process.env.DB_PASSWORD || "⟦Password|Copper-Delta-48⟧";
+
+      ~ password = "⟦Password|Walnut-Ferry-63⟧" -> "⟦Password|Orchid-Pine-17⟧"
+
+Array
+(
+    [host] => db.internal
+    [user] => app
+    [password] => ⟦Password|Glacier-Falcon-29⟧
+)
+
+  ["password"]=>
+  string(16) "⟦Password|Zebra-Lamp-42xyz⟧"
+
+INSERT INTO users (username, password, role) VALUES ('admin', '⟦Password|Harbor-Tulip-33⟧', 'owner');

@@ -1169,3 +1169,26 @@ fn prose_connectors_name_the_value() {
         assert!(out.findings.is_empty(), "{text:?}: {:?}", out.findings);
     }
 }
+
+/// A secret passed to a setting call, a setter, a fallback, a plan diff, a PHP dump or a
+/// SQL insert is redacted; code around it is not.
+#[test]
+fn call_arguments_fallbacks_and_dumps() {
+    for text in [
+        "define( 'DB_PASSWORD', 'Tulip-Harbor-91' );\n",
+        "os.environ.setdefault(\"DB_PASSWORD\", \"Tulip-Harbor-91\")\n",
+        "password = os.getenv(\"DB_PASSWORD\", \"Tulip-Harbor-91\")\n",
+        "dataSource.setPassword(\"Tulip-Harbor-91\");\n",
+        "const password = process.env.DB_PASSWORD || \"Tulip-Harbor-91\";\n",
+        "  ~ password = \"Old-Pass-1x\" -> \"Tulip-Harbor-91\"\n",
+        "Array\n(\n    [password] => Tulip-Harbor-91\n)\n",
+        "  [\"password\"]=>\n  string(15) \"Tulip-Harbor-91\"\n",
+        "INSERT INTO users (username, password, role) VALUES ('admin', 'Tulip-Harbor-91', 'owner');\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    assert_clean("define('WP_DEBUG', false);\ndefine('DB_PASSWORD', getenv('DB_PASSWORD'));\n");
+    assert_clean("echo __( 'Password', 'woocommerce' );\n");
+    assert_clean("self.secret = secret.encode(\"utf-8\")\n");
+    assert_clean("INSERT INTO users (email, password) VALUES (?, ?);\n");
+}

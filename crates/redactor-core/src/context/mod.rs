@@ -76,6 +76,8 @@ impl Detector for ContextDetector {
         });
         terraform_defaults(text, &mut found);
         table_columns(text, &mut found);
+        plan_changes(text, &mut found);
+        sql_inserts(text, &mut found);
         drop_identifiers(text, &mut found);
         out.extend(found.into_iter().map(|f| Candidate {
             start: f.start,
@@ -983,6 +985,196 @@ fn terraform_defaults(text: &str, found: &mut Vec<Found>) {
             });
         }
     }
+}
+
+/// Terraform plan: `~ password = "old" -> "new"`: the new value of a changed secret too.
+fn plan_changes(text: &str, found: &mut Vec<Found>) {
+    let b = text.as_bytes();
+    let mut extra = Vec::new();
+    for f in found.iter() {
+        let Some(&q) = b.get(f.end) else { continue };
+        if !matches!(q, b'"' | b'\'') || !text[f.end + 1..].starts_with(" -> ") {
+            continue;
+        }
+        let vs = f.end + 1 + " -> ".len();
+        if b.get(vs) != Some(&q) {
+            continue;
+        }
+        let le = line_end(text, vs + 1);
+        let Some(close) = text[vs + 1..le].find(q as char) else {
+            continue;
+        };
+        let (s, e) = (vs + 1, vs + 1 + close);
+        let v = &text[s..e];
+        if v.trim().is_empty() || never_a_value(v, f.label) {
+            continue;
+        }
+        extra.push(Found {
+            start: s,
+            end: e,
+            ..f.clone()
+        });
+    }
+    found.extend(extra);
+}
+
+/// Most bytes of one `INSERT INTO t (cols) VALUES (…)` statement read.
+const MAX_INSERT: usize = 4096;
+
+/// SQL `INSERT INTO users (username, password) VALUES ('admin', 'v'), (…)`: the string
+/// literal in a secret-named column of each row.
+fn sql_inserts(text: &str, found: &mut Vec<Found>) {
+    const HEAD: &str = "insert into ";
+    let lower_head = |i: usize| {
+        text.get(i..i + HEAD.len())
+            .is_some_and(|h| h.eq_ignore_ascii_case(HEAD))
+    };
+    let b = text.as_bytes();
+    let mut i = 0;
+    while let Some(j) = memchr_ci(text, i, b'i') {
+        i = j + 1;
+        if !lower_head(j) || j > 0 && b[j - 1].is_ascii_alphanumeric() {
+            continue;
+        }
+        let end = ceil(text, j + MAX_INSERT);
+        let stmt = &text[j..end];
+        // The table name, then the column list right after it.
+        let name = stmt[HEAD.len()..]
+            .bytes()
+            .take_while(|c| c.is_ascii_alphanumeric() || b"_.\"`[]".contains(c))
+            .count();
+        let open = HEAD.len() + name;
+        let open = open
+            + stmt[open..]
+                .bytes()
+                .take_while(|c| *c == b' ' || *c == b'\t')
+                .count();
+        if name == 0 || stmt.as_bytes().get(open) != Some(&b'(') {
+            continue;
+        }
+        let cols_end = ceil(stmt, open + 512).min(stmt.len());
+        let Some(close) = stmt[open..cols_end].find(')').map(|c| open + c) else {
+            continue;
+        };
+        let cols: Vec<&str> = stmt[open + 1..close]
+            .split(',')
+            .map(|c| c.trim().trim_matches(['"', '`', '[', ']']))
+            .collect();
+        let secret: Vec<(usize, Key)> = cols
+            .iter()
+            .enumerate()
+            .filter_map(|(k, c)| {
+                column_class(c)
+                    .filter(|(st, _)| *st == Strength::Strong)
+                    .map(|(_, key)| (k, key))
+            })
+            .collect();
+        if secret.is_empty() {
+            continue;
+        }
+        let rest = &stmt[close + 1..];
+        let Some(v) = rest
+            .char_indices()
+            .find(|&(_, c)| !c.is_whitespace())
+            .filter(|&(k, _)| {
+                rest[k..]
+                    .get(..6)
+                    .is_some_and(|w| w.eq_ignore_ascii_case("values"))
+            })
+            .map(|(k, _)| close + 1 + k + 6)
+        else {
+            continue;
+        };
+        // Each row: `(` literal, literal, … `)`, rows joined by `,`, up to `;`.
+        let sb = stmt.as_bytes();
+        let mut p = v;
+        loop {
+            while p < sb.len() && sb[p].is_ascii_whitespace() {
+                p += 1;
+            }
+            if sb.get(p) != Some(&b'(') {
+                break;
+            }
+            p += 1;
+            let mut k = 0;
+            let mut ok = true;
+            while ok && p < sb.len() {
+                while p < sb.len() && sb[p].is_ascii_whitespace() {
+                    p += 1;
+                }
+                let (vs, ve);
+                if sb.get(p) == Some(&b'\'') {
+                    let s0 = p + 1;
+                    let mut e0 = s0;
+                    while e0 < sb.len() && !(sb[e0] == b'\'' && sb.get(e0 + 1) != Some(&b'\'')) {
+                        e0 += if sb[e0] == b'\'' { 2 } else { 1 };
+                    }
+                    if e0 >= sb.len() {
+                        ok = false;
+                        break;
+                    }
+                    (vs, ve) = (s0, e0);
+                    p = e0 + 1;
+                    if let Some((_, key)) = secret.iter().find(|(c, _)| *c == k) {
+                        let raw = RawPair {
+                            value: Some(j + vs..j + ve),
+                            syntax: Syntax::Assign,
+                            quoted: true,
+                            sep: Sep::None,
+                            tight: false,
+                            line_start: false,
+                            code: false,
+                            args: false,
+                            stmt_end: false,
+                            literal: false,
+                            scanned: j + ve,
+                        };
+                        if let Some(f) = judge_pair(text, key, &raw) {
+                            found.push(f);
+                        }
+                    }
+                } else {
+                    while p < sb.len() && !matches!(sb[p], b',' | b')' | b'\'') {
+                        p += 1;
+                    }
+                }
+                while p < sb.len() && sb[p].is_ascii_whitespace() {
+                    p += 1;
+                }
+                match sb.get(p) {
+                    Some(b',') => {
+                        p += 1;
+                        k += 1;
+                    }
+                    Some(b')') => {
+                        p += 1;
+                        break;
+                    }
+                    _ => ok = false,
+                }
+            }
+            if !ok {
+                break;
+            }
+            while p < sb.len() && sb[p].is_ascii_whitespace() {
+                p += 1;
+            }
+            if sb.get(p) != Some(&b',') {
+                break;
+            }
+            p += 1;
+        }
+        i = j + p.max(1);
+    }
+}
+
+/// The next `c` or its upper case from `from` on.
+fn memchr_ci(text: &str, from: usize, c: u8) -> Option<usize> {
+    let up = c.to_ascii_uppercase();
+    text.as_bytes()[from..]
+        .iter()
+        .position(|&x| x == c || x == up)
+        .map(|k| from + k)
 }
 
 /// Most columns a header row may have.

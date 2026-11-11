@@ -1,0 +1,47 @@
+<?php
+define('WP_DEBUG', false);
+define('DEBUG', true);
+define('DB_PASSWORD', getenv('DB_PASSWORD'));
+define('DB_PASSWORD', '');
+echo __( 'Password', 'woocommerce' );
+_e( 'Password', 'my-plugin' );
+$label = esc_html__( 'Password', 'my-plugin' );
+print_r($row);
+?>
+Array
+(
+    [user] => app
+    [password] =>
+    [password] => ********
+)
+  ["password"]=>
+  string(0) ""
+  ["password"]=>
+  NULL
+
+import os
+password = os.getenv("DB_PASSWORD")
+password = os.environ.get("DB_PASSWORD", "")
+token = os.getenv("API_TOKEN", None)
+secret = config.get("secret", default_secret)
+os.environ.setdefault("LANG", "en_US.UTF-8")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "app.settings")
+token = os.getenv("TOKEN") or None
+password = request.form.get("password") or ""
+
+props.put("password", password);
+dataSource.setPassword(password);
+ds.setPassword(System.getenv("DB_PASSWORD"));
+user.setPassword(encoder.encode(rawPassword));
+builder.password(props.getPassword());
+const password = process.env.DB_PASSWORD || "";
+const mode = process.env.MODE || "development";
+const label = t("password", "Password");
+
+  ~ password      = (sensitive value)
+  ~ instance_type = "t3.small" -> "t3.medium"
+
+INSERT INTO users (email, password) VALUES (?, ?);
+INSERT INTO users (email, password) VALUES ($1, $2);
+INSERT INTO users (email, password_hash, role) VALUES ('jdoe@example.com', crypt('changeme', gen_salt('bf')), 'owner');
+INSERT INTO settings (name, value) VALUES ('password_min_length', '12');

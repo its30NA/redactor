@@ -731,6 +731,11 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
             if let Some(rp) = sibling_pair(text, key, &text[ls..open], key.end + 1) {
                 return Some(rp);
             }
+            // `define('DB_PASSWORD', 'v')`, `os.getenv("DB_PASSWORD", "v")`: the literal
+            // after the name in a call that sets or defaults it.
+            if let Some(rp) = call_literal(text, &text[ls..open], key.end + 1) {
+                return Some(rp);
+            }
             code |= is_code_prefix(&text[ls..open]);
             args = !code && (args || is_args_prefix(&text[ls..open]));
             let mut p = key.end + 1;
@@ -738,6 +743,34 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                 p += 1;
             }
             let (sep, tight, after) = separator(text, p)?;
+            // PHP `var_dump`: `["password"]=>⏎  string(15) "v"`.
+            if sep == Sep::Other && matches!(b.get(after), Some(b'\n' | b'\r')) {
+                let next = after + text[after..].find('\n')? + 1;
+                let line = &text[next..line_end(text, next)];
+                let body = line.trim_start();
+                if let Some(rest) = body.strip_prefix("string(") {
+                    let close = rest
+                        .find(") \"")
+                        .filter(|&i| i > 0 && rest[..i].bytes().all(|c| c.is_ascii_digit()));
+                    if let Some(i) = close {
+                        let q = next + (line.len() - body.len()) + "string(".len() + i + 2;
+                        let (value, scanned, _) = quoted_value(text, q)?;
+                        return Some(RawPair {
+                            value,
+                            syntax: Syntax::QuotedKey,
+                            quoted: true,
+                            sep,
+                            tight: false,
+                            line_start,
+                            code: false,
+                            args: false,
+                            stmt_end: false,
+                            literal: false,
+                            scanned,
+                        });
+                    }
+                }
+            }
             // `"db_password": { "value": "v", "type": "string" }` (Terraform outputs, Spring
             // actuator): the value of the nested `value` field.
             if sep == Sep::Colon && b.get(after) == Some(&b'{') {
@@ -762,6 +795,13 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                     rp.scanned = v.start;
                 }
             }
+            return Some(rp);
+        }
+    }
+
+    // `ds.setPassword("v")`, `.withPassword("v")`, `builder.password("v")`
+    if b.get(key.end) == Some(&b'(') && key.dashes == 0 {
+        if let Some(rp) = setter_literal(text, key, line_start) {
             return Some(rp);
         }
     }
@@ -865,8 +905,18 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         && !code
         && key.dashes == 0
         && (line_start && key.upper || logfmt_field(text, prefix, key.end + 1));
+    // PHP `print_r`: `    [password] => v`, the rest of the line.
+    let print_r = before == Some('[')
+        && b.get(key.end) == Some(&b']')
+        && prefix.trim() == "["
+        && text[key.end + 1..]
+            .trim_start_matches([' ', '\t'])
+            .starts_with("=> ");
+    let line_start = line_start || print_r;
     let sep_at = if env_eq {
         Some((Sep::Equals, true, key.end + 1))
+    } else if print_r {
+        separator(text, key.end + 1)
     } else if inline_open(prefix) {
         // `**Password:** v`, `*Password*: v`, `<strong>Password:</strong> v`: emphasis and
         // inline tags around the key and separator are markup, not the value.
@@ -916,6 +966,25 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         rp.sep = sep;
         rp.tight = tight;
         rp.args = args;
+        // `password = os.getenv("DB_PASSWORD", "v")`: the scan goes on inside a call, where
+        // the setting it names may have a literal of its own.
+        if !rp.quoted {
+            if let Some(v) = rp.value.clone().filter(|v| text[v.clone()].contains('(')) {
+                rp.scanned = v.start;
+            }
+        }
+        // `password = process.env.DB_PASSWORD || "v";`: the literal fallback of code.
+        if !rp.quoted && key.class.strength == Strength::Strong {
+            if let Some(v) = fallback_literal(text, after) {
+                rp.value = Some(v.clone());
+                rp.quoted = true;
+                rp.code = false;
+                rp.args = false;
+                rp.stmt_end = false;
+                rp.scanned = rp.scanned.max(v.end);
+                return Some(rp);
+            }
+        }
         // `auth.password=v` (helm `--set`, properties under an `app.` prefix) reads to the
         // first blank as code does, but only an identifier, member path or expression is
         // code there: `self.password = pw` is, `auth.password=Tulip-Harbor-91` is not.
@@ -969,6 +1038,129 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         }
     }
     None
+}
+
+/// Calls whose first argument names a setting and whose second sets or defaults it.
+const SETTING_CALLS: &[&str] = &[
+    "define",
+    "setdefault",
+    "getenv",
+    "get",
+    "fetch",
+    "env",
+    "setenv",
+    "putenv",
+    "put",
+    "set",
+    "setproperty",
+    "getproperty",
+    "getordefault",
+    "setitem",
+    "config",
+];
+
+/// `define('DB_PASSWORD', 'v')`, `os.environ.setdefault("DB_PASSWORD", "v")`: the key is the
+/// first argument of a setting call (`pre` ends with its `(`), and a string literal follows
+/// after a comma. `from` is just past the key's closing quote.
+fn call_literal(text: &str, pre: &str, from: usize) -> Option<RawPair> {
+    let b = text.as_bytes();
+    let call = pre.trim_end().strip_suffix('(')?.trim_end();
+    let name_len = call
+        .bytes()
+        .rev()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == b'_')
+        .count();
+    let name = call[call.len() - name_len..].to_ascii_lowercase();
+    if !SETTING_CALLS.contains(&name.as_str()) {
+        return None;
+    }
+    let p = skip_blank(text, from);
+    if b.get(p) != Some(&b',') {
+        return None;
+    }
+    let q = skip_blank(text, p + 1);
+    if !matches!(b.get(q), Some(b'"' | b'\'')) {
+        return None;
+    }
+    let (value, scanned, closed) = quoted_value(text, q)?;
+    let after = skip_blank(text, scanned);
+    if !closed || !matches!(b.get(after), Some(b')' | b',')) {
+        return None;
+    }
+    Some(RawPair {
+        value,
+        syntax: Syntax::QuotedKey,
+        quoted: true,
+        sep: Sep::None,
+        tight: false,
+        line_start: false,
+        code: false,
+        args: false,
+        stmt_end: false,
+        literal: false,
+        scanned,
+    })
+}
+
+/// `ds.setPassword("v")`, `.withPassword("v")`, `builder.password("v")`: a setter of a
+/// secret-named property called with one string literal.
+fn setter_literal(text: &str, key: &Key, line_start: bool) -> Option<RawPair> {
+    let b = text.as_bytes();
+    let token = &text[key.token_start..key.end];
+    let seg = token.rsplit('.').next()?;
+    let words = split_key(seg);
+    // The property named by the method is itself a secret name (`Password`, not `encode`).
+    let strong = |ws: &[String]| {
+        classify(ws).is_some_and(|c| c.strength == Strength::Strong && c.all_consumed)
+    };
+    let setter =
+        words.len() >= 2 && matches!(words[0].as_str(), "set" | "with") && strong(&words[1..]);
+    let builder = token.contains('.') && words.len() == 1 && strong(&words);
+    if !(setter || builder) {
+        return None;
+    }
+    let q = key.end + 1;
+    if !matches!(b.get(q), Some(b'"' | b'\'')) {
+        return None;
+    }
+    let (value, scanned, closed) = quoted_value(text, q)?;
+    if !closed || b.get(scanned) != Some(&b')') {
+        return None;
+    }
+    Some(RawPair {
+        value,
+        syntax: Syntax::Assign,
+        quoted: true,
+        sep: Sep::None,
+        tight: false,
+        line_start,
+        code: false,
+        args: false,
+        stmt_end: false,
+        literal: false,
+        scanned,
+    })
+}
+
+/// `process.env.DB_PASSWORD || "v";`, `os.getenv("X") or "v"`, `cfg.pw ?? 'v'`: a string
+/// literal that ends the statement after `||`, `??` or `or`. Looks from `p` to the line end.
+fn fallback_literal(text: &str, p: usize) -> Option<Range<usize>> {
+    let le = line_end(text, p);
+    let line = &text[p..le];
+    let op = ["||", "??", " or "]
+        .iter()
+        .filter_map(|o| line.rfind(o).map(|i| (i, o.len())))
+        .max()?;
+    let q = skip_blank(text, p + op.0 + op.1);
+    if !matches!(text.as_bytes().get(q), Some(b'"' | b'\'' | b'`')) {
+        return None;
+    }
+    let (value, scanned, closed) = quoted_value(text, q)?;
+    let rest = text[scanned..le].trim();
+    if !closed || !rest.chars().all(|c| matches!(c, ';' | ')' | ',')) {
+        return None;
+    }
+    value
 }
 
 /// `<value>v</value>` (any case) at `p`: the range of `v`.
