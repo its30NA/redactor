@@ -5,7 +5,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use regex::{Regex, RegexSet};
 
@@ -774,6 +774,28 @@ fn known_labels(config: &EngineConfig) -> Vec<String> {
     v
 }
 
+/// True when `value` is exactly a placeholder of the default template with a built-in label
+/// (`Encoded ` prefix and ` #N` allowed). Every engine protects these, so the context engine
+/// may drop such a value at once instead of leaving it to [`protect`] (which discards it the
+/// same way, later and at more cost). Made-up labels and other templates are left to `protect`.
+pub(crate) fn is_builtin_placeholder(value: &str) -> bool {
+    static LABELS: OnceLock<HashSet<String>> = OnceLock::new();
+    let Some(inner) = value
+        .strip_prefix("[REDACTED: ")
+        .and_then(|r| r.strip_suffix(']'))
+    else {
+        return false;
+    };
+    let inner = inner.strip_prefix(ENCODED).unwrap_or(inner);
+    let label = match inner.rsplit_once(" #") {
+        Some((l, n)) if (1..=9).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()) => l,
+        _ => inner,
+    };
+    LABELS
+        .get_or_init(|| known_labels(&EngineConfig::default()).into_iter().collect())
+        .contains(label)
+}
+
 /// Regexes for the placeholders of `template` and of the default template, with a label
 /// from `labels`.
 fn placeholder_regexes(template: &str, labels: &[String]) -> Vec<Regex> {
@@ -987,4 +1009,33 @@ fn snap(text: &str, s: usize, e: usize) -> (usize, usize) {
         e += 1;
     }
     (s, e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_placeholders_only() {
+        for v in [
+            "[REDACTED: Password]",
+            "[REDACTED: Password #12]",
+            "[REDACTED: Encoded Password #2]",
+            "[REDACTED: Secret]",
+        ] {
+            assert!(is_builtin_placeholder(v), "{v}");
+        }
+        for v in [
+            "[REDACTED: Hunter2-Fake-9x]",
+            "[REDACTED: Password #]",
+            "[REDACTED: Password #1x]",
+            "[REDACTED-but-real-Hunter2x",
+            "[REDACTED: password=Hunter2-Fake-9x]",
+            "<Password>",
+        ] {
+            assert!(!is_builtin_placeholder(v), "{v}");
+        }
+        // The fast path assumes the default template's shape.
+        assert_eq!(DEFAULT_TEMPLATE, "[REDACTED: {label}{suffix}]");
+    }
 }

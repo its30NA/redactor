@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use aho_corasick::{AhoCorasick, MatchKind};
 
 use crate::detector::Detector;
+use crate::engine::is_builtin_placeholder;
 use crate::finding::{Candidate, Source};
 use crate::guard::{is_placeholder, mixed_in_digits};
 use crate::rules::is_filler;
@@ -469,6 +470,11 @@ fn never_a_value(v: &str, label: Label) -> bool {
         return true;
     }
     if is_placeholder(t) || is_filler(t) {
+        return true;
+    }
+    // An earlier placeholder of the default template with a built-in label: the engine
+    // protects it anyway. Any other text framed like one is judged as a value.
+    if is_builtin_placeholder(t.trim_matches(|c| c == '"' || c == '\'' || c == '`')) {
         return true;
     }
     let lower = t.to_lowercase();

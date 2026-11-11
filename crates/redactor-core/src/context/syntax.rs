@@ -16,6 +16,7 @@ use super::lexicon::{
     anchor_words, is_negative, Strength, CONNECTORS, OBJECT_ROOTS, PHRASE_ANCHORS,
 };
 use super::value::value_score;
+use crate::engine::is_builtin_placeholder;
 
 /// How a key and its value are written.
 #[cfg_attr(not(test), allow(dead_code))] // Public interface of the context layer; the engine uses the detector.
@@ -600,6 +601,27 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
     let prefix = &text[ls..ts];
     let line_start = is_line_start_prefix(prefix);
     let mut code = is_code_prefix(prefix) || key.member;
+    // The label of an earlier placeholder (`[REDACTED: Password #1]`, a built-in label) is not
+    // a key. A made-up label (`[REDACTED: password=…]`) is read as text.
+    const OPEN: &str = "[REDACTED: ";
+    if prefix.ends_with(OPEN) {
+        let open = ts - OPEN.len();
+        let close = text[ts..].find([']', '\n']).filter(|&i| b[ts + i] == b']');
+        if close.is_some_and(|i| is_builtin_placeholder(&text[open..=ts + i])) {
+            return Some(RawPair {
+                value: None,
+                syntax: Syntax::Assign,
+                quoted: false,
+                sep: Sep::None,
+                tight: false,
+                line_start,
+                code,
+                stmt_end: false,
+                literal: false,
+                scanned: key.end,
+            });
+        }
+    }
     // A key inside a string literal (`"aws_secret_access_key = "`): the next quote of that
     // kind closes the string, it does not open a value.
     let closing = open_quote(prefix);
