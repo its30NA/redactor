@@ -1,0 +1,9 @@
+# random query values and session ids stay redacted next to readable ones
+https://app.example.com/oauth/cb?code=⟦*|4/0AfJohXnK7Lq2Vm9Rt5Wz8Bc3Dp6Hs1Ny4⟧&scope=email
+https://acct.blob.example.net/c/f.txt?sv=2022-11-02&sig=⟦*|Ab3x/Yz9Kq+Lm2Vt8Wn5Rp7Hd4Fs6Jc1=⟧
+https://acct.blob.example.net/c/g.txt?sv=2022-11-02&sig=⟦*|Qw7e%2FRt5Yu3Io9Pa1Sd8Fg6Hj4Kl2Zx%3D⟧
+https://maps.example.com/api/geocode?key=⟦gen:alnum40#a⟧&address=x
+Cookie: PHPSESSID=⟦gen:alnum32#b⟧
+{"sid": "⟦*|s9Kq2Lm7Vt4Wn8Rp3Hd6Fx⟧", "user": "jdoe"}
+https://app.example.com/login/cb?code=⟦*|Rq7Lm2Xk9Vt4Wn8Zp3Hd⟧&state=abc
+https://app.example.com/verify?token=⟦*|k4j8x2q7m3n9p5w6⟧

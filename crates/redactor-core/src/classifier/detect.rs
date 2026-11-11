@@ -282,7 +282,7 @@ pub(crate) fn is_identifier(t: &[u8]) -> bool {
 }
 
 /// Letters that read as a word: vowels in a fair share and no long consonant runs.
-fn word_like(w: &[u8]) -> bool {
+pub(crate) fn word_like(w: &[u8]) -> bool {
     let vowel = |b: &u8| b"aeiouy".contains(&b.to_ascii_lowercase());
     let vowels = w.iter().filter(|b| vowel(b)).count();
     let mut run = 0;

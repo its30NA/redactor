@@ -362,6 +362,88 @@ fn docker_auth(h: &Hit) -> Verdict {
     }
 }
 
+/// A query or session value that people read rather than a random one: a path or a
+/// `:`-separated key of words and numbers (`uploads/2024/11/report-final-v2.pdf`,
+/// `user:1234:profile:settings`), words with numbers (`SUMMER2024SALE`, `en-US-12345`,
+/// `required-for-all-documents`) or a Windows SID (`S-1-5-21-…`).
+pub(crate) fn readable(v: &str) -> bool {
+    if v.strip_prefix("S-1-")
+        .is_some_and(|r| r.bytes().all(|b| b.is_ascii_digit() || b == b'-'))
+    {
+        return true;
+    }
+    let segs: Vec<&str> = v.split(['/', ':']).filter(|s| !s.is_empty()).collect();
+    !segs.is_empty()
+        && segs.iter().any(|s| !s.bytes().all(|b| b.is_ascii_digit()))
+        && segs
+            .iter()
+            .all(|s| s.bytes().all(|b| b.is_ascii_digit()) || readable_words(s))
+}
+
+/// Words and numbers joined by `-`, `_`, `.` or `~` or run together (`SUMMER2024SALE`): every
+/// run of four or more letters reads as a word and is one case (or capitalised), and
+/// letters and digits change places at most once per four characters. Short parts written
+/// apart (`en-US-12345`) read too. Random values
+/// (`Hx4mKq9Zp2Lw7Rt5`, `k3j9x7q2m5n8p4w1`) change far more often or hold letter runs
+/// without vowels.
+fn readable_words(s: &str) -> bool {
+    let b = s.as_bytes();
+    if !b
+        .iter()
+        .all(|c| c.is_ascii_alphanumeric() || b"-_.~".contains(c))
+    {
+        return false;
+    }
+    let mut changes = 0;
+    let mut word = false;
+    let chunks: Vec<&[u8]> = b.split(|c| !c.is_ascii_alphanumeric()).collect();
+    // A file extension (`.xlsx`, `.html`) needs no vowel.
+    let ext = s.rfind('.').map(|i| &b[i + 1..]);
+    for chunk in &chunks {
+        for w in chunk.windows(2) {
+            changes += usize::from(w[0].is_ascii_digit() != w[1].is_ascii_digit());
+        }
+        if ext == Some(*chunk) && chunk.len() <= 5 {
+            continue;
+        }
+        for run in chunk.split(u8::is_ascii_digit) {
+            if run.len() < 4 {
+                continue;
+            }
+            let one_case = run[1..].iter().all(u8::is_ascii_lowercase)
+                || run.iter().all(u8::is_ascii_uppercase);
+            if !one_case || !crate::classifier::word_like(run) {
+                return false;
+            }
+            word = true;
+        }
+    }
+    // `en-US-12345`: short words and numbers written apart.
+    let apart = chunks.len() >= 2
+        && chunks
+            .iter()
+            .all(|c| c.iter().all(u8::is_ascii_digit) || c.iter().all(u8::is_ascii_alphabetic));
+    (word || apart) && changes * 4 <= b.len()
+}
+
+/// [`in_query`], then two character classes and no [`readable`] value.
+fn query_opaque(h: &Hit) -> Verdict {
+    if in_query(h) {
+        session_opaque(h)
+    } else {
+        Verdict::Reject
+    }
+}
+
+/// Two character classes and no [`readable`] value.
+fn session_opaque(h: &Hit) -> Verdict {
+    if readable(h.secret()) {
+        Verdict::Reject
+    } else {
+        check::random(h)
+    }
+}
+
 /// How far back [`in_query`] looks for the start of the URL a parameter belongs to.
 const QUERY_BACK: usize = 4096;
 
@@ -400,18 +482,9 @@ fn query_described(h: &Hit) -> Verdict {
     }
 }
 
-/// [`in_query`], then [`check::random`].
-fn query_random(h: &Hit) -> Verdict {
-    if in_query(h) {
-        check::random(h)
-    } else {
-        Verdict::Reject
-    }
-}
-
-/// [`in_query`] alone.
-fn query(h: &Hit) -> Verdict {
-    if in_query(h) {
+/// [`in_query`] and no [`readable`] value.
+fn query_readable(h: &Hit) -> Verdict {
+    if in_query(h) && !readable(h.secret()) {
         Verdict::Keep
     } else {
         Verdict::Reject
@@ -433,7 +506,7 @@ fn not_a_cursor(h: &Hit) -> Verdict {
     ]
     .iter()
     .any(|p| name.starts_with(p));
-    if cursor {
+    if cursor || readable(h.secret()) {
         Verdict::Reject
     } else {
         query_described(h)
@@ -589,7 +662,7 @@ pub(super) fn rules() -> Vec<Rule> {
         .ci()
         .back(8)
         .fwd(1024)
-        .check(check::random),
+        .check(session_opaque),
         r(
             "url_userinfo_password",
             "Password in URL",
@@ -652,7 +725,7 @@ pub(super) fn rules() -> Vec<Rule> {
         .back(14)
         .fwd(1024)
         .bounds(Bound::None, Bound::None)
-        .check(query_random),
+        .check(query_opaque),
         r(
             "url_query_password",
             "Password",
@@ -678,7 +751,7 @@ pub(super) fn rules() -> Vec<Rule> {
         .back(1)
         .fwd(2048)
         .bounds(Bound::None, Bound::None)
-        .check(query),
+        .check(query_readable),
         r(
             "connection_string_password",
             "Password",

@@ -436,6 +436,9 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         // a scheme or a thing.
         let name = !v.bytes().any(|b| b.is_ascii_uppercase())
             && crate::classifier::is_word_name(v.as_bytes());
+        // `?code=en-US-12345`, `?key=Reports/2025-Q3.xlsx`: a query parameter that people read.
+        let query = key.start > 0 && matches!(text.as_bytes()[key.start - 1], b'?' | b'&' | b';');
+        let name = name || query && crate::rules::readable_query_value(v);
         if !random || v.chars().count() < 8 || hash_field || echoes || name {
             return None;
         }

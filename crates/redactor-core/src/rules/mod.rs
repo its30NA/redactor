@@ -30,6 +30,8 @@ pub(crate) mod custom;
 mod dev;
 mod hashes;
 mod http;
+
+pub(crate) use http::readable as readable_query_value;
 mod pii;
 mod saas;
 pub(crate) mod validate;

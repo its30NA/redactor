@@ -1090,3 +1090,59 @@ fn pgpass_lines_are_not_grep_output() {
         assert_miss("pgpass_line", text);
     }
 }
+
+/// Query and session values that people read (paths, `:` keys, words with numbers, Windows
+/// SIDs) are no key, code, signature or session id; random values are.
+#[test]
+fn readable_query_values_are_not_secrets() {
+    let mut g = Gen::named("readable-query");
+    let key = g.alnum(39);
+    assert_hit(
+        "url_query_key",
+        &format!("https://maps.example.com/api?key={key}&q=x\n"),
+        &key,
+    );
+    assert_hit(
+        "url_query_token",
+        "https://app.example.com/oauth/cb?code=4/0AfJohXnK7Lq2Vm9Rt5Wz8Bc3Dp6Hs1Ny4&scope=email\n",
+        "4/0AfJohXnK7Lq2Vm9Rt5Wz8Bc3Dp6Hs1Ny4",
+    );
+    assert_hit(
+        "url_query_signature",
+        "https://acct.blob.example.net/c/f.txt?sv=2022-11-02&sig=Ab3x/Yz9Kq+Lm2Vt8Wn5Rp7Hd4Fs6Jc1=\n",
+        "Ab3x/Yz9Kq+Lm2Vt8Wn5Rp7Hd4Fs6Jc1=",
+    );
+    assert_hit(
+        "session_id",
+        "{\"sid\": \"s9Kq2Lm7Vt4Wn8Rp3Hd6Fx\", \"user\": \"jdoe\"}\n",
+        "s9Kq2Lm7Vt4Wn8Rp3Hd6Fx",
+    );
+    for (id, text) in [
+        (
+            "url_query_key",
+            "https://cdn.example.com/get?key=uploads/2024/11/report-final-v2.pdf\n",
+        ),
+        (
+            "url_query_key",
+            "GET /cache?key=user:1234:profile:settings HTTP/1.1\n",
+        ),
+        (
+            "url_query_token",
+            "https://shop.example.com/cart?code=SUMMER2024SALE\n",
+        ),
+        (
+            "url_query_token",
+            "https://example.com/search?q=shoes&code=en-US-12345&page=2\n",
+        ),
+        (
+            "url_query_signature",
+            "https://example.com/doc?signature=required-for-all-documents\n",
+        ),
+        (
+            "session_id",
+            "\"sid\": \"S-1-5-21-3623811015-3361044348-30300820-1013\"\n",
+        ),
+    ] {
+        assert_miss(id, text);
+    }
+}
