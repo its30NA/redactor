@@ -1,0 +1,51 @@
+# a secret name in a name/key field and its value in a sibling field, or under a nested value
+
+        env:
+            - name: DB_PASSWORD
+              value: ⟦Password|Xk92mLq7Vt⟧
+            - name: REDIS_PASSWORD
+              value: "⟦Password|Hunter2-Fake-9x⟧"
+
+"environment": [
+  {"name": "DB_USER", "value": "app"},
+  {"name": "DB_PASSWORD", "value": "⟦Password|Walnut-Ferry-63⟧"}
+]
+
+[
+  {
+    "name": "SMTP_PASSWORD",
+    "slotSetting": false,
+    "value": "⟦Password|Zebra!Lamp(42)⟧"
+  }
+]
+
+  { "key": "X-Api-Key", "value": "⟦*|9f8e7d6c5b4a39281706f5e4d3c2b1a0⟧", "type": "text" }
+
+  { "name": "X-Api-Key", "value": "⟦*|8e7d6c5b4a39281706f5e4d3c2b1a09f⟧" }
+
+  { "name": "sessionid", "value": "⟦*|s3ss10nV4lu3xyz⟧", "httpOnly": true }
+
+"postData": { "mimeType": "application/x-www-form-urlencoded", "params": [
+  { "name": "username", "value": "admin" },
+  { "name": "password", "value": "⟦Password|Copper-Delta-48⟧" } ] }
+
+  "outputs": {
+    "db_password": {
+      "value": "⟦Password|Tulip-Harbor-91⟧",
+      "type": "string",
+      "sensitive": true
+    }
+  },
+
+"spring.datasource.password": { "value": "⟦Password|Maple-Stone-58⟧", "origin": "class path resource [application.properties]:4:28" }
+
+{"password": {"value": "⟦Password|Birch-Lantern-24⟧"}}
+
+<setting name="SmtpPassword" serializeAs="String">
+  <value>⟦Password|Cedar-Quill-37⟧</value>
+</setting>
+
+<AdministratorPassword>
+  <Value>⟦Password|Amber-Raven-75⟧</Value>
+  <PlainText>true</PlainText>
+</AdministratorPassword>

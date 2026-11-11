@@ -1053,3 +1053,26 @@ fn markup_and_table_cells_around_a_key() {
     assert_clean("| Name | Description |\n|---|---|\n| password | The account password |\n");
     assert_clean("<tr><td>password</td><td>The password of the account</td></tr>\n");
 }
+
+/// A secret name in a `name`/`key` field takes the sibling `value` field of its object or
+/// list item; a secret-named object takes its nested `value`.
+#[test]
+fn name_value_siblings_and_nested_values() {
+    for text in [
+        "env:\n  - name: DB_PASSWORD\n    value: Tulip-Harbor-91\n",
+        "env:\n  - name: \"DB_PASSWORD\"\n    value: \"Tulip-Harbor-91\"\n",
+        "[{\"name\": \"DB_PASSWORD\", \"value\": \"Tulip-Harbor-91\"}]\n",
+        "{\n  \"name\": \"SMTP_PASSWORD\",\n  \"slotSetting\": false,\n  \"value\": \"Tulip-Harbor-91\"\n}\n",
+        "{ \"key\": \"X-Api-Key\", \"value\": \"Tulip-Harbor-91\", \"type\": \"text\" }\n",
+        "\"db_password\": {\n  \"value\": \"Tulip-Harbor-91\",\n  \"sensitive\": true\n}\n",
+        "<setting name=\"SmtpPassword\" serializeAs=\"String\">\n  <value>Tulip-Harbor-91</value>\n</setting>\n",
+        "<AdministratorPassword>\n  <Value>Tulip-Harbor-91</Value>\n</AdministratorPassword>\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    assert_clean("env:\n  - name: APP_ENV\n    value: \"production\"\n");
+    assert_clean(
+        "env:\n  - name: DB_PASSWORD\n    valueFrom:\n      secretKeyRef:\n        name: db\n        key: password\n  - name: MODE\n    value: Lantern-Fox-12\n",
+    );
+    assert_clean("[{\"name\": \"PORT\", \"value\": \"8080\"}, {\"name\": \"DB_PASSWORD\"}]\n");
+}

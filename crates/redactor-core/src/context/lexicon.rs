@@ -239,6 +239,10 @@ pub(crate) const ENTRIES: &[Entry] = &[
     w(&["cookie"]),
     w(&["session"]),
     w(&["sid"]),
+    // Session cookie names (HAR, browser dumps): a bearer credential when random.
+    w(&["sessionid"]),
+    w(&["jsessionid"]),
+    w(&["phpsessid"]),
 ];
 
 /// Long strong words that also count at the end of an all-in-one word (`PGPASSWORD`,

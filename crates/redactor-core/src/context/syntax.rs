@@ -643,7 +643,12 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         let close = text[vs..hi].find('<').map(|p| vs + p);
         let value = close.and_then(|c| {
             if !text[c..].starts_with("</") {
-                return None;
+                // `<AdministratorPassword>⏎  <Value>v</Value>`: the value in a child.
+                return text[vs..c]
+                    .trim()
+                    .is_empty()
+                    .then(|| value_element(text, c))
+                    .flatten();
             }
             let raw = &text[vs..c];
             let s = vs + (raw.len() - raw.trim_start().len());
@@ -676,7 +681,29 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                     .find('>')
                     .map_or(key.end, |p| key.end + p);
                 let seg = &text[key.end..tag_end];
-                let at = seg.to_ascii_lowercase().find("value=")?;
+                let Some(at) = seg.to_ascii_lowercase().find("value=") else {
+                    // `<setting name="SmtpPassword">⏎  <value>v</value>`: a child element.
+                    if b.get(tag_end) != Some(&b'>') {
+                        return None;
+                    }
+                    let hi = ceil(text, tag_end + 1 + MAX_CELL_GAP);
+                    let gap = &text[tag_end + 1..hi];
+                    let c = tag_end + 1 + (gap.len() - gap.trim_start().len());
+                    let value = value_element(text, c)?;
+                    return Some(RawPair {
+                        scanned: value.end,
+                        value: Some(value),
+                        syntax: Syntax::Xml,
+                        quoted: true,
+                        sep: Sep::None,
+                        tight: true,
+                        line_start,
+                        code: false,
+                        args: false,
+                        stmt_end: false,
+                        literal: false,
+                    });
+                };
                 let vq = key.end + at + "value=".len();
                 let (value, scanned, _) = quoted_value(text, vq)?;
                 return Some(RawPair {
@@ -693,6 +720,10 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                     scanned,
                 });
             }
+            // `{"name": "DB_PASSWORD", "value": "v"}`, `- name: "DB_PASSWORD"⏎  value: v`.
+            if let Some(rp) = sibling_pair(text, key, &text[ls..open], key.end + 1) {
+                return Some(rp);
+            }
             code |= is_code_prefix(&text[ls..open]);
             args = !code && (args || is_args_prefix(&text[ls..open]));
             let mut p = key.end + 1;
@@ -700,12 +731,30 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                 p += 1;
             }
             let (sep, tight, after) = separator(text, p)?;
+            // `"db_password": { "value": "v", "type": "string" }` (Terraform outputs, Spring
+            // actuator): the value of the nested `value` field.
+            if sep == Sep::Colon && b.get(after) == Some(&b'{') {
+                if let Some(v) = json_sibling(text, after + 1) {
+                    let cx = Ctx::new(Mode::Token, sep, false, false, None, key.upper);
+                    let mut rp = value_after(text, v, cx)?;
+                    rp.syntax = Syntax::QuotedKey;
+                    rp.sep = sep;
+                    return Some(rp);
+                }
+            }
             let cx = Ctx::new(Mode::Token, sep, line_start, code, None, key.upper);
             let mut rp = value_after(text, after, cx)?;
             rp.syntax = Syntax::QuotedKey;
             rp.sep = sep;
             rp.tight = tight;
             rp.args = args;
+            // `{"key": "X-Api-Key", "value": "v"}` (Postman): the value of a `key` field may
+            // be a key name itself, so the scan goes on inside it.
+            if key.words.len() == 1 && key.words[0] == "key" && rp.quoted {
+                if let Some(v) = &rp.value {
+                    rp.scanned = v.start;
+                }
+            }
             return Some(rp);
         }
     }
@@ -779,6 +828,13 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         && prefix.contains('<')
     {
         return None;
+    }
+
+    // `- name: DB_PASSWORD⏎  value: v`
+    if text[key.end..line_end(text, key.end)].trim().is_empty() {
+        if let Some(rp) = sibling_pair(text, key, prefix, key.end) {
+            return Some(rp);
+        }
     }
 
     // <td>Password</td><td>v</td>, <dt>Password</dt><dd>v</dd>, | Password | v |
@@ -903,6 +959,142 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
             let mut rp = value_after(text, after, cx)?;
             rp.syntax = Syntax::Spaced;
             return Some(rp);
+        }
+    }
+    None
+}
+
+/// `<value>v</value>` (any case) at `p`: the range of `v`.
+fn value_element(text: &str, p: usize) -> Option<Range<usize>> {
+    const OPEN: &str = "<value>";
+    if !text[p..].get(..OPEN.len())?.eq_ignore_ascii_case(OPEN) {
+        return None;
+    }
+    let vs = p + OPEN.len();
+    let c = vs + text[vs..ceil(text, vs + MAX_XML)].find('<')?;
+    if !text[c..].get(..8)?.eq_ignore_ascii_case("</value>") {
+        return None;
+    }
+    let raw = &text[vs..c];
+    let s = vs + (raw.len() - raw.trim_start().len());
+    let e = vs + raw.trim_end().len();
+    (e > s).then_some(s..e)
+}
+
+/// How far a sibling `value` field may sit from its `name` field.
+const MAX_SIBLING: usize = 512;
+
+/// The key is the value of a `name` or `key` field (`"name": "DB_PASSWORD"`, `- name:
+/// DB_PASSWORD`, Kubernetes env, ECS, Azure app settings, HAR, Postman): the value is in the
+/// sibling `value` field of the same object or list item. `pre` is the line up to the key
+/// (or its opening quote); `from` is just past the key (and its closing quote).
+fn sibling_pair(text: &str, key: &Key, pre: &str, from: usize) -> Option<RawPair> {
+    let t = pre.trim_end();
+    let field = t.strip_suffix(':')?.trim_end();
+    let json = ["\"name\"", "\"key\"", "'name'", "'key'"].iter().any(|f| {
+        let fb = field.as_bytes();
+        fb.len() >= f.len() && fb[fb.len() - f.len()..].eq_ignore_ascii_case(f.as_bytes())
+    });
+    let after = if json {
+        json_sibling(text, from)?
+    } else {
+        // YAML: `name:` alone (or after `- `) on its line; `value:` at the same column.
+        let lead = t.trim_start();
+        let item = lead.strip_prefix("- ").map_or(lead, str::trim_start);
+        if !(item.eq_ignore_ascii_case("name:") || item.eq_ignore_ascii_case("key:")) {
+            return None;
+        }
+        let col = t.len() - item.len();
+        yaml_sibling(text, line_end_full(text, from), col)?
+    };
+    let mode = if !json && key.class.strength == Strength::Strong {
+        Mode::Line
+    } else {
+        Mode::Token
+    };
+    let cx = Ctx::new(mode, Sep::Colon, !json, false, None, key.upper);
+    let mut rp = value_after(text, after, cx)?;
+    rp.syntax = if json {
+        Syntax::QuotedKey
+    } else {
+        Syntax::LineAssign
+    };
+    rp.sep = Sep::Colon;
+    Some(rp)
+}
+
+/// In a JSON object, from `from` on: the position after `"value":` of the same object, or
+/// `None` at the object's end, at another `name`/`key` field or past [`MAX_SIBLING`].
+fn json_sibling(text: &str, from: usize) -> Option<usize> {
+    let b = text.as_bytes();
+    let hi = ceil(text, from + MAX_SIBLING);
+    let mut depth = 0i32;
+    let mut i = from;
+    while i < hi {
+        match b[i] {
+            b'"' => {
+                let s = i + 1;
+                let mut j = s;
+                while j < hi && b[j] != b'"' {
+                    j += if b[j] == b'\\' { 2 } else { 1 };
+                }
+                if j >= hi {
+                    return None;
+                }
+                let k = skip_blank(text, j + 1);
+                if depth == 0 && b.get(k) == Some(&b':') {
+                    let name = &text[s..j];
+                    if name.eq_ignore_ascii_case("value") {
+                        return Some(skip_blank(text, k + 1));
+                    }
+                    if name.eq_ignore_ascii_case("name") || name.eq_ignore_ascii_case("key") {
+                        return None;
+                    }
+                }
+                i = j + 1;
+                continue;
+            }
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The YAML lines after a `name:` field (from `from`, a line start): the position after
+/// `value:` at column `col`, or `None` at the next list item, a line left of `col`, another
+/// `name`/`key` field or past [`MAX_SIBLING`].
+fn yaml_sibling(text: &str, from: usize, col: usize) -> Option<usize> {
+    let hi = ceil(text, from + MAX_SIBLING);
+    let mut ls = from;
+    for line in text[from..hi].split_inclusive('\n') {
+        let start = ls;
+        ls += line.len();
+        let body = line.trim_end();
+        let item = body.trim_start_matches(' ');
+        if item.is_empty() {
+            continue;
+        }
+        let indent = body.len() - item.len();
+        if indent < col || indent == col && item.starts_with('-') {
+            return None;
+        }
+        if indent > col {
+            continue;
+        }
+        let lower = item.get(..6).unwrap_or("").to_ascii_lowercase();
+        if lower == "value:" {
+            return Some(skip_blank(text, start + indent + 6));
+        }
+        if lower.starts_with("name:") || lower.starts_with("key:") {
+            return None;
         }
     }
     None
