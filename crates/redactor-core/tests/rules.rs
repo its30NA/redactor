@@ -867,3 +867,17 @@ fn url_credentials_beyond_user_colon_password() {
         "https://app.example.com/items?page_token=CAESBgoECAEQAQ\n",
     );
 }
+
+/// The widened userinfo scan stops at a character boundary: a multi-byte character where its
+/// byte cap falls does not panic.
+#[test]
+fn url_userinfo_scan_cap_respects_char_boundaries() {
+    for pad in 0..4 {
+        let text = format!(
+            "postgres://app:x/{}{}\n",
+            "a".repeat(250 + pad),
+            "é".repeat(8)
+        );
+        let _ = only("url_userinfo_password").scan(&text, &ScanRequest::default());
+    }
+}

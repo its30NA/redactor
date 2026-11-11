@@ -155,7 +155,10 @@ fn userinfo(text: &str, _start: usize, end: usize) -> Option<(usize, usize, usiz
     if run == 0 || b[..run].iter().all(u8::is_ascii_digit) || run == rest.len() {
         return None;
     }
-    let hi = (run + MAX_SPECIAL_PASSWORD).min(rest.len());
+    let mut hi = (run + MAX_SPECIAL_PASSWORD).min(rest.len());
+    while !rest.is_char_boundary(hi) {
+        hi -= 1;
+    }
     let wide = run
         + rest[run..hi]
             .find(|c: char| c.is_whitespace() || "\"'<>".contains(c))
