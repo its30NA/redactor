@@ -1,0 +1,17 @@
+# long secret-named keys whose values are references, sizes or files, and blobs that hold key words
+
+OAUTH2_PROXY_CLIENT_SECRET_FILE=/etc/oauth2-proxy/client-secret
+OAUTH2_PROXY_COOKIE_SECRET_LENGTH=32
+NEO4J_PASSWORD=${NEO4J_PASSWORD}
+PG15_PASSWORD=
+AZURE_AD_B2C_CLIENT_SECRET=${{ secrets.AZURE_AD_B2C_CLIENT_SECRET }}
+ASPNETCORE_Kestrel__Certificates__Default__Password=
+spring.security.oauth2.client.registration.azure-active-directory.client-secret=${AZURE_CLIENT_SECRET}
+SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURE_ACTIVE_DIRECTORY_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+oauth2ProxyClientSecret: !secret oauth2_proxy_client_secret
+k8sServiceToken: "{{ .Values.token }}"
+X509_KEY_PASSWORD_ENV_VAR_NAME=X509_KEY_PASSWORD
+const oauth2ClientSecretRef = getClientSecret(config);
+
+integrity: sha512-Zm9vYmFyVG9rZW5TZWNyZXRQYXNzd29yZGJhenF1eA9xK2pLm3nOpQrStUvWxYz==
+image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==

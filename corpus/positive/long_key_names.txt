@@ -1,0 +1,77 @@
+# secret key names with digits or many words, which must not be read as random blobs
+
+OAUTH2_PROXY_CLIENT_SECRET=⟦*|Tulip-Quill-10x⟧
+
+OAUTH2_PROXY_COOKIE_SECRET=⟦*|Harbor-Copper-11x⟧
+
+OAUTH2_CLIENT_SECRET=⟦*|Cedar-Pine-12x⟧
+
+OAUTH2_SECRET=⟦*|Quill-Maple-13x⟧
+
+oauth2_client_secret: ⟦*|Maple-Delta-14x⟧
+
+"oauth2ClientSecret": "⟦*|Stone-Glacier-15x⟧"
+
+oauth2ProxyClientSecret: ⟦*|Birch-Stone-16x⟧
+
+NEO4J_PASSWORD=⟦*|Lantern-Walnut-17x⟧
+
+NEO4J_PASSWD=⟦*|Amber-Falcon-18x⟧
+
+PG15_PASSWORD=⟦*|Raven-Birch-19x⟧
+
+DB2INST1_PASSWORD=⟦*|Copper-Ferry-20x⟧
+
+MYSQL57_PASSWORD=⟦*|Delta-Tulip-21x⟧
+
+PKCS12_PASSWORD=⟦*|Walnut-Lantern-22x⟧
+
+OFFICE365_PASSWORD=⟦*|Ferry-Zebra-23x⟧
+
+SMTP2GO_API_KEY=⟦*|Zebra-Harbor-24x⟧
+
+JWT_HS256_SECRET=⟦*|Lamp-Amber-25x⟧
+
+AZURE_AD_B2C_CLIENT_SECRET=⟦*|Orchid-Lamp-26x⟧
+
+X509_KEY_PASSWORD=⟦*|Pine-Cedar-27x⟧
+
+WIN10_VM_PASSWORD=⟦*|Glacier-Raven-28x⟧
+
+B2_APPLICATION_KEY=⟦*|K001aB3dE5fG7hI9jK1lM3nOpQ5⟧
+
+ASPNETCORE_Kestrel__Certificates__Default__Password=⟦*|Tulip-Quill-30x⟧
+
+AzureAd__ClientSecret=⟦*|Harbor-Copper-31x⟧
+
+Jenkins_API_Token=⟦*|Cedar-Pine-32x⟧
+
+k8sServiceToken: ⟦*|Quill-Maple-33x⟧
+
+Neo4jPassword: ⟦*|Maple-Delta-34x⟧
+
+QA3DbPassword=⟦*|Stone-Glacier-35x⟧
+
+Wifi5GPassword: ⟦*|Birch-Stone-36x⟧
+
+Tn4x_ApiSecret=⟦*|Lantern-Walnut-37x⟧
+
+nDB_PASSWORD=⟦*|Amber-Falcon-38x⟧
+
+{"content": "DB_HOST=db\nDB_PASSWORD=⟦*|Raven-Birch-39x⟧\nPORT=8080\n"}
+
+{"path": ".env", "content": "DB_HOST=db\nDB_PASSWORD=⟦*|Copper-Ferry-40x⟧\nPORT=8080\n"}
+
+spring.security.oauth2.client.registration.azure-active-directory.client-secret=⟦*|Delta-Tulip-41x⟧
+
+SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURE_ACTIVE_DIRECTORY_CLIENT_SECRET=⟦*|Walnut-Lantern-42x⟧
+
+NEO4J_PASS=⟦*|Ferry-Zebra-43x⟧
+
+PG15_PASSWD=⟦*|Zebra-Harbor-44x⟧
+
+AUTH0_CLIENT_SECRET=⟦*|Lamp-Amber-45x⟧
+
+DB1_PASSWORD=⟦*|Orchid-Lamp-46x⟧
+
+S3_SECRET_KEY=⟦*|Pine-Cedar-47x⟧

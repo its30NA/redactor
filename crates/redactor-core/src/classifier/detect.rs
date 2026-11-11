@@ -66,12 +66,16 @@ impl Detector for ClassifierDetector {
                 i += 1;
             }
             let mut end = i;
-            // Base64 padding belongs to the run when nothing glues on after it.
+            // Base64 padding belongs to the run when nothing glues on after it and it
+            // completes a 4-character group: `KEY=` before a placeholder is a key and its `=`.
             let mut pad = end;
             while pad < bytes.len() && pad - end < 2 && bytes[pad] == b'=' {
                 pad += 1;
             }
-            if pad > end && (pad == bytes.len() || !token_byte(bytes[pad]) && bytes[pad] != b'=') {
+            if pad > end
+                && (pad - start) % 4 == 0
+                && (pad == bytes.len() || !token_byte(bytes[pad]) && bytes[pad] != b'=')
+            {
                 end = pad;
                 i = pad;
             }

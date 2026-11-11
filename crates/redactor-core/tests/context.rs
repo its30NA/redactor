@@ -1076,3 +1076,40 @@ fn name_value_siblings_and_nested_values() {
     );
     assert_clean("[{\"name\": \"PORT\", \"value\": \"8080\"}, {\"name\": \"DB_PASSWORD\"}]\n");
 }
+
+/// A key whose words classify is a name, however random its letters and digits look; a long
+/// dotted or underscored name is still one token.
+#[test]
+fn long_and_digit_key_names_are_keys() {
+    for key in [
+        "OAUTH2_PROXY_CLIENT_SECRET",
+        "NEO4J_PASSWD",
+        "PG15_PASSWORD",
+        "AZURE_AD_B2C_CLIENT_SECRET",
+        "spring.security.oauth2.client.registration.azure-active-directory.client-secret",
+        "SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURE_ACTIVE_DIRECTORY_CLIENT_SECRET",
+    ] {
+        assert_redacted(&format!("{key}=Tulip-Harbor-91\n"), "Tulip-Harbor-91");
+    }
+    assert_redacted(
+        "oauth2ProxyClientSecret: Tulip-Harbor-91\n",
+        "Tulip-Harbor-91",
+    );
+    // A one-letter key word (`b` of `B2`) found in a random value is no echo.
+    assert_redacted(
+        "B2_APPLICATION_KEY=K001aB3dE5fG7hI9jK1lM3nOpQ5\n",
+        "K001aB3dE5fG7hI9jK1lM3nOpQ5",
+    );
+    // The key and its `=` before a placeholder are not base64 with padding.
+    let out = scan_at(
+        "AZURE_AD_B2C_CLIENT_SECRET=Tulip-Harbor-91\n",
+        Sensitivity::Balanced,
+    );
+    assert!(
+        out.output
+            .starts_with("AZURE_AD_B2C_CLIENT_SECRET=[REDACTED"),
+        "{}",
+        out.output
+    );
+    assert_clean("OAUTH2_PROXY_COOKIE_SECRET_LENGTH=32\n");
+}

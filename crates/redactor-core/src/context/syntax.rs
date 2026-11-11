@@ -209,8 +209,10 @@ pub(crate) enum Event {
     },
 }
 
-/// Longest key token we consider; longer runs of key characters are blobs, not names.
-const MAX_KEY: usize = 64;
+/// Longest key token we consider; longer runs of key characters are blobs, not names
+/// (`spring.security.oauth2.client.registration.azure-active-directory.client-secret` is
+/// 79 bytes).
+const MAX_KEY: usize = 128;
 
 /// Calls `f` for every key and command in text order. `f` returns how far the text is
 /// consumed (the end of a value it took); anchors before that are skipped without building
@@ -337,12 +339,14 @@ fn build_key<'t>(
         cache.clear();
     }
     let entry = cache.entry(token).or_insert_with(|| {
-        // A key name is a name: a random blob that happens to contain `Pass` is not.
-        if token.len() >= 12 && value_score(token) >= 0.6 {
-            return None;
-        }
         let w = split_key(token);
         let c = classify(&w);
+        // A key name is a name: a random blob that happens to contain `Pass` is not. A
+        // token whose words classify as a key (`OAUTH2_PROXY_CLIENT_SECRET`, `PG15_PASSWORD`,
+        // `oauth2ProxyClientSecret`) is a name however random its letters and digits look.
+        if c.is_none() && token.len() >= 12 && value_score(token) >= 0.6 {
+            return None;
+        }
         Some((c, w))
     });
     let (mut class, mut words) = match entry {

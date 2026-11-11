@@ -265,7 +265,11 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         let hash_field = key.words.last().is_some_and(|w| w == "hash")
             && v.bytes().all(|b| b.is_ascii_hexdigit());
         // A value that repeats its key's word is a label (`'sid_et': 'sid_ET.UTF-8'`).
-        let echoes = split_key(v).iter().any(|w| key.words.contains(w));
+        // One- and two-letter words (`b` of `B2_APPLICATION_KEY`) also occur in random
+        // values split at case changes.
+        let echoes = split_key(v)
+            .iter()
+            .any(|w| w.len() >= 3 && key.words.contains(w));
         if !random || v.chars().count() < 8 || hash_field || echoes {
             return None;
         }
