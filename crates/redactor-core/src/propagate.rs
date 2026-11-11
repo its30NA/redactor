@@ -68,6 +68,9 @@ pub(crate) fn propagate(
             reps.push(i);
         }
     }
+    if values.is_empty() {
+        return Vec::new();
+    }
     let plain = reps.iter().filter(|&&r| !encoded_only(&cands[r])).count();
     let bounded: Vec<bool> = values
         .iter()
