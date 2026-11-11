@@ -1,0 +1,66 @@
+# a negative word before the head names which secret it is (APPLE_ID_PASSWORD, ZIP_FILE_PASSWORD); a secret id is a secret
+
+APPLE_ID_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+SCHEMA_REGISTRY_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+FILE_ENCRYPTION_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+ZIP_FILE_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+EMAIL_PROVIDER_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+SMS_PROVIDER_API_KEY=⟦*|Hunter2-Fake-9x⟧
+
+MESSAGE_BROKER_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+TIME_SERIES_DB_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+INPUT_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+STATUS_PAGE_API_KEY=⟦*|Hunter2-Fake-9x⟧
+
+HELP_SCOUT_API_KEY=⟦*|Hunter2-Fake-9x⟧
+
+URL_SIGNING_SECRET=⟦*|Hunter2-Fake-9x⟧
+
+TF_STATE_ENCRYPTION_PASSPHRASE=⟦*|Hunter2-Fake-9x⟧
+
+SECRETS_MANAGER_TOKEN=⟦*|Hunter2-Fake-9x⟧
+
+ERROR_TRACKING_AUTH_TOKEN=⟦*|Hunter2-Fake-9x⟧
+
+PUBLIC_SITE_ADMIN_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+PROD_ENV_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+ENCRYPTION_AT_REST_PASSWORD=⟦*|Hunter2-Fake-9x⟧
+
+API_VERSION_2_SECRET=⟦*|Hunter2-Fake-9x⟧
+
+id_rsa_passphrase: ⟦*|Hunter2-Fake-9x⟧
+
+one_time_password: ⟦*|Kx9mPq2vL7⟧
+
+clearTextPassword: ⟦*|Hunter2-Fake-9x⟧
+
+plain_text_password = ⟦*|Hunter2-Fake-9x⟧
+
+password_text: ⟦*|Hunter2-Fake-9x⟧
+
+{"username": "jdoe", "passwordText": "⟦*|Hunter2-Fake-9x⟧"}
+
+<packageSourceCredentials>
+  <MyFeed>
+    <add key="Username" value="build" />
+    <add key="ClearTextPassword" value="⟦*|Hunter2-Fake-9x⟧" />
+  </MyFeed>
+</packageSourceCredentials>
+
+export TF_VAR_db_password="⟦*|Hunter2-Fake-9x⟧"
+
+TF_VAR_api_token=⟦*|Hunter2-Fake-9x⟧
+
+env.DB_PASSWORD = '⟦*|Hunter2-Fake-9x⟧'
+
+VAULT_SECRET_ID=⟦*|84896a0c-1347-aa90-a4f6-aca8b7558780⟧

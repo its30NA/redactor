@@ -1284,3 +1284,39 @@ fn webhook_url_keys_take_the_random_segment() {
     assert_clean("WEBHOOK_URL=https://hooks.example.com/in/team-alerts\n");
     assert_clean("WEBHOOK_URL=https://example.com/webhooks/github\n");
 }
+
+/// A negative word before the head says which secret it is (`APPLE_ID_PASSWORD`,
+/// `ZIP_FILE_PASSWORD`, `INPUT_PASSWORD`); after the head, or right before it as a modifier
+/// (`max_tokens`, `public_key`, `has_password`), it still voids the key.
+#[test]
+fn negative_words_before_the_head() {
+    for text in [
+        "APPLE_ID_PASSWORD=Tulip-Harbor-91\n",
+        "ZIP_FILE_PASSWORD=Tulip-Harbor-91\n",
+        "EMAIL_PROVIDER_PASSWORD=Tulip-Harbor-91\n",
+        "INPUT_PASSWORD=Tulip-Harbor-91\n",
+        "URL_SIGNING_SECRET=Tulip-Harbor-91\n",
+        "PUBLIC_SITE_ADMIN_PASSWORD=Tulip-Harbor-91\n",
+        "one_time_password: Tulip-Harbor-91\n",
+        "clearTextPassword: Tulip-Harbor-91\n",
+        "password_text: Tulip-Harbor-91\n",
+        "export TF_VAR_db_password=\"Tulip-Harbor-91\"\n",
+        "env.DB_PASSWORD = 'Tulip-Harbor-91'\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    assert_redacted(
+        "VAULT_SECRET_ID=84896a0c-1347-aa90-a4f6-aca8b7558780\n",
+        "84896a0c-1347-aa90-a4f6-aca8b7558780",
+    );
+    for text in [
+        "MAX_TOKENS=4096\n",
+        "PUBLIC_KEY=ssh-ed25519.pub\n",
+        "has_password: true\n",
+        "PASSWORD_MIN_LENGTH=12\n",
+        "password_text: Enter your password\n",
+        "FILE_ID=8f2c1a\n",
+    ] {
+        assert_clean(text);
+    }
+}

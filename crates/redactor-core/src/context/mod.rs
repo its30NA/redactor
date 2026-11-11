@@ -184,6 +184,12 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
     }
     let score = value_score(v);
     let random = score >= 0.5;
+    // Vault `secret_id` is a UUID or a random string; AWS `SecretId` names a secret by path
+    // or ARN.
+    let secret_id = key.words.len() >= 2 && key.words[key.words.len() - 2..] == ["secret", "id"];
+    if secret_id && !(uuid_like(v) || random && !v.contains([':', '/'])) {
+        return None;
+    }
     match label {
         Label::ConnectionString if !(has_credentials(v) || random) => return None,
         Label::RecoveryPhrase if !(random || phrase_like(v) || code_groups(v)) => return None,
@@ -339,6 +345,16 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         return Some(found(0.45, R_STRONG_PLAIN, ident_check));
     }
     Some(found(0.75, R_STRONG_PLAIN, ident_check))
+}
+
+/// `8-4-4-4-12` hex groups.
+fn uuid_like(v: &str) -> bool {
+    let groups: Vec<&str> = v.split('-').collect();
+    groups.len() == 5
+        && groups
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(g, n)| g.len() == n && g.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 /// Classifier score below which a value reads as a word or identifier.

@@ -121,6 +121,8 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["subscription", "key"], ApiKey),
     s(&["client", "key"], ApiKey),
     s(&["client", "secret"], Secret),
+    // Vault AppRole `secret_id`: the secret half of a login.
+    s(&["secret", "id"], Secret),
     s(&["app", "secret"], Secret),
     s(&["shared", "secret"], Secret),
     s(&["consumer", "secret"], Secret),
@@ -360,7 +362,6 @@ pub(crate) const NEGATIVE: &[&str] = &[
     "version",
     "input",
     "button",
-    "text",
     "msg",
     "message",
     "error",

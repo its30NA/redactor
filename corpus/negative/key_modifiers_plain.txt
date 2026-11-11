@@ -1,0 +1,40 @@
+# keys about a secret, not holding one: modifiers before or after the head, cursors, ids
+
+PASSWORD_MIN_LENGTH=12
+MAX_TOKENS=4096
+max_tokens: 2048
+min_password_length: 10
+PUBLIC_KEY=ssh-ed25519.pub
+public_api_key_enabled: true
+SHOW_PASSWORD_TOGGLE=true
+has_password: true
+is_secret: false
+enable_password_reset: true
+require_password: true
+forgot_password_url: /account/forgot
+PASSWORD_RESET_URL=https://example.com/reset
+TOKEN_EXPIRY=3600
+token_ttl_seconds: 900
+FILE_ID=8f2c1a
+USER_ID=1042
+SECRET_NAME=prod/db/password
+api_key_header: X-Api-Key
+password_policy: strict
+password_label: Password
+password_placeholder: Enter your password
+password_hint: At least 12 characters
+password_text: Enter your password
+error_password: Wrong password
+label_password: Password
+placeholder_password: Your password
+msg_password_incorrect: The password is incorrect.
+"passwordText": "Password",
+"clearTextPassword": "Show password",
+TF_VAR_db_password_length=24
+SECRETS_MANAGER_REGION=eu-west-1
+PROD_ENV_NAME=production
+INPUT_PASSWORD_REQUIRED=true
+aws secretsmanager get-secret-value --secret-id prod/db/password
+{"SecretId": "arn:aws:secretsmanager:eu-west-1:123456789012:secret:prod/db-AbCdEf"}
+{"SecretId": "MyTestDatabaseSecret", "VersionStage": "AWSCURRENT"}
+secret_id = aws_secretsmanager_secret.db.id

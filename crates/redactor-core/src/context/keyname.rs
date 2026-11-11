@@ -59,11 +59,81 @@ pub fn classify_key(words: &[String]) -> Option<(Label, Strength)> {
     classify(words).map(|k| (k.label, k.strength))
 }
 
-/// Negative words about an attempt or a change: they void a key only after its head
-/// (`password_retry_count`); before it they say which secret it is (`retry_password`).
-const AFTER_HEAD_ONLY: &[&str] = &[
-    "retry", "retries", "attempts", "changed", "updated", "created", "rotation", "store", "stores",
-    "helper", "helpers",
+/// Negative words void a key after its head (`password_min_length`, `secret_name`,
+/// `password_retry_count`); before it they mostly say which secret it is (`APPLE_ID_PASSWORD`,
+/// `ZIP_FILE_PASSWORD`, `INPUT_PASSWORD`, `retry_password`). These modifiers still void it
+/// right before a lexicon word: a bound, a flag or a UI string about the secret
+/// (`max_tokens`, `public_key`, `has_password`, `placeholder_password`).
+const BEFORE_HEAD_VOID: &[&str] = &[
+    "min",
+    "max",
+    "minlength",
+    "maxlength",
+    "length",
+    "len",
+    "strength",
+    "complexity",
+    "policy",
+    "policies",
+    "rules",
+    "regex",
+    "pattern",
+    "validator",
+    "validation",
+    "format",
+    "count",
+    "limit",
+    "size",
+    "type",
+    "types",
+    "kind",
+    "public",
+    "pub",
+    "is",
+    "has",
+    "show",
+    "hide",
+    "toggle",
+    "visible",
+    "visibility",
+    "enable",
+    "disable",
+    "enabled",
+    "disabled",
+    "require",
+    "required",
+    "requires",
+    "allow",
+    "valid",
+    "invalid",
+    "forgot",
+    "forgotten",
+    "label",
+    "placeholder",
+    "hint",
+    "prompt",
+    "field",
+    "button",
+    "title",
+    "description",
+    "desc",
+    "help",
+    "msg",
+    "message",
+    "error",
+    "header",
+    "prefix",
+    "suffix",
+    "name",
+    "names",
+    "path",
+    "dir",
+    "mode",
+    "chars",
+    "encoding",
+    "algorithm",
+    "algo",
+    "strategy",
 ];
 
 /// Words right before `token` that make it a pagination cursor (`next_page_token`).
@@ -86,6 +156,7 @@ pub(crate) fn classify(words: &[String]) -> Option<KeyClass> {
     let mut consumed = vec![false; words.len()];
     // (label, strength, index of the last word)
     let mut matches: Vec<(Label, Strength, usize)> = Vec::new();
+    let mut starts: Vec<usize> = Vec::new();
     let mut i = 0;
     while i < words.len() {
         let mut hit = None;
@@ -111,6 +182,7 @@ pub(crate) fn classify(words: &[String]) -> Option<KeyClass> {
                     *c = true;
                 }
                 matches.push((label, strength, i + n - 1));
+                starts.push(i);
                 i += n;
             }
             None => i += 1,
@@ -122,11 +194,10 @@ pub(crate) fn classify(words: &[String]) -> Option<KeyClass> {
     let aws = words.iter().any(|w| w == "aws");
     let head = matches.iter().map(|m| m.2).max().unwrap_or(0);
     for (i, (wd, c)) in words.iter().zip(&consumed).enumerate() {
-        if !c
-            && is_negative(wd)
-            && !(aws && wd == "id")
-            && !(i < head && AFTER_HEAD_ONLY.contains(&wd.as_str()))
-        {
+        if *c || !is_negative(wd) || aws && wd == "id" {
+            continue;
+        }
+        if i > head || BEFORE_HEAD_VOID.contains(&wd.as_str()) && starts.contains(&(i + 1)) {
             return None;
         }
     }
