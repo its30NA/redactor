@@ -1,0 +1,23 @@
+# the new key words in prose, docs and config that holds no secret
+
+Passkey support is coming to the login page next quarter.
+Passkeys replace passwords with a key pair stored on the device.
+webauthn_passkey: enabled
+psk: <your pre-shared key>
+key-mgmt=wpa-psk
+auth-alg=open
+ldap_default_authtok_type = password
+Schlüssel: siehe Tresor
+Der Schlüssel liegt im Büro.
+Zugangscode: siehe E-Mail
+Clé API : voir le coffre
+Le jeton expire après une heure.
+Authorization: Bearer <token>
+Authorization: required
+authorization: none
+The Authorization header is missing.
+dbpass = os.environ["DBPASS"]
+vault auth enable userpass
+vault login -method=userpass username=jdoe
+path "auth/userpass/login/*" {
+The psk option sets the pre-shared key.

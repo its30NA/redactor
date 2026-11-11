@@ -1320,3 +1320,50 @@ fn negative_words_before_the_head() {
         assert_clean(text);
     }
 }
+
+/// Key words the lexicon lacked: glued and short password names, PSK, authtok, passkey, and
+/// German, French and Persian key words.
+#[test]
+fn lexicon_gap_key_words() {
+    for text in [
+        "DBPASS=Tulip-Harbor-91\n",
+        "$dbpass = 'Tulip-Harbor-91';\n",
+        "userpass: Tulip-Harbor-91\n",
+        "rootpw: Tulip-Harbor-91\n",
+        "DBPWD=Tulip-Harbor-91\n",
+        "psw=Tulip-Harbor-91\n",
+        "pswd: Tulip-Harbor-91\n",
+        "passwrd: Tulip-Harbor-91\n",
+        "SECRETKEY=Tulip-Harbor-91\n",
+        "passkey: Tulip-Harbor-91\n",
+        "VPN_IPSEC_PSK=Tulip-Harbor-91\n",
+        "    psk=\"Tulip-Harbor-91\"\n",
+        "ldap_default_authtok = Tulip-Harbor-91\n",
+        "WLAN-Schlüssel: Tulip-Harbor-91\n",
+        "Zugangscode: Tulip-Harbor-91\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    let key = "k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7";
+    for text in [
+        format!("API-Schlüssel: {key}\n"),
+        format!("Geheimer Schlüssel: {key}\n"),
+        format!("Clé API : {key}\n"),
+        format!("Jeton d'accès : {key}\n"),
+        format!("کلید API: {key}\n"),
+    ] {
+        assert_redacted(&text, key);
+    }
+    assert_redacted(
+        "Authorization: 9f8e7d6c5b4a39281706f5e4d3c2b1a0\n",
+        "9f8e7d6c5b4a39281706f5e4d3c2b1a0",
+    );
+    for text in [
+        "Passkey support is coming to the login page next quarter.\n",
+        "Authorization: required\n",
+        "vault auth enable userpass\n",
+        "Der Schlüssel liegt im Büro.\n",
+    ] {
+        assert_clean(text);
+    }
+}

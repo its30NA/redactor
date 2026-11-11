@@ -141,6 +141,17 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["master", "key"], PrivateKey),
     s(&["decryption", "key"], PrivateKey),
     s(&["privater", "schlüssel"], PrivateKey),
+    s(&["geheimer", "schlüssel"], Secret),
+    s(&["api", "schlüssel"], ApiKey),
+    s(&["wlan", "schlüssel"], Password),
+    s(&["wifi", "schlüssel"], Password),
+    s(&["clé", "api"], ApiKey),
+    s(&["cle", "api"], ApiKey),
+    s(&["clé", "secrète"], Secret),
+    s(&["cle", "secrete"], Secret),
+    s(&["clé", "privée"], PrivateKey),
+    s(&["کلید", "api"], ApiKey),
+    s(&["کلید", "خصوصی"], PrivateKey),
     s(&["seed", "phrase"], RecoveryPhrase),
     s(&["recovery", "phrase"], RecoveryPhrase),
     s(&["recovery", "code"], RecoveryPhrase),
@@ -185,6 +196,24 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["گذرواژه"], Password),
     s(&["پسورد"], Password),
     s(&["schlüsselinhalt"], Password),
+    s(&["netzwerkschlüssel"], Password),
+    s(&["wlanschlüssel"], Password),
+    s(&["zugangscode"], Password),
+    // glued and short password names
+    s(&["dbpass"], Password),
+    s(&["dbpwd"], Password),
+    s(&["dbpw"], Password),
+    s(&["userpass"], Password),
+    s(&["rootpass"], Password),
+    s(&["rootpwd"], Password),
+    s(&["adminpass"], Password),
+    s(&["adminpwd"], Password),
+    s(&["psw"], Password),
+    s(&["pswd"], Password),
+    s(&["passwrd"], Password),
+    s(&["passkey"], Password),
+    // Wi-Fi and IPsec pre-shared keys
+    s(&["psk"], Password),
     // tool options that are passwords
     s(&["storepass"], Password),
     s(&["keypass"], Password),
@@ -207,6 +236,9 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["token"], Token),
     s(&["tokens"], Token),
     s(&["authtoken"], Token),
+    s(&["authtok"], Token),
+    s(&["jeton"], Token),
+    s(&["jetons"], Token),
     s(&["authkey"], Token),
     s(&["bearer"], Token),
     s(&["токен"], Token),
@@ -216,6 +248,8 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["apikey"], ApiKey),
     s(&["apikeys"], ApiKey),
     s(&["accesskey"], ApiKey),
+    // secrets
+    s(&["secretkey"], Secret),
     // secrets
     s(&["secret"], Secret),
     s(&["secrets"], Secret),
@@ -254,6 +288,12 @@ pub(crate) const ENTRIES: &[Entry] = &[
     w(&["sessionid"]),
     w(&["jsessionid"]),
     w(&["phpsessid"]),
+    // `Authorization: <token>` without a scheme: a credential when random.
+    w(&["authorization"]),
+    // `key` in German, French and Persian: weak alone, strong in a phrase (`API-Schlüssel`).
+    w(&["schlüssel"]),
+    w(&["clé"]),
+    w(&["کلید"]),
 ];
 
 /// Long strong words that also count at the end of an all-in-one word (`PGPASSWORD`,
@@ -839,6 +879,8 @@ pub(crate) const FUNCTION_WORDS: &[&str] = &[
     "should", "with", "der", "die", "das", "ein", "eine", "ihr", "ihre", "ist", "sind", "bitte",
     "nicht", "und", "oder", "sie", "le", "la", "les", "un", "une", "votre", "est", "pas", "et",
     "el", "los", "las", "una", "su", "tu", "es", "y",
+    // pointers to where the secret is: `Password: see email`, `Zugangscode: siehe E-Mail`
+    "see", "siehe", "voir", "ver", "vedi",
 ];
 
 /// Words that mark a value as a code identifier rather than a literal (`password_input`,

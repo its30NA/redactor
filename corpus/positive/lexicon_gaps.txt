@@ -1,0 +1,57 @@
+# key words the lexicon lacked: short and glued password names, PSK, authtok, passkey and German, French and Persian key words
+
+DBPASS=⟦*|Hunter2-Fake-9x⟧
+
+dbpass = ⟦*|Hunter2-Fake-9x⟧
+
+$dbpass = '⟦*|Hunter2-Fake-9x⟧';
+
+userpass: ⟦*|Hunter2-Fake-9x⟧
+
+rootpw: ⟦*|Hunter2-Fake-9x⟧
+
+DBPWD=⟦*|Hunter2-Fake-9x⟧
+
+psw=⟦*|Hunter2-Fake-9x⟧
+
+pswd: ⟦*|Hunter2-Fake-9x⟧
+
+passwrd: ⟦*|Hunter2-Fake-9x⟧
+
+SECRETKEY=⟦*|Hunter2-Fake-9x⟧
+
+passkey: ⟦*|Hunter2-Fake-9x⟧
+
+VPN_IPSEC_PSK=⟦*|Hunter2-Fake-9x⟧
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=⟦*|Hunter2-Fake-9x⟧
+
+    psk="⟦*|Hunter2-Fake-9x⟧"
+
+ldap_default_authtok = ⟦*|Hunter2-Fake-9x⟧
+
+WLAN-Schlüssel: ⟦*|Tulip-Harbor-91⟧
+
+API-Schlüssel: ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+
+Geheimer Schlüssel: ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+
+Zugangscode: ⟦*|Tulip-Harbor-91⟧
+
+Clé API : ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+
+Jeton d'accès : ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+
+کلید API: ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+
+Authorization: ⟦*|9f8e7d6c5b4a39281706f5e4d3c2b1a0⟧
+
+ROOTPASS=⟦*|Cedar-Quill-37⟧
+
+adminpass: ⟦*|Cedar-Quill-37⟧
+
+Netzwerkschlüssel: ⟦*|Cedar-Quill-37⟧
+
+Clé secrète : ⟦*|Cedar-Quill-37⟧
