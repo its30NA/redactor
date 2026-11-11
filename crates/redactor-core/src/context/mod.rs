@@ -68,6 +68,11 @@ impl Detector for ContextDetector {
             }
             Event::Cmd { start, end, cmd } => {
                 let v = command(text, start, end, cmd)?;
+                // `-pPASSWORD archive.rar`: a metavariable glued to an option is no key whose
+                // value follows.
+                if metavariable(&text[v.clone()]) {
+                    return Some(v.end);
+                }
                 let f = judge_command(text, v.start, v.end)?;
                 let e = f.end;
                 found.push(f);
@@ -163,7 +168,8 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
             ident_check: false,
         });
     }
-    if never_a_value(v, label) {
+    // `DB_PASSWORD=[DATABASE]`; an option's `--password PASSWORD`.
+    if never_a_value(v, label) || bracketed_name(v) || flag && metavariable(v) {
         return None;
     }
     let found = |confidence: f32, reason: &'static str, ident_check: bool| Found {
@@ -438,6 +444,45 @@ fn uuid_like(v: &str) -> bool {
             .all(|(g, n)| g.len() == n && g.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
+/// A help-text metavariable where a value goes: `PASSWORD`, `OLD_PASSPHRASE`, `STRING`
+/// (capitals without digits), or a bracketed name (`[DATABASE]`, `{password}`,
+/// `[-p PASSWORD]`). A real password with digits (`[Tulip-Harbor-91]`) is no metavariable.
+fn metavariable(v: &str) -> bool {
+    let v = v.trim().trim_end_matches("...");
+    if is_placeholder(v) {
+        return true;
+    }
+    let name = |s: &str| {
+        !s.is_empty()
+            && s.bytes().any(|b| b.is_ascii_alphabetic())
+            && s.bytes()
+                .all(|b| b.is_ascii_alphabetic() || matches!(b, b'_' | b'-' | b'.' | b'|' | b' '))
+    };
+    let capitals = v.len() >= 2
+        && name(v)
+        && !v.contains([' ', '|', '.'])
+        && !v.bytes().any(|b| b.is_ascii_lowercase());
+    capitals || bracketed_name(v)
+}
+
+/// `[DATABASE]`, `{password}`, `<db name>`, `[-p PASSWORD]`: a name in brackets, no digits.
+fn bracketed_name(v: &str) -> bool {
+    let v = v.trim();
+    let (Some(first), Some(last)) = (v.bytes().next(), v.bytes().last()) else {
+        return false;
+    };
+    let inner = v
+        .trim_start_matches(['[', '{', '<'])
+        .trim_end_matches([']', '}', '>'])
+        .trim_end_matches("...");
+    matches!(first, b'[' | b'{' | b'<')
+        && matches!(last, b']' | b'}' | b'>')
+        && inner.bytes().any(|b| b.is_ascii_alphabetic())
+        && inner
+            .bytes()
+            .all(|b| b.is_ascii_alphabetic() || matches!(b, b'_' | b'-' | b'.' | b'|' | b' '))
+}
+
 /// Classifier score below which a value reads as a word or identifier.
 const WORD_SCORE: f32 = 0.2;
 
@@ -447,6 +492,7 @@ fn judge_command(text: &str, s: usize, e: usize) -> Option<Found> {
     if never_a_value(v, Label::Password)
         || never_a_value(v.trim_end_matches('.'), Label::Password)
         || v == "*"
+        || metavariable(v)
     {
         return None;
     }

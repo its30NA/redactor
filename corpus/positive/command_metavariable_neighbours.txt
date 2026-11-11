@@ -1,0 +1,13 @@
+# real passwords in the places help text puts its metavariables
+
+mysql -u USER -p ⟦Password|Hunter2-Fake-9x⟧ shop
+mysql -u root -p⟦Password|Tulip-Harbor-91⟧ shop
+mysqldump -u backup -p'⟦Password|Tulip-Harbor-91⟧' shop > dump.sql
+unrar x -p⟦Password|Tulip-Harbor-91⟧ archive.rar
+7z a -p⟦*|Tulip-Harbor-91⟧ out.7z folder
+ssh-keygen -N ⟦Password|Tulip-Harbor-91⟧ -f ~/.ssh/id_new
+snmp-server community ⟦Password|Tulip-Harbor-91⟧ RO
+redis-cli -h cache.internal -a ⟦Password|Kiwi2024x⟧ ping
+sqlcmd -S db1 -U sa -P ⟦Password|Cedar-Quill-37⟧ -d shop
+net user svc_backup ⟦Password|Cedar-Quill-37⟧ /add
+DB_PASSWORD=⟦Password|[Tulip-Harbor-91]⟧

@@ -1431,3 +1431,26 @@ fn mixed_case_digit_password_after_comma() {
         assert_clean(text);
     }
 }
+
+/// Help text puts metavariables where the password goes: `[DATABASE]`, `PASSWORD`,
+/// `<password>`, `{password}`, `***`. A real password in the same place is redacted.
+#[test]
+fn help_text_metavariables_are_not_values() {
+    for text in [
+        "Usage: mysql -u USER -p [DATABASE]\n",
+        "Usage: mysql -u USER -pPASSWORD [DATABASE]\n",
+        "unrar x -pPASSWORD archive.rar\n",
+        "7z a -pSECRET out.7z folder\n",
+        "ssh-keygen -p -P OLD_PASSPHRASE -N NEW_PASSPHRASE -f keyfile\n",
+        "snmp-server community STRING RO\n",
+        "openssl enc -aes-256-cbc -k PASSPHRASE -in FILE -out FILE.enc\n",
+        "7z x -p{password} archive.7z\n",
+        "redis-cli -a *** ping\n",
+        "DB_PASSWORD=[DATABASE]\n",
+    ] {
+        assert_clean(text);
+    }
+    assert_redacted("mysql -u USER -p Hunter2-Fake-9x shop\n", "Hunter2-Fake-9x");
+    assert_redacted("7z a -pTulip-Harbor-91 out.7z folder\n", "Tulip-Harbor-91");
+    assert_redacted("DB_PASSWORD=[Tulip-Harbor-91]\n", "[Tulip-Harbor-91]");
+}

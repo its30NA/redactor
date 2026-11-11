@@ -1,0 +1,32 @@
+# usage lines, man pages and help text: metavariables stand where the password goes
+
+Usage: mysql -u USER -p [DATABASE]
+Usage: mysql -u USER -pPASSWORD [DATABASE]
+Usage: mysql [-u USER] [-p[PASSWORD]] [DATABASE]
+mysqldump -u USER -p[PASSWORD] DBNAME > dump.sql
+mysql -u root -p<password> shop
+unrar x -pPASSWORD archive.rar
+rar a -hpPASSWORD backup.rar files/
+7z a -pSECRET out.7z folder
+7z x -p{password} archive.7z
+ssh-keygen -N PASSPHRASE -f ~/.ssh/id_new
+ssh-keygen -p -P OLD_PASSPHRASE -N NEW_PASSPHRASE -f keyfile
+snmp-server community STRING RO
+enable secret PASSWORD
+sqlcmd -S SERVER -U LOGIN -P PASSWORD -d DATABASE
+mongosh -u USERNAME -p [PASSWORD] --authenticationDatabase admin
+redis-cli -h HOST -p PORT -a PASSWORD
+redis-cli -a *** ping
+redis-cli -a xxxx ping
+sshpass -p ... ssh user@host
+xfreerdp /u:USER /p:PASSWORD /v:HOST
+net user USERNAME PASSWORD /add
+rabbitmqctl add_user USERNAME PASSWORD
+openssl enc -aes-256-cbc -k PASSPHRASE -in FILE -out FILE.enc
+vault login TOKEN
+db2 connect to DBNAME user USERID using PASSWORD
+  -p PASSWORD, --password PASSWORD   password for the login
+  --password=<pw>                   password to use
+  -w passwd, --password=passwd      bind password
+DB_PASSWORD=[DATABASE]
+password: [PASSWORD]
