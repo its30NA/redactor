@@ -165,6 +165,22 @@ secrets.
 - **The always-redact list.** It is plain text on disk. Do not put passwords in it. Use "Remember" for those.
 - **The CLI's `--diff` output** shows the original lines, secrets included. Do not share it.
 
+### Known misses (2.1.0)
+
+These shapes pass on purpose or for lack of a cheap signal. Each was measured with `scrub` 2.1.0; the
+values are made up. For any of them, add the value as an always-redact term, select it and redact it, or
+read the output before you send it. Fixes are tracked in the [roadmap](ROADMAP.md).
+
+| Input | Balanced | Paranoid | Why it passes |
+|---|---|---|---|
+| `PRIVATE_NOTE="Juniper-Coast-55"` | kept | kept | `NOTE` is not a secret name; flagging every password-shaped value under any key would hit ordinary config. |
+| `deploy key note: kT9#mQ2$vL` | kept | kept | Too short for the randomness check, and no key name it belongs to. |
+| `#Harbor91` on its own line | kept | kept | A line that starts with `#` is read as a dotenv comment. |
+| `commit 3f786850e387550fdab836ed7d6dc8f5c6e1c8a2` | kept | kept | 40 hex digits after a word like `commit` read as a git commit id. Without such a word, Paranoid redacts the hex; Balanced keeps it unless a key name comes first. |
+| `Passwort: siehe E-Mail` | kept | kept | A standalone `see`, `siehe`, `voir`, `ver` or `vedi` after a password key marks a pointer, not a value. A real password that is one of these words followed by text leaks; `siehe1234` is still redacted. |
+| `mysql -u root -pROOTPASS` | kept | kept | An all-capital, letters-only value after `-p` reads as a placeholder from usage text (`-pPASSWORD`). |
+| `DB_PASSWORD='$DB_PASS'` | kept | kept | A `$` plus an all-capital name reads as a variable reference, also in single quotes (Docker Compose expands it there). Mixed case such as `'$ummer2024'` is redacted. |
+
 ## The unsigned binary and SmartScreen
 
 The Windows installer and the executable are **not code-signed yet**. Free code signing through

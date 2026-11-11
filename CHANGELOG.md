@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A "Known misses" table in the threat model: shapes that 2.1.0 keeps on purpose or cannot detect, each
+  measured at Balanced and Paranoid, with the workaround.
+- A roadmap (`docs/ROADMAP.md`): the macOS and Linux app, fixes for the known misses, and an optional
+  local-model judge under research.
+
 ## [2.1.0] - 2026-11-11
 
 ### Added

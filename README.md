@@ -228,7 +228,8 @@ cd ../src-tauri && ../ui/node_modules/.bin/tauri build --bundles nsis
 
 [User guide](docs/GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) ·
 [Detectors](docs/DETECTORS.md) · [Accuracy](docs/ACCURACY.md) · [Harsh test cases](docs/HARSH_TESTS.md) ·
-[Security policy](SECURITY.md) · [Code signing policy](#code-signing-policy) · [Changelog](CHANGELOG.md)
+[Security policy](SECURITY.md) · [Code signing policy](#code-signing-policy) · [Changelog](CHANGELOG.md) ·
+[Roadmap](docs/ROADMAP.md)
 
 ## Code signing policy
 
