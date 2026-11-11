@@ -10,8 +10,10 @@
 //! ```
 //!
 //! Sanitized text goes to stdout; summaries, previews, notices and the audit (with `--audit -`)
-//! go to stderr, so pipes stay clean. Exit codes are the v1 ones: 0 success, 1 findings (`scan`,
-//! `check`) or an existing hook, 2 for usage, input and environment errors.
+//! go to stderr, so pipes stay clean. Exit codes: 0 success, 1 findings (`scan`, `check`) or an
+//! existing hook, 2 for usage, input and environment errors, and also when nothing was found but
+//! an encoded part was left undecoded or the output could not be verified clean (`scan` and
+//! `check` keep exit 1 when they found secrets), 101 for an internal error.
 #![forbid(unsafe_code)]
 
 pub mod audit;

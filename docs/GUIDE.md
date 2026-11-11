@@ -84,6 +84,7 @@ Press `Ctrl+Alt+R` in any app, without opening Redactor. It scrubs whatever text
 place and shows a Windows notification:
 
 - "2 secrets removed, safe to paste", or
+- "Check before pasting", when the text was rewritten but the engine could not verify the result, or
 - "Nothing sensitive found", or
 - "Left alone: a password manager marked that copy private", or
 - "Left alone: the clipboard text is larger than 20 MiB".
@@ -105,7 +106,10 @@ Settings (**Screen-capture shield**) or from the tray. The title bar shows "Shie
 
 Redactor clears its text panes and forgets every remembered secret:
 
-- after the idle timeout: **Wipe when idle**, 5, 10 or 30 minutes, or off (default 10);
+- after the idle timeout: **Wipe when idle**, 5, 10 or 30 minutes, or off (default 10). Idle means that
+  the window made no request to the app's backend (a scan, a copy, a settings change) for that long.
+  Reading the output without doing any of those also counts as idle, so the panes can be cleared while you
+  read. The timer runs only while there is text or a remembered secret to wipe;
 - when Windows locks or goes to sleep: **Wipe when Windows locks** (on by default);
 - when you quit, or choose **Wipe now** in the tray.
 
@@ -141,6 +145,9 @@ and motion. **Strip invisible characters** removes zero-width, bidirectional and
 output; they can hide text from you, so leave it on unless you need them.
 
 ## The `scrub` command line
+
+Install it first: unpack the `scrub` file from the release and put it on your `PATH`
+([README](../README.md#install-scrub)).
 
 `scrub` reads a file or standard input and writes the redacted text to standard output. Summaries and
 notices go to standard error, so pipes stay clean.
@@ -178,12 +185,18 @@ Redacted 3 item(s):
   - Password: 3
 ```
 
-Add `--pii` and the address and the IP go too. This mode exits 0 whether or not it found anything.
+Add `--pii` and the address and the IP go too. This mode exits 0 whether or not it found anything. It
+exits 2 only when the output could not be trusted complete: an encoded part was nested too deep to decode,
+or the output could not be verified clean. `scrub` prints a warning on stderr for every such case, naming
+the input; read the output before you share it.
 
-The input may be UTF-8 or UTF-16 (with a byte-order mark, as Windows PowerShell 5.1 writes with `>`). The
-redacted text comes out in the same encoding; `--json` and `--diff` are always UTF-8. Binary input is
-refused with exit code 2 rather than passed through. Text in an older 8-bit encoding is read with
-replacement characters, and a notice says so.
+The input may be UTF-8 or UTF-16, with or without a byte-order mark (Windows PowerShell 5.1 writes UTF-16
+with `>`). UTF-16 without a mark is recognized when the text has line breaks; a single short line of
+mostly non-ASCII text is too little to tell from binary data. The redacted text comes out in the same
+encoding; `--json` and `--diff` are always UTF-8. Binary input is refused with exit code 2 rather than
+passed through. Binary means that at least 5 % of the first 8 KiB are control bytes (NUL and the like), so a
+text file with a stray NUL is still text. Text in an older 8-bit encoding is read with replacement
+characters, and a notice says so.
 
 ### `scrub scan`: find secrets in files
 
@@ -196,19 +209,24 @@ scrub scan . --write            # rewrite files in place, sanitized
 
 By default it only reports, one line per file with the labels, and exits **1** if anything was found, so it
 works in CI. `--write` is the only option that changes files: it replaces the secrets in place, so use it in
-a git repository where you can review the diff. `scan` skips `.git`, `node_modules`, virtual environments
-and similar folders, and symbolic links it meets while walking.
+a git repository where you can review the diff. `scan` does not descend into `.git`, `.hg`, `.svn`, `node_modules`, virtual environments (`.venv`, `venv`),
+caches (`__pycache__`, `.mypy_cache`, `.ruff_cache`, `.pytest_cache`), `dist` and `build`; each one gets a
+`skipped` line, and a folder you name on the command line is scanned anyway. It does not follow symbolic
+links it meets while walking. Editor folders such as `.vscode` and `.idea` are scanned, because they
+sometimes hold credentials.
 
 Files are read as UTF-8 or UTF-16 (with a byte-order mark, or plainly UTF-16 text without one). Every file
-that is not scanned gets a `skipped` line on stderr with the reason: binary, larger than 5 MiB, or a
-byte-order mark the content does not follow. The last one, and a file that cannot be read at all, make the
-exit code 2.
+that is not scanned gets a `skipped` line on stderr with the reason: binary (see above), larger than 5 MiB,
+or a byte-order mark the content does not follow. The last one, a path that does not exist and a file that
+cannot be read at all make the exit code 2. Exit 2 also means that nothing was found but an encoded part
+was left undecoded or an output could not be verified clean (a warning on stderr names the file). If `scan`
+found secrets, it exits 1 even then.
 
 `--write` keeps each file's encoding, byte-order mark and permissions. It writes a temporary file next to
 the original and renames it over, so a file is never left half-written. Right before, it checks that the
 path is still the regular file it read: if it was replaced meanwhile (by a symbolic link, say), or is a
 symbolic link named on the command line, the file is left unchanged and the run ends with exit code 2.
-Files in an older 8-bit encoding are reported but not rewritten.
+Files in an older 8-bit encoding, and files that contain a NUL byte, are reported but not rewritten.
 
 ### `scrub check` and the pre-commit hook
 
@@ -224,20 +242,31 @@ exits 1 if it finds anything.
   their own hooks.
 - A staged symbolic link is checked as what git stores for it, the path it points to. The file behind
   the link is not part of the commit and is not read.
-- UTF-16 files are decoded and checked. Binary files are skipped with a `skipped` line.
+- UTF-16 files are decoded and checked. Binary files (see above) are skipped with a `skipped` line.
 - A staged text file the check cannot read (larger than 5 MiB, a byte-order mark the content does not
   follow, an unresolved conflict) blocks the commit with exit code 2 and a message naming it. The check
-  never passes text it did not read.
-- If the config file in use lowers detection (an `allowlist`, `disabled` rules or
-  `sensitivity = "relaxed"`), `check` prints a warning naming the file and those settings.
+  never passes text it did not read. The same goes for a staged file with an encoded part it left
+  undecoded, or whose output could not be verified clean: exit 2 when nothing else was found.
+- If the config file in use lowers detection (an `allowlist`, `disabled` rules, `sensitivity = "relaxed"`
+  or a `template` of your own), `check` prints a warning naming the file and every one of those settings, on
+  every run. If the settings leave `check` unable to detect even a password, an AWS key, an OpenAI key, a
+  bearer token or a private key, it refuses to run and exits 2.
+- Git runs at the top level of the repository with settings that change its output switched off, also
+  replace refs. Content that `git commit --amend` keeps from HEAD is not checked again.
 
 ```bash
-scrub install-hook          # writes .git/hooks/pre-commit
+scrub install-hook          # writes the pre-commit hook
 scrub install-hook --force  # overwrite an existing hook
 ```
 
-The hook runs `scrub check` before every commit and stops the commit if a secret is staged. `scrub` must
-be on your `PATH`. In an emergency, `git commit --no-verify` skips it.
+The hook goes where Git looks for hooks: `.git/hooks/pre-commit`, or the `pre-commit` file in the folder
+named by `core.hooksPath` if you set one. `install-hook` prints the path it wrote. If a `pre-commit` file or
+link is already there it stops with exit 1; `--force` replaces it (a link is replaced by a regular file, the
+link's target is never written).
+
+The hook runs `scrub check` before every commit and stops the commit if a secret is staged, or if a staged
+file could not be checked. `scrub` must be on your `PATH`. In an emergency, `git commit --no-verify` skips
+it.
 
 ### `scrub clipboard`
 
@@ -264,15 +293,16 @@ scrub version               # scrub version, engine version, rule count
 | Code | Meaning |
 |---|---|
 | 0 | Success. |
-| 1 | `scan` or `check` found secrets, or `install-hook` found an existing hook. |
-| 2 | Usage, input or environment error (unreadable file, bad or refused config, not a git repository, a staged file `check` could not read, a clipboard that changed during `scrub clipboard`). |
+| 1 | `scan` or `check` found secrets (even if a part was also left undecoded or unverified), or `install-hook` found an existing hook. |
+| 2 | Usage, input or environment error (unreadable or missing file, binary input, bad or refused config, a config that detects nothing, not a git repository, a staged file `check` could not read, a clipboard that changed during `scrub clipboard`). Also: no secret was found, but an encoded part was left undecoded or the output could not be verified clean, in any command. |
 | 101 | An internal error (a bug). `scrub` prints one line with the source location; the details are withheld, because they could quote your text. |
 
 ## The config file
 
 `scrub` looks for `redactor.toml` or `.redactor.toml` in the current folder and then in each folder above
 it, up to the root of the git repository (the folder holding `.git`) or your home folder, whichever comes
-first. It never reads a config file from above those. `-c PATH` names a file directly. Every key is
+first. In one folder `redactor.toml` wins over `.redactor.toml`. It never reads a config file from above
+those. `-c PATH` names a file directly. Whenever a file is loaded, `scrub` names it on stderr. Every key is
 optional. [`examples/redactor.example.toml`](../examples/redactor.example.toml) is a commented starting
 point. (The desktop app uses its own settings, not this file.)
 
@@ -283,7 +313,7 @@ point. (The desktop app uses its own settings, not this file.)
 | `strip_invisible` | Remove zero-width, bidi and tag characters from the output. Default `true`. |
 | `terms` | A list of words that are always redacted, whole words, any case. |
 | `placeholder` | `"labeled"` (default) or `"generic"`. |
-| `template` (or `placeholder_template`) | The placeholder text, with `{label}` and `{suffix}` (the ` #N` number). Default `"[REDACTED: {label}{suffix}]"`. |
+| `template` (or `placeholder_template`) | The placeholder text, with `{label}` and `{suffix}` (the ` #N` number). Default `"[REDACTED: {label}{suffix}]"`. Text shaped like your placeholders, with a label `scrub` emits, is not redacted again, so `scrub check` warns about a template of your own. |
 | `disabled` (or `disabled_detectors`) | Rule ids to turn off. `scrub detectors` lists them. |
 | `enabled` (or `enabled_detectors`) | Rule ids that ship switched off and should run. An entry in `disabled` still wins. |
 | `allowlist` | Regexes tested against each detected value; matches are left alone. Either `allowlist = [...]` or a table `[allowlist]` with `patterns = [...]`. |
@@ -317,12 +347,14 @@ A config file can switch detection off, so `scrub` treats one with care:
   may write to, or that belongs to another user (root excepted), stops the run with exit code 2. Fix it
   with `chmod o-w FILE`, or move it.
 - **It refuses catch-all allowlists.** An `allowlist` pattern that matches the empty string (`.*`, `a*`,
-  `|x`), or that matches a large share of random secret-shaped values made up at run time (`\w`, `\d`,
-  `[a-z]`, a single letter), stops the run with exit code 2. Narrow patterns keep working: literal
+  `|x`), that matches a large share of random secret-shaped values made up at run time (`\w`, `\d`,
+  `[a-z]`, a single letter), or that matches every random token of one provider's format (`^ghp_`), stops
+  the run with exit code 2. Narrow patterns keep working: literal
   placeholder values, `example\.com`, a fixture prefix such as `^test_`, or a 40-hex-digit commit id.
 - **`scrub check` warns about weaker settings.** Before the pre-commit check runs, it names the config file
-  and lists what in it lowers detection: allowlist patterns (counted), disabled rules, and
-  `sensitivity = "relaxed"`.
+  and lists what in it lowers detection: every allowlist pattern, the disabled rules (long lists end
+  in "+N more"), `sensitivity = "relaxed"` and a `template` of your own. It exits 2 when the settings leave
+  it unable to detect common secrets at all.
 
 ## Troubleshooting
 

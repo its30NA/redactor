@@ -33,29 +33,38 @@ so no fragment of a secret is left behind. Findings carry offsets and labels, ne
 the findings list, the audit log or the JSON output (`crates/redactor-core/tests/api.rs`).
 
 **Crafted input.**
-- *Invisible and look-alike characters.* Zero-width characters, variation selectors, fillers,
+- *Invisible and look-alike characters.* Every Unicode default-ignorable character (zero-width
+  characters, variation selectors, fillers and the like), the interlinear annotation controls,
   bidirectional controls and tag characters are removed and Unicode is normalized before detection, so
   splitting a token with them does not hide it, and the output is stripped of them by default. They are also reported as a warning.
 - *Encodings.* Base64, percent-encoding, JSON escapes and hex runs are decoded and rescanned, within a
   depth and byte budget, so a bomb of nested encodings costs bounded work and raises a warning. Copies of
   a value Redactor has already found are searched for in their encoded forms as well (see above).
 - *Denial of service.* All matching uses the `regex` crate, which has no backtracking, and the rest of
-  the engine (the search for copies of found values, the decode layers, the verify pass) is linear in the
-  size of the input too. A release test, `adversarial_shapes_scale_linearly`
-  (`crates/redactor-core/tests/perf.rs`), scans long lines, unterminated blocks, many distinct values,
-  one value repeated, long base64, deep JSON and a mix at 1 MiB and 8 MiB and fails if the larger scan
-  takes more than 12 times as long; the slowest shape runs at about 3.5 MiB/s. The app refuses input over
-  20 MiB rather than scanning it (clipboard text over 20 MiB is measured in place and never copied out), and `scrub scan`
-  skips files over 5 MiB and binary files, each with a line on stderr. `scrub check` never passes a staged
+  the engine (the search for copies of found values, the decode layers, the verify pass) is linear in
+  time and memory too, also when found values nest or overlap. A release test,
+  `adversarial_shapes_scale_linearly` (`crates/redactor-core/tests/perf.rs`), scans long lines,
+  unterminated blocks, many distinct values, one value repeated, long base64, deep JSON and a mix at
+  1 MiB and 8 MiB. It fails if the peak heap of a scan passes a bound set by the input size and the
+  number of findings, if the 8 MiB scan holds much more than ten times the heap of the 1 MiB scan, if it
+  takes more than 20 times as long, or if it runs slower than 1 MiB/s; the slowest shape ran at about
+  3.9 MiB/s when last measured. The app refuses input over 20 MiB rather than scanning it (clipboard text
+  over 20 MiB is measured in place and never copied out), and `scrub scan` skips files over 5 MiB and
+  binary files, each with a line on stderr. A file counts as binary when at least 5 % of its first 8 KiB
+  are control bytes, so a text file with a stray NUL is still scanned. `scrub check` never passes a staged
   text file it could not read: it blocks the commit instead.
-- *Files in other encodings.* UTF-16 text (what Windows PowerShell 5.1 writes) is decoded and scanned by
-  `scrub` and the app, not skipped as binary.
+- *Files in other encodings.* UTF-16 text (what Windows PowerShell 5.1 writes), with or without a
+  byte-order mark, is decoded and scanned by `scrub` and the app, not skipped as binary.
 - *Hidden changes in a commit.* `scrub check` lists staged files without rename detection and reads each
   one by its blob id, so a renamed-and-edited file or an odd file name (`0:other.env`) cannot slip past.
+  Its git calls run at the top level of the repository with output-changing settings off (including
+  replace refs). Content added with `git commit --amend` that is already in HEAD is not checked again.
 - *A planted config file.* `scrub` searches for `redactor.toml` only up to the repository root or the
   home folder, names every config file it loads, refuses files writable by every user or owned by
-  another user, and refuses catch-all allowlist patterns. `scrub check` warns about every setting in the
-  file that lowers detection.
+  another user, and refuses catch-all allowlist patterns, including a pattern that matches every token of
+  one provider's format (`^ghp_`). `scrub check` prints every allowlist entry, disabled rule and custom
+  placeholder template on each run, and exits 2 if the settings leave it unable to detect a set of
+  common secrets at all.
 - *UI injection.* The window has a content security policy of `default-src 'none'` with only
   `'self'` for scripts, styles, images and fonts, so no inline script, no `eval`, no remote content.
   The prototype is frozen, navigation is limited to the app's own origin and new windows are denied
@@ -97,6 +106,10 @@ same helper process that writes it. The `scrub clipboard` command does not touch
 
 **Time limits.** Remembered secrets are zeroed, and both text panes are cleared, when you quit, lock
 Windows, put the PC to sleep, or leave the app idle past the timeout (10 minutes by default, selectable).
+"Idle" means no call from the window to the app's backend: a scan, a copy, a settings change. Reading the
+output or the findings without doing any of those does not count as activity, so the panes are also wiped
+after the timeout while you are reading. The timer runs only while the app holds text or remembered
+secrets.
 
 ## What is not protected
 
@@ -110,10 +123,23 @@ Windows, put the PC to sleep, or leave the app idle past the timeout (10 minutes
   no telling name near it can pass. That is why every finding is shown with its reason, why Paranoid mode
   exists, why you can select any text and redact it, and why you should read the output before you send
   it. Redactor reduces the risk. It does not replace looking.
-- **Base64 wrapped across lines.** Base64 that is wrapped across lines (at 64 or 76 columns) is not
-  searched for copies of a found value across the line break.
-- **Memory on crafted input.** Memory grows by roughly 800 bytes per finding, so a crafted 20 MiB paste
-  with hundreds of thousands of findings can use more than a gigabyte for that scan.
+- **Short values glued to other text.** A found value of 6 to 11 characters is redacted elsewhere only
+  where it stands alone: a copy with a letter or digit right before or after it (`hostKx9mPq2vLz`,
+  `Kx9mPq2vLz1`) is left. Values of 12 or more characters are found anywhere.
+- **Remembered secrets inside short hex.** A remembered secret is not searched for in hex that is shorter
+  than 32 digits or that does not decode to text. Its base64 copies are found.
+- **Memory on crafted input.** Memory grows by about 1 KB per finding (8 MiB of `password=` lines, 349,464
+  findings: 335 MiB peak, 585 MiB with `--json`), so a crafted 20 MiB paste can use close to a gigabyte
+  for that scan.
+- **Crash dumps.** Nothing in the app turns off Windows Error Reporting or the WebView2 crash reporter.
+  If the app or its web view crashes, the dump can contain the text that was in memory (the window's
+  text, remembered secrets), and Windows may keep it on disk. Redactor does not write dumps itself and
+  cannot delete the ones Windows writes.
+- **`--amend`.** `scrub check` does not re-check content that is already in HEAD when you amend a commit.
+- **Values after a placeholder.** A value written right after a placeholder with no gap
+  (`[REDACTED: Password #1]Juniper-Coast-55`) is redacted. One that follows it after punctuation or a space
+  (`[REDACTED: Password #1]!abc`, `[REDACTED: Password #1] Juniper-Coast-55`) is judged like any other text,
+  and may be kept.
 - **Not every copy of your text is zeroed.** What is zeroed, on the Rust side: remembered secrets (the
   stored values, and the copies made while normalizing and comparing them), the text of a scan request
   when the request is dropped, clipboard text read for a scrub, the text given to Copy, Save and Remember,
@@ -141,9 +167,11 @@ Windows, put the PC to sleep, or leave the app idle past the timeout (10 minutes
 
 ## The unsigned binary and SmartScreen
 
-The Windows installer and the executable are **not code-signed**, because a code-signing certificate is a paid
-product that this project does not use. Windows SmartScreen therefore warns on first run
-("Windows protected your PC"), and the executable shows no verified publisher.
+The Windows installer and the executable are **not code-signed yet**. Free code signing through
+[SignPath Foundation](https://signpath.org/) is planned (see the [code signing policy](../README.md#code-signing-policy));
+until it is in place, Windows SmartScreen warns on first run ("Windows protected your PC"), and the
+executable shows no verified publisher. A signature would show who published a file; it would not prove the
+code has no bugs.
 
 What replaces the signature here:
 

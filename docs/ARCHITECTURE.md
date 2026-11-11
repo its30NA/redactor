@@ -5,7 +5,7 @@ Redactor is one detection engine and two front ends. The engine is a pure librar
 
 ```
             +----------------------------- Redactor.exe (Tauri 2) -----------------------------+
- WebView2   |  app/ui (Svelte 5)  --- IPC: 14 whitelisted commands, isolation, strict CSP -->   |
+ WebView2   |  app/ui (Svelte 5)  --- IPC: 13 whitelisted commands, isolation, strict CSP -->   |
  (private,  |                                                  app/src-tauri (Rust)            |
  no network)|   shows text, highlights spans,                   +- session secrets (memory)    |
             |   never receives secret values                    +- settings.json (settings)    |
@@ -47,17 +47,19 @@ the value under a random per-process key. It lets the UI say "keep this value" w
 
 | Step | Module | What happens |
 |---|---|---|
-| 1. Shadow text | `normalize.rs` | Remove invisible characters (zero-width, soft hyphen, variation selectors, fillers and similar), bidirectional controls and tag characters; apply NFKC so fullwidth forms fold. A byte map leads back to the original so every span grows to cover removed characters. Each class is counted for a warning. |
+| 1. Shadow text | `normalize.rs` | Remove invisible characters (every Unicode default-ignorable character, such as zero-width characters, the soft hyphen, variation selectors and fillers, plus the interlinear annotation controls), bidirectional controls and tag characters; U+FE0F is kept only after an emoji or before a keycap mark; apply NFKC so fullwidth forms fold. A byte map leads back to the original so every span grows to cover removed characters. Each class is counted for a warning. |
 | 2. Detectors | `rules/`, `context/`, `classifier/`, `terms.rs` | All of these run on the shadow text and emit candidates `{range, kind, label, confidence, detector, reason, source}`. See below. |
-| 3. Decode layer | `decode.rs` | Base64, percent-encoded, JSON-escaped and long hex runs that decode to mostly printable UTF-8 are decoded and scanned again, to a depth of two and within a byte budget. A hit inside covers the whole encoded run. |
-| 4. Guards | `guard.rs` | Drop values that are templates or filler: `changeme`, `${VAR}`, `{{ x }}`, `process.env.X`, `xxxx`, already-redacted text and so on, plus allowlisted and kept values. |
+| 3. Decode layer | `decode.rs` | Base64, percent-encoded, JSON-escaped and long hex runs that decode to mostly printable UTF-8 are decoded and scanned again, to a depth of two and within a byte budget. A hit inside covers the whole encoded run. Base64 wrapped across lines (same width, same indent, LF or CRLF) is decoded as one body. A base64 run glued to a URL path (`/cb/<base64>`) is tried at four alignments in both alphabets. An escape JSON does not know (`\x`, `\q`) is copied through and also read as a boundary, so later `\u` escapes are still decoded. |
+| 4. Guards | `guard.rs` | Drop values that are templates or filler: `changeme`, `${VAR}`, `{{ x }}`, `process.env.X`, `xxxx`, already-redacted text and so on, plus allowlisted and kept values. The variable, template, filler and dotted-config-path shortcuts apply only when no digit is mixed into the letters, so `$ummer2024x` and `config.Zq81mXv0pLr3` are still redacted; all-caps names with trailing digits (`API_KEY_V2`) still count as variables. "Already redacted" means a placeholder whose label the engine emits, so text that only looks like one (`[REDACTED-…`) is redacted. |
 | 5. Threshold | `engine.rs` | Keep candidates at or above the sensitivity threshold (Relaxed, Balanced, Paranoid). |
-| 6. Propagate | `propagate.rs`, `occurrences.rs`, `encoded.rs` | Every redacted value of at least six characters is searched for elsewhere in the text, in linear time: an index over each value's first six bytes, no automaton over all values. Further occurrences become findings with the same label. Base64 (either alphabet), hex, percent-encoded and JSON-escaped runs are decoded into one buffer and searched too, up to two encodings deep, so an encoded copy is redacted as the value itself. |
+| 6. Propagate | `propagate.rs`, `occurrences.rs`, `encoded.rs` | Every redacted value of at least six characters is searched for elsewhere in the text, in linear time and memory, also when values nest or overlap: each position reports the longest value plus a few nested shorter ones, and past a work budget an Aho-Corasick pass takes the longest match per position. Further occurrences become findings with the same label. A short value (6 to 11 characters) is found only where it stands alone; values of 12 or more characters are found anywhere. Always-redact terms and the values of the matcher are searched in their encoded copies too, and terms seed the encoded-copy search even when the text has no plain copy. Base64 (either alphabet), hex, percent-encoded and JSON-escaped runs are decoded into one buffer and searched too, up to two encodings deep, so an encoded copy is redacted as the value itself. |
 | 7. Resolve | `resolve.rs` | Merge overlapping spans into their union. Nothing is dropped, because a dropped overlap would leak a prefix. The label comes from the best evidence among the members: a vendor pattern before the context engine before the classifier, then confidence. |
 | 8. Redact | `redact.rs`, `placeholder.rs` | Give every occurrence of one value the label of its best-evidenced occurrence, so one value has one placeholder (`one_label_per_value` in `engine.rs`), and splice placeholders. The same value gets the same number, numbered per label in order of first appearance; the ` #N` appears only when a label has more than one distinct value. |
-| 9. Verify | `engine.rs` | Scan the output again. Anything new outside a placeholder is redacted and the loop repeats up to a cap; if the cap is hit the outcome says `verified = false`. |
+| 9. Verify | `engine.rs` | Scan the output again. Anything new outside a placeholder is redacted and the loop repeats up to a cap. At the cap the last round is still applied, and the outcome says `verified = false` with a warning. |
 
 Scanning an already-redacted output gives it back unchanged with no findings.
+
+`drop_identifiers` (`context/mod.rs`) is linear in the size of the input. It measured 0.27, 1.09 and 2.54 s for 1, 4 and 8 MiB of `password = <identifier>` lines, and is left as it is.
 
 ### The detectors
 
@@ -100,7 +102,7 @@ Win32 code are Windows-only, so Linux CI needs no WebKit.
 | Module | Role |
 |---|---|
 | `app.rs` | Builds the Tauri app: plugins, the main window, hotkey registration, idle timer, lock watcher, close-to-tray. |
-| `commands.rs` | The 14 IPC commands. Heavy work runs on a blocking worker, never on the UI thread. |
+| `commands.rs` | The 13 IPC commands. Heavy work runs on a blocking worker, never on the UI thread. |
 | `bridge.rs` | Re-exports `redactor-wire`'s scan mapping. |
 | `engines.rs` | Keeps one engine per `stripInvisible` value for the current always-redact words and placeholder style, rebuilds in the background when they change, and shares one per-process session key. |
 | `session.rs` | Session secrets: boxed byte values, zeroed on drop, searched with `memchr::memmem` under a lock. There is no prebuilt automaton, whose internal copies of the values could not be wiped. |
@@ -139,7 +141,6 @@ JSON is camelCase and offsets are UTF-16 code units. The UI may call exactly the
 | Command | Purpose |
 |---|---|
 | `scan(req)` | Scan text: sensitivity, PII, strip-invisible, kept value keys, manual ranges. Input cap 20 MiB. |
-| `scrub_clipboard()` | Scrub the clipboard in place. The global hotkey calls the same code. |
 | `read_clipboard()` | The clipboard text, or nothing when it is empty or marked private. |
 | `copy_text(text)` | Write safe text to the clipboard. |
 | `open_text_file()`, `save_text_file(text, name)` | The file dialogs, run in the shell. |
@@ -147,7 +148,7 @@ JSON is camelCase and offsets are UTF-16 code units. The UI may call exactly the
 | `get_settings()`, `set_settings(s)` | Settings, validated in the shell. |
 | `app_info()` | Versions and rule count. |
 
-The shell sends four events: `clipboard-scrubbed`, `wipe` (reason: idle, lock, sleep or tray),
+The global hotkey and the tray menu scrub the clipboard in place in the shell (`clipscrub.rs`); the window has no command for it. The result is one of `cleaned`, `unverified` (the clipboard was rewritten but the engine could not verify the output, so the app says "Check before pasting"), `clean`, `empty`, `protected`, `tooLarge` or `error`. The shell sends four events: `clipboard-scrubbed`, `wipe` (reason: idle, lock, sleep or tray),
 `session-changed` and `settings-changed`. Besides the commands, the window may only use minimize, maximize,
 close and drag for the custom title bar, and listen to events. Every IPC message also passes through the
 isolation page, which lets through only these calls with the argument shapes the UI sends
