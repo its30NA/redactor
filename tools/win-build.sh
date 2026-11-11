@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Windows build loop for the desktop app, run from WSL.
 #
-# Copies the repo (without target/, node_modules/ and .git/) to C:\dev\redactor and runs the
+# Copies the repo (without target/, node_modules and .git/) to C:\dev\redactor and runs the
 # Windows toolchain there through powershell.exe. npm's PowerShell shim is blocked by the
 # execution policy, so the .cmd forms are used; the policy is never changed.
 #
@@ -23,7 +23,7 @@ STEP="${1:-all}"
 sync_repo() {
   mkdir -p "$DEST_WSL"
   rsync -a --delete \
-    --exclude '/.*/' --exclude 'target/' --exclude 'node_modules/' \
+    --exclude '/.*/' --exclude 'target/' --exclude 'node_modules' \
     --exclude 'dist/' --exclude 'dist-mock/' --exclude 'test-results/' \
     --exclude 'playwright-report/' --exclude 'app/src-tauri/gen/' \
     "$ROOT/" "$DEST_WSL/"
