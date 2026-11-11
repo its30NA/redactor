@@ -1,0 +1,30 @@
+name: Bug report
+description: Something else does not work as described.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste a real secret here.** This page is public. For a missed secret or a false alarm, use
+        the other templates.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands or clicks, with made-up input.
+  - type: input
+    id: os
+    attributes:
+      label: System
+      description: Windows, Linux or macOS, with the version.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `scrub --version`, or the version shown in the app.

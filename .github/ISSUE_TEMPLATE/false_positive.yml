@@ -1,0 +1,34 @@
+name: False alarm
+description: Redactor redacted something that is not a secret.
+labels: ["detection"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste a real secret here.** This page is public. If the text could hold a secret, change it
+        to made-up values first.
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: The smallest text that still shows the false alarm.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: found
+    attributes:
+      label: What was redacted, and the label it got
+      description: "For example `[REDACTED: Random String]` in place of a commit hash."
+    validations:
+      required: true
+  - type: input
+    id: how
+    attributes:
+      label: How you ran it
+      description: The app or `scrub`, the sensitivity level, and any config you use.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `scrub --version`, or the version shown in the app.

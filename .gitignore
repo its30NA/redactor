@@ -21,3 +21,8 @@ __pycache__/
 
 # tools/classifier: the virtualenv for train.py
 .venv/
+
+# Local environment files (never commit real ones)
+.env
+.env.*
+!.env.example
