@@ -29,7 +29,9 @@ pub(crate) type Alias = ((usize, usize), usize);
 /// Appends a `Propagated` candidate for every occurrence of a candidate's value that no
 /// candidate covers yet. `cands` are in ORIGINAL offsets; the search runs on the shadow text
 /// (so a value split by a hidden character elsewhere is still found). Values for which
-/// `skip` is true (kept by the user) are not propagated. Returns the encoded copies.
+/// `skip` is true (kept by the user) are not propagated. Values of the matcher and the term
+/// list get only the encoded-copy search (they find their plain copies themselves). Returns
+/// the encoded copies.
 pub(crate) fn propagate(
     text: &str,
     shadow: &Shadow,
@@ -40,31 +42,33 @@ pub(crate) fn propagate(
     let mut index: HashMap<Cow<'_, str>, usize> = HashMap::new();
     let mut values: Vec<Cow<'_, str>> = Vec::new();
     let mut reps: Vec<usize> = Vec::new();
-    for (i, c) in cands.iter().enumerate() {
-        // The matcher and the term list find every occurrence themselves.
-        if c.source == Source::Watchlist || c.detector == terms::ID || c.len() < MIN_CHARS {
-            continue;
-        }
-        let v = normalize_value(&text[c.start..c.end]);
-        if v.chars().count() < MIN_CHARS {
-            continue;
-        }
-        if let Some(&p) = index.get(&v) {
-            if c.confidence > cands[reps[p]].confidence {
-                reps[p] = i;
+    // The matcher and the term list find every plain occurrence themselves, so their values
+    // get only the encoded-copy search. They come last: values `..plain` get both searches.
+    let encoded_only = |c: &Candidate| c.source == Source::Watchlist || c.detector == terms::ID;
+    for pass_encoded_only in [false, true] {
+        for (i, c) in cands.iter().enumerate() {
+            if encoded_only(c) != pass_encoded_only || c.len() < MIN_CHARS {
+                continue;
             }
-            continue;
+            let v = normalize_value(&text[c.start..c.end]);
+            if v.chars().count() < MIN_CHARS {
+                continue;
+            }
+            if let Some(&p) = index.get(&v) {
+                if c.confidence > cands[reps[p]].confidence {
+                    reps[p] = i;
+                }
+                continue;
+            }
+            if skip(c) {
+                continue;
+            }
+            index.insert(v.clone(), values.len());
+            values.push(v);
+            reps.push(i);
         }
-        if skip(c) {
-            continue;
-        }
-        index.insert(v.clone(), values.len());
-        values.push(v);
-        reps.push(i);
     }
-    if values.is_empty() {
-        return Vec::new();
-    }
+    let plain = reps.iter().filter(|&&r| !encoded_only(&cands[r])).count();
     let bounded: Vec<bool> = values
         .iter()
         .map(|v| v.chars().count() < BOUNDARY_BELOW)
@@ -76,6 +80,13 @@ pub(crate) fn propagate(
         values.iter().map(|v| v.as_bytes()).collect(),
         bounded.clone(),
     );
+    // The plain search, over values `..plain` (the same indices).
+    let plain_occ = (plain < values.len()).then(|| {
+        Occurrences::new(
+            values[..plain].iter().map(|v| v.as_bytes()).collect(),
+            bounded[..plain].to_vec(),
+        )
+    });
     let conf: Vec<f32> = reps.iter().map(|&r| cands[r].confidence).collect();
 
     // What is already covered, as sorted, merged intervals.
@@ -95,19 +106,22 @@ pub(crate) fn propagate(
 
     let st: &str = &shadow.text;
     let mut copies = Copies::default();
-    occ.find(st.as_bytes(), |ms, me, p| {
-        if bounded[p] {
-            let glued = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-            if glued(st[..ms].chars().next_back()) || glued(st[me..].chars().next()) {
+    plain_occ
+        .as_ref()
+        .unwrap_or(&occ)
+        .find(st.as_bytes(), |ms, me, p| {
+            if bounded[p] {
+                let glued = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+                if glued(st[..ms].chars().next_back()) || glued(st[me..].chars().next()) {
+                    return;
+                }
+            }
+            let r = shadow.to_original(ms..me);
+            if is_covered(r.start, r.end) {
                 return;
             }
-        }
-        let r = shadow.to_original(ms..me);
-        if is_covered(r.start, r.end) {
-            return;
-        }
-        copies.add(ValueCopy::new(r.start, r.end, p, conf[p], None));
-    });
+            copies.add(ValueCopy::new(r.start, r.end, p, conf[p], None));
+        });
     // Encoded copies.
     let min_len = values.iter().map(|v| v.len()).min().unwrap_or(MIN_CHARS);
     let glued = |b: Option<u8>| b.is_some_and(|b| b.is_ascii_alphanumeric());

@@ -473,3 +473,51 @@ fn emoji_presentation_selector_kept_after_emoji_only() {
     let out = engine().scan("ab\u{FE0F}cd", &ScanRequest::default());
     assert_eq!(out.output, "abcd");
 }
+
+/// A value the matcher finds gets the encoded-copy search too, as a found password does
+/// (2026-11-10 audit, finding 6).
+#[test]
+fn matcher_values_get_encoded_copy_search() {
+    let engine = engine().with_matcher(Arc::new(Fixed("Kx9!mPq2")));
+    let text = r#"note Kx9!mPq2 here; b64 S3g5IW1QcTI= hex 4b7839216d507132 pct Kx9%21mPq2 json "Kx9!mPq2""#;
+    let out = engine.scan(text, &ScanRequest::default());
+    for copy in [
+        "Kx9!",
+        "S3g5IW1QcTI",
+        "4b7839216d507132",
+        "Kx9%21",
+        "Kx9\\u0021",
+    ] {
+        assert!(!out.output.contains(copy), "{copy} left: {}", out.output);
+    }
+    assert_eq!(
+        out.output.matches("[REDACTED: ").count(),
+        5,
+        "{}",
+        out.output
+    );
+}
+
+/// Always-redact terms get the encoded-copy search too; terms under the propagation minimum
+/// (six characters) do not, as no other value does.
+#[test]
+fn term_values_get_encoded_copy_search() {
+    let engine = Engine::new(EngineConfig {
+        terms: vec!["bluebird-labs".into(), "Zorvex".into()],
+        ..EngineConfig::default()
+    })
+    .unwrap();
+    let text = "from bluebird-labs: b64 Ymx1ZWJpcmQtbGFicw== hex 626c7565626972642d6c616273\n\
+                Zorvex b64 Wm9ydmV4 hex 5a6f72766578\n";
+    let out = engine.scan(text, &ScanRequest::default());
+    for copy in [
+        "bluebird",
+        "Ymx1ZWJpcmQtbGFicw",
+        "626c7565626972642d6c616273",
+        "Zorvex",
+        "Wm9ydmV4",
+        "5a6f72766578",
+    ] {
+        assert!(!out.output.contains(copy), "{copy} left: {}", out.output);
+    }
+}
