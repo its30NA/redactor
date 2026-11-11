@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package a built scrub binary (Linux and macOS) as a .tar.gz with the license and README.
+# Package a built scrub binary (Linux and macOS) as a .tar.gz with the license, third-party notices and README.
 #
 # Usage: tools/release/package-scrub.sh <tag> <target-triple> <out-dir>
 # Expects target/<target-triple>/release/scrub. Writes <out-dir>/scrub-<tag>-<target-triple>.tar.gz.
@@ -26,7 +26,7 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$name" "$out"
 cp "$bin" "$stage/$name/scrub"
-cp "$root/LICENSE" "$root/README.md" "$stage/$name/"
+cp "$root/LICENSE" "$root/THIRD_PARTY_NOTICES.md" "$root/README.md" "$stage/$name/"
 chmod 755 "$stage/$name/scrub"
 tar -C "$stage" -czf "$out/$name.tar.gz" "$name"
 echo "$out/$name.tar.gz"

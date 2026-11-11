@@ -137,7 +137,7 @@ jobs:
           $name = "Redactor-$env:TAG-windows-x64-portable"
           New-Item -ItemType Directory -Force -Path "stage/$name" | Out-Null
           Copy-Item $exe "stage/$name/Redactor.exe"
-          Copy-Item LICENSE, README.md "stage/$name/"
+          Copy-Item LICENSE, THIRD_PARTY_NOTICES.md, README.md "stage/$name/"
           Compress-Archive -Path "stage/$name" -DestinationPath "dist/$name.zip"
           Get-ChildItem dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -226,7 +226,7 @@ jobs:
           $name = "scrub-$env:TAG-$env:TARGET"
           New-Item -ItemType Directory -Force -Path dist, "stage/$name" | Out-Null
           Copy-Item "target/$env:TARGET/release/scrub.exe" "stage/$name/"
-          Copy-Item LICENSE, README.md "stage/$name/"
+          Copy-Item LICENSE, THIRD_PARTY_NOTICES.md, README.md "stage/$name/"
           Compress-Archive -Path "stage/$name" -DestinationPath "dist/$name.zip"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
