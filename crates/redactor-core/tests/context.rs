@@ -1030,3 +1030,26 @@ fn key_after_comma_or_paren_takes_a_literal() {
     assert_clean("config.password = os.environ[\"DB_PASSWORD\"]\n");
     assert_clean("ctx.secret = ctx.secret || defaultSecret;\n");
 }
+
+/// Markdown emphasis and inline tags around a key are markup; a key alone in a table cell
+/// takes the next cell; a secret-named column takes the cells under it.
+#[test]
+fn markup_and_table_cells_around_a_key() {
+    for text in [
+        "**Password:** Tulip-Harbor-91\n",
+        "*Password*: Tulip-Harbor-91\n",
+        "<strong>Password:</strong> Tulip-Harbor-91\n",
+        "<b>Password</b>: Tulip-Harbor-91<br>\n",
+        "<tr><td>Password</td><td>Tulip-Harbor-91</td></tr>\n",
+        "<dt>Password</dt>\n  <dd>Tulip-Harbor-91</dd>\n",
+        "| Password | Tulip-Harbor-91 |\n",
+        "| username | password |\n|---|---|\n| admin | Tulip-Harbor-91 |\n",
+        "username,password,role\nadmin,Tulip-Harbor-91,owner\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    assert_clean("**Password:** the one you chose when you signed up.\n");
+    assert_clean("| password | string | yes | The account password |\n");
+    assert_clean("| Name | Description |\n|---|---|\n| password | The account password |\n");
+    assert_clean("<tr><td>password</td><td>The password of the account</td></tr>\n");
+}

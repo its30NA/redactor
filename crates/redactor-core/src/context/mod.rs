@@ -75,6 +75,7 @@ impl Detector for ContextDetector {
             }
         });
         terraform_defaults(text, &mut found);
+        table_columns(text, &mut found);
         drop_identifiers(text, &mut found);
         out.extend(found.into_iter().map(|f| Candidate {
             start: f.start,
@@ -962,6 +963,193 @@ fn terraform_defaults(text: &str, found: &mut Vec<Found>) {
                 reason: R_TF_DEFAULT,
                 ident_check: false,
             });
+        }
+    }
+}
+
+/// Most columns a header row may have.
+const MAX_COLUMNS: usize = 64;
+
+/// The cells of a row: a Markdown row split at `|` (not `\|`), or a CSV/TSV row split at
+/// `delim`. Ranges are relative to the line.
+fn cells(line: &str, delim: Option<u8>) -> Vec<std::ops::Range<usize>> {
+    let b = line.as_bytes();
+    let mut out = Vec::new();
+    match delim {
+        None => {
+            let t = line.trim_end();
+            let Some(lead) = t.find('|') else {
+                return out;
+            };
+            let mut st = lead + 1;
+            for i in lead + 1..t.len() {
+                if b[i] == b'|' && b[i - 1] != b'\\' {
+                    out.push(st..i);
+                    st = i + 1;
+                }
+            }
+            if st < t.len() && !t[st..].trim().is_empty() {
+                out.push(st..t.len());
+            }
+        }
+        Some(d) => {
+            let t = line.trim_end_matches(['\r', '\n']);
+            let mut st = 0;
+            for (i, &c) in t.as_bytes().iter().enumerate() {
+                if c == d {
+                    out.push(st..i);
+                    st = i + 1;
+                }
+            }
+            out.push(st..t.len());
+        }
+    }
+    out
+}
+
+/// A header cell's key class, when it names a secret on its own (`password`, `api_key`).
+fn column_class(cell: &str) -> Option<(lexicon::Strength, Key)> {
+    let name = cell.trim().trim_matches(['"', '`', '*']);
+    if name.is_empty()
+        || name.len() > 40
+        || !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ' '))
+    {
+        return None;
+    }
+    let words = split_key(name);
+    let class = keyname::classify(&words)?;
+    class.last_consumed.then_some(())?;
+    let upper = name
+        .bytes()
+        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_');
+    Some((
+        class.strength,
+        Key {
+            start: 0,
+            end: 0,
+            token_start: 0,
+            dashes: 0,
+            class,
+            words,
+            cjk: false,
+            upper,
+            member: false,
+        },
+    ))
+}
+
+/// A header row that names its columns: every cell a short plain name.
+fn header_names(line: &str, cs: &[std::ops::Range<usize>]) -> bool {
+    (2..=MAX_COLUMNS).contains(&cs.len())
+        && cs.iter().all(|r| {
+            let n = line[r.clone()].trim().trim_matches(['"', '`', '*']);
+            !n.is_empty()
+                && n.len() <= 40
+                && n.chars().next().is_some_and(char::is_alphabetic)
+                && n.chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ' '))
+        })
+}
+
+/// `|---|:--:|`: the row under a Markdown table header.
+fn delimiter_row(line: &str) -> bool {
+    let t = line.trim();
+    t.starts_with('|') && t.contains('-') && t.bytes().all(|c| b"|-: ".contains(&c))
+}
+
+/// A table being read: its delimiter (`None`: Markdown), column count and secret columns.
+type Table = (Option<u8>, usize, Vec<(usize, Key)>);
+
+/// Tables with a header row: in a Markdown table (`| user | password |` over `|---|---|`)
+/// or a CSV/TSV block (`username,password,role`), the cells under a secret-named column
+/// are values. Rows run to the first line of another shape. One pass over the lines.
+fn table_columns(text: &str, found: &mut Vec<Found>) {
+    if !text.contains(['|', ',', '\t']) {
+        return;
+    }
+    // (delimiter, column count, secret columns)
+    let mut table: Option<Table> = None;
+    // A Markdown header waiting for its delimiter row.
+    let mut header: Option<(usize, Vec<(usize, Key)>)> = None;
+    let mut ls = 0;
+    for line in text.split_inclusive('\n') {
+        let start = ls;
+        ls += line.len();
+        if let Some((delim, n, cols)) = &table {
+            let cs = cells(line, *delim);
+            let row = match delim {
+                None => line.trim_start().starts_with('|') && !delimiter_row(line),
+                Some(_) => cs.len() == *n,
+            };
+            if row {
+                for (i, key) in cols {
+                    let Some(r) = cs.get(*i) else { continue };
+                    let cell = &line[r.clone()];
+                    let mut t = cell.trim();
+                    for q in ['"', '`'] {
+                        if t.len() >= 2 && t.starts_with(q) && t.ends_with(q) {
+                            t = &t[1..t.len() - 1];
+                        }
+                    }
+                    if t.is_empty() || t.contains(char::is_whitespace) {
+                        continue;
+                    }
+                    let vs = start + r.start + cell.find(t).unwrap_or(0);
+                    let raw = RawPair {
+                        value: Some(vs..vs + t.len()),
+                        syntax: Syntax::Assign,
+                        quoted: false,
+                        sep: Sep::None,
+                        tight: false,
+                        line_start: false,
+                        code: false,
+                        args: false,
+                        stmt_end: false,
+                        literal: true,
+                        scanned: vs + t.len(),
+                    };
+                    if let Some(f) = judge_pair(text, key, &raw) {
+                        found.push(f);
+                    }
+                }
+                continue;
+            }
+            table = None;
+        }
+        if let Some((n, cols)) = header.take() {
+            if delimiter_row(line) {
+                table = Some((None, n, cols));
+                continue;
+            }
+        }
+        let t = line.trim();
+        let (delim, cs) = if t.starts_with('|') {
+            (None, cells(line, None))
+        } else if let Some(d) = b"\t,;".iter().copied().find(|d| t.as_bytes().contains(d)) {
+            (Some(d), cells(line, Some(d)))
+        } else {
+            continue;
+        };
+        if !header_names(line, &cs) {
+            continue;
+        }
+        let cols: Vec<(usize, Key)> = cs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, r)| {
+                column_class(&line[r.clone()])
+                    .filter(|(st, _)| *st == Strength::Strong)
+                    .map(|(_, k)| (i, k))
+            })
+            .collect();
+        if cols.is_empty() {
+            continue;
+        }
+        match delim {
+            None => header = Some((cs.len(), cols)),
+            Some(_) => table = Some((delim, cs.len(), cols)),
         }
     }
 }

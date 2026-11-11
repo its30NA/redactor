@@ -1,0 +1,44 @@
+# keys in Markdown emphasis, HTML inline tags and table cells
+
+**Password:** ⟦Password|Tulip-Harbor-91⟧
+
+**Password**: ⟦Password|Tulip-Harbor-91⟧
+
+*Password:* ⟦Password|Tulip-Harbor-91⟧
+
+*Password*: ⟦Password|Tulip-Harbor-91⟧
+
+- **Username:** jdoe
+- **Password:** ⟦Password|Tulip-Harbor-91⟧
+
+**API Key:** ⟦*|k3j9x7q2m5n8p4w1v6b2c4d8f1g3h5z7⟧
+
+**Passwort:** ⟦Password|Tulip-Harbor-91⟧
+
+<strong>Password:</strong> ⟦Password|Tulip-Harbor-91⟧
+
+<b>Password</b>: ⟦Password|Tulip-Harbor-91⟧<br>
+
+<tr><td>Password</td><td>⟦Password|Tulip-Harbor-91⟧</td></tr>
+
+<dt>Password</dt><dd>⟦Password|Tulip-Harbor-91⟧</dd>
+
+| Password | ⟦Password|Tulip-Harbor-91⟧ |
+
+| Variable | Value |
+|---|---|
+| DB_USER | app |
+| DB_PASSWORD | ⟦Password|Hunter2-Fake-9x⟧ |
+
+| username | password |
+|---|---|
+| admin | ⟦Password|Walnut-Ferry-63⟧ |
+
+username,password,role
+admin,⟦Password|Copper-Delta-48⟧,owner
+
+__Password:__ ⟦Password|Cedar-Quill-37⟧
+
+Password: **⟦Password|Maple-Stone-58⟧**
+
+Password: `⟦Password|Birch-Lantern-24⟧`

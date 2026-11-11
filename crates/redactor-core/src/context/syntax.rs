@@ -781,6 +781,13 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         return None;
     }
 
+    // <td>Password</td><td>v</td>, <dt>Password</dt><dd>v</dd>, | Password | v |
+    if key.class.strength == Strength::Strong {
+        if let Some(rp) = cell_pair(text, key, prefix, line_start) {
+            return Some(rp);
+        }
+    }
+
     // KEY = v, KEY: v, KEY := v, KEY => v
     // `DB_PASSWORD==v`, `DB_PASSWORD=~v`, `DB_PASSWORD=>v` in a `.env` file or a logfmt
     // field: the value starts with `=`, `~` or `>`; there is no comparison or arrow there.
@@ -797,6 +804,11 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         && (line_start && key.upper || logfmt_field(text, prefix, key.end + 1));
     let sep_at = if env_eq {
         Some((Sep::Equals, true, key.end + 1))
+    } else if inline_open(prefix) {
+        // `**Password:** v`, `*Password*: v`, `<strong>Password:</strong> v`: emphasis and
+        // inline tags around the key and separator are markup, not the value.
+        separator(text, skip_closers(text, key.end))
+            .map(|(sep, _, after)| (sep, false, skip_blank(text, skip_closers(text, after))))
     } else {
         separator(text, key.end)
     };
@@ -894,6 +906,139 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         }
     }
     None
+}
+
+/// Inline tags that wrap a label (`<b>Password</b>: v`).
+const INLINE_TAGS: &[&str] = &["b", "strong", "em", "i", "u", "span", "label"];
+
+/// The key is opened by Markdown emphasis or an inline tag: `**`, `*`, `_`, `<b>`.
+fn inline_open(prefix: &str) -> bool {
+    if prefix.ends_with(['*', '_']) {
+        return true;
+    }
+    let Some(open) = prefix.strip_suffix('>') else {
+        return false;
+    };
+    let Some(lt) = open.rfind('<') else {
+        return false;
+    };
+    let name = open[lt + 1..]
+        .split(|c: char| c.is_whitespace())
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    INLINE_TAGS.contains(&name.as_str())
+}
+
+/// Skips closing emphasis (`**`, `*`, `__`) and closing inline tags (`</strong>`) at `p`.
+fn skip_closers(text: &str, mut p: usize) -> usize {
+    let b = text.as_bytes();
+    loop {
+        let run = b[p..]
+            .iter()
+            .take(4)
+            .take_while(|&&c| matches!(c, b'*' | b'_'))
+            .count();
+        if (1..=3).contains(&run) {
+            p += run;
+            continue;
+        }
+        if text[p..].starts_with("</") {
+            let close = text[p..ceil(text, p + 12)].find('>');
+            let name = close.map(|c| text[p + 2..p + c].to_ascii_lowercase());
+            if let (Some(c), Some(n)) = (close, name) {
+                if INLINE_TAGS.contains(&n.as_str()) {
+                    p += c + 1;
+                    continue;
+                }
+            }
+        }
+        return p;
+    }
+}
+
+/// Longest gap between a key cell and its value cell (`</td>⏎    <td>`).
+const MAX_CELL_GAP: usize = 128;
+
+/// A key alone in a table cell and the value in the next one: `<td>Password</td><td>v</td>`,
+/// `<th>Password</th><td>v</td>`, `<dt>Password</dt><dd>v</dd>`, `| Password | v |`. The
+/// value is one word (a cell of several words is a description in a docs table).
+fn cell_pair(text: &str, key: &Key, prefix: &str, line_start: bool) -> Option<RawPair> {
+    let b = text.as_bytes();
+    let mut p = skip_blank(text, key.end);
+    if b.get(p) == Some(&b':') {
+        p = skip_blank(text, p + 1);
+    }
+    let (vs, ve) = if let Some(open) = prefix.strip_suffix('>') {
+        let lt = open.rfind('<')?;
+        let name = open[lt + 1..]
+            .split(|c: char| c.is_whitespace())
+            .next()?
+            .to_ascii_lowercase();
+        if !matches!(name.as_str(), "td" | "th" | "dt") {
+            return None;
+        }
+        let close = format!("</{name}>");
+        if !text[p..].get(..close.len())?.eq_ignore_ascii_case(&close) {
+            return None;
+        }
+        p += close.len();
+        let hi = ceil(text, p + MAX_CELL_GAP);
+        p += text[p..hi].len() - text[p..hi].trim_start().len();
+        let next = text[p..].get(..3)?.to_ascii_lowercase();
+        if !matches!(next.as_str(), "<td" | "<dd") || !matches!(b.get(p + 3), Some(b'>' | b' ')) {
+            return None;
+        }
+        let gt = text[p..ceil(text, p + MAX_CELL_GAP)].find('>')?;
+        let vs = p + gt + 1;
+        let lt = vs + text[vs..ceil(text, vs + MAX_XML)].find('<')?;
+        (vs, lt)
+    } else if prefix.trim_end().ends_with('|') && prefix.trim_start().starts_with('|') {
+        if b.get(p) != Some(&b'|') {
+            return None;
+        }
+        let vs = p + 1;
+        let le = line_end(text, vs);
+        // `\|` is a pipe inside the cell.
+        let bar = text[vs..le]
+            .bytes()
+            .enumerate()
+            .position(|(i, c)| c == b'|' && (i == 0 || b[vs + i - 1] != b'\\'))?;
+        (vs, vs + bar)
+    } else {
+        return None;
+    };
+    let cell = &text[vs..ve];
+    let t = cell.trim();
+    if t.is_empty() || t.contains(char::is_whitespace) {
+        return Some(RawPair {
+            value: None,
+            syntax: Syntax::Xml,
+            quoted: false,
+            sep: Sep::None,
+            tight: false,
+            line_start,
+            code: false,
+            args: false,
+            stmt_end: false,
+            literal: true,
+            scanned: ve,
+        });
+    }
+    let s = vs + (cell.len() - cell.trim_start().len());
+    Some(RawPair {
+        value: Some(s..s + t.len()),
+        syntax: Syntax::Xml,
+        quoted: false,
+        sep: Sep::None,
+        tight: false,
+        line_start: false,
+        code: false,
+        args: false,
+        stmt_end: false,
+        literal: true,
+        scanned: ve,
+    })
 }
 
 fn starts_with_ci(hay: &str, needle: &str) -> bool {
