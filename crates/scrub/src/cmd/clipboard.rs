@@ -14,15 +14,10 @@ pub fn run(args: &ClipboardArgs) -> Result<i32, CliError> {
     }
     let engine = super::load_engine(&args.engine)?;
     let mut clipboard = PowerShell::default();
-    match scrub_clipboard(&mut clipboard, &engine).map_err(|e| CliError::new(2, e))? {
-        ClipOutcome::Cleaned {
-            summary, verified, ..
-        } => {
-            eprintln!("{summary}");
-            if super::warn_unverified("clipboard", verified) {
-                return Ok(2);
-            }
-        }
+    let (outcome, warnings) =
+        scrub_clipboard(&mut clipboard, &engine).map_err(|e| CliError::new(2, e))?;
+    match outcome {
+        ClipOutcome::Cleaned { summary, .. } => eprintln!("{summary}"),
         ClipOutcome::Clean => eprintln!("No sensitive data detected."),
         ClipOutcome::Stripped => eprintln!(
             "No sensitive data detected; invisible or direction-changing characters were \
@@ -40,6 +35,9 @@ pub fn run(args: &ClipboardArgs) -> Result<i32, CliError> {
                  Run the command again to scrub the new content.",
             ))
         }
+    }
+    if super::warn_engine("clipboard", &warnings) {
+        return Ok(2);
     }
     Ok(0)
 }

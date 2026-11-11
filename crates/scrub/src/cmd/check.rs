@@ -286,7 +286,7 @@ pub fn run(args: &CheckArgs) -> Result<i32, CliError> {
             ""
         };
         let outcome = engine.scan(&text, &ScanRequest::default());
-        if super::warn_unverified(&format!("{name}{what}"), outcome.verified) {
+        if super::warn_engine(&format!("{name}{what}"), &outcome.warnings) {
             unverified += 1;
         }
         if !outcome.findings.is_empty() {

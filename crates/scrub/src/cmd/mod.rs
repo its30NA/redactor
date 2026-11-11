@@ -7,7 +7,7 @@ pub mod hook;
 pub mod sanitize;
 pub mod scan;
 
-use redactor_core::{Engine, EngineConfig, ENGINE_VERSION};
+use redactor_core::{Engine, EngineConfig, Warning, WarningKind, ENGINE_VERSION};
 
 use crate::cli::{Cli, Command, EngineArgs};
 use crate::config::Config;
@@ -87,18 +87,51 @@ fn test_hooks(engine: Engine) -> Engine {
     engine
 }
 
-/// Warns on stderr when the engine could not verify the output for `name` clean: it stopped
-/// rescanning at its limit, so a secret may remain. True when it warned; the run then ends
-/// with exit code 2, like any output that cannot be trusted complete.
-pub fn warn_unverified(name: &str, verified: bool) -> bool {
-    if verified {
-        return false;
+/// Prints every engine warning about the input `name` on stderr, one line each. True when one
+/// of them means the output may still hold a secret the engine did not look at; the run then
+/// ends with exit code 2, like any output that cannot be trusted complete.
+///
+/// - `DecodeLimit`: an encoded part was nested too deep or past the decode budget, so what it
+///   holds was never scanned. Exit 2.
+/// - `VerifyCapHit`: the rescan stopped at its limit, so the output was not verified clean.
+///   Exit 2.
+/// - `InvisibleChars`, `BidiControls`, `TagChars`: hidden characters were seen through while
+///   scanning (and stripped from the output unless `strip_invisible = false`). A note; the
+///   exit code stays.
+pub fn warn_engine(name: &str, warnings: &[Warning]) -> bool {
+    let mut untrusted = false;
+    for w in warnings {
+        let n = w.count;
+        match w.kind {
+            WarningKind::DecodeLimit => {
+                untrusted = true;
+                eprintln!(
+                    "scrub: warning: {name}: {n} encoded part(s) not decoded (nested too deep or \
+                     past the decode limit); a secret inside may remain, review it before sharing"
+                );
+            }
+            WarningKind::VerifyCapHit => {
+                untrusted = true;
+                eprintln!(
+                    "scrub: warning: {name}: the output could not be verified clean (the rescan \
+                     limit was reached); a secret may remain, review it before sharing"
+                );
+            }
+            WarningKind::InvisibleChars => eprintln!(
+                "scrub: note: {name}: {n} invisible character(s) (zero-width, joiners, variation \
+                 selectors, fillers) were seen through while scanning"
+            ),
+            WarningKind::BidiControls => eprintln!(
+                "scrub: note: {name}: {n} direction control(s) (bidi overrides and isolates) were \
+                 seen through while scanning"
+            ),
+            WarningKind::TagChars => eprintln!(
+                "scrub: note: {name}: {n} tag character(s) (invisible ASCII copies) were seen \
+                 through while scanning"
+            ),
+        }
     }
-    eprintln!(
-        "scrub: warning: {name}: the output could not be verified clean (the rescan limit was \
-         reached); a secret may remain, review it before sharing"
-    );
-    true
+    untrusted
 }
 
 /// Warns, on stderr, about every setting in the loaded config file that lowers detection, one

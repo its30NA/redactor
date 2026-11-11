@@ -1198,3 +1198,54 @@ fn unverified_output_warns_and_exits_2() {
         "{out}{err}"
     );
 }
+
+/// Plain notes percent-encoded three times over: the engine decodes two levels and warns
+/// about the third (`DecodeLimit`), so what it holds was never looked at.
+fn too_deep() -> String {
+    let words = ["deploy", "notes", "for", "the", "reporting", "service"];
+    format!("see {} here\n", words.join("%252520"))
+}
+
+/// Every engine warning is printed on stderr, naming the input. A part left undecoded may
+/// hold a secret nobody looked at: exit 2, in sanitize and scan. Hidden characters were seen
+/// through and removed: a note only, the exit code stays.
+#[test]
+fn engine_warnings_are_printed_and_undecoded_parts_exit_2() {
+    let d = tmp();
+    // Sanitize: a part too deep to decode.
+    let text = too_deep();
+    let (out, err, code) = run(d.path(), &[], &text);
+    assert_eq!(code, 2, "{err}");
+    assert_eq!(out, text);
+    assert!(
+        err.contains("stdin") && err.contains("not decoded"),
+        "{err}"
+    );
+    // Sanitize: hidden characters.
+    let (out, err, code) = run(d.path(), &[], "a\u{200B}b \u{202E}c\u{E0041}d\n");
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(out, "ab cd\n");
+    for what in ["stdin", "1 invisible", "1 direction", "1 tag"] {
+        assert!(err.contains(what), "{what}: {err}");
+    }
+    // Scan: the file with the undecoded part exits 2 (no findings, so not 1), the file with
+    // hidden characters only gets a note.
+    let deep = write(d.path(), "deep.txt", &text);
+    let hidden = write(d.path(), "hidden.txt", "pay\u{200B}load\n");
+    let (_, err, code) = run(d.path(), &["scan", &deep], "");
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("deep.txt") && err.contains("not decoded"),
+        "{err}"
+    );
+    let (_, err, code) = run(d.path(), &["scan", &hidden], "");
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains("hidden.txt") && err.contains("1 invisible"),
+        "{err}"
+    );
+    // Scan --write: the same.
+    let (_, err, code) = run(d.path(), &["scan", "--write", &deep], "");
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("not decoded"), "{err}");
+}

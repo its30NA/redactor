@@ -18,7 +18,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use redactor_core::{Engine, ScanRequest};
+use redactor_core::{Engine, ScanRequest, Warning};
 
 /// What the clipboard holds.
 #[derive(Debug, PartialEq, Eq)]
@@ -55,8 +55,6 @@ pub enum ClipOutcome {
     Cleaned {
         removed: usize,
         summary: String,
-        /// False when the engine stopped rescanning at its limit: a secret may remain.
-        verified: bool,
     },
     Clean,
     /// No secrets, but invisible, bidi or tag characters were removed and written back.
@@ -68,35 +66,41 @@ pub enum ClipOutcome {
 }
 
 /// Reads the clipboard, redacts it, and writes it back only when the text changed (findings or
-/// stripped hidden characters) and the clipboard still holds what was read.
-pub fn scrub_clipboard(clip: &mut dyn Clipboard, engine: &Engine) -> Result<ClipOutcome, String> {
+/// stripped hidden characters) and the clipboard still holds what was read. The engine's
+/// warnings about the text come along (none when no text was scanned).
+pub fn scrub_clipboard(
+    clip: &mut dyn Clipboard,
+    engine: &Engine,
+) -> Result<(ClipOutcome, Vec<Warning>), String> {
     let text = match clip.read()? {
         ClipRead::Text(t) if !t.is_empty() => t,
         other => {
             clip.finish(None)?;
-            return Ok(match other {
+            let outcome = match other {
                 ClipRead::Protected => ClipOutcome::Protected,
                 _ => ClipOutcome::Empty,
-            });
+            };
+            return Ok((outcome, Vec::new()));
         }
     };
     let outcome = engine.scan(&text, &ScanRequest::default());
     let rows = crate::audit::rows_of(&text, &outcome.findings);
     if outcome.output == text {
         clip.finish(None)?;
-        return Ok(ClipOutcome::Clean);
+        return Ok((ClipOutcome::Clean, outcome.warnings));
     }
     // Written back whenever the text changed, as `scrub FILE` does: hidden characters alone
     // (no findings) are stripped too.
-    Ok(match clip.finish(Some(&outcome.output))? {
+    let result = match clip.finish(Some(&outcome.output))? {
         Finish::Written if rows.is_empty() => ClipOutcome::Stripped,
         Finish::Written => ClipOutcome::Cleaned {
             removed: rows.len(),
             summary: crate::audit::summary(&rows),
-            verified: outcome.verified,
         },
-        Finish::Changed | Finish::Untouched => ClipOutcome::Changed,
-    })
+        // Nothing was written: the warnings were about text that is no longer there.
+        Finish::Changed | Finish::Untouched => return Ok((ClipOutcome::Changed, Vec::new())),
+    };
+    Ok((result, outcome.warnings))
 }
 
 /// The helper script. Single quotes only, so it passes through the command line unchanged.
@@ -246,7 +250,7 @@ impl Clipboard for PowerShell {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use redactor_core::EngineConfig;
+    use redactor_core::{EngineConfig, WarningKind};
 
     struct Fake {
         held: ClipRead,
@@ -302,7 +306,7 @@ mod tests {
     #[test]
     fn findings_are_written_back_cleaned() {
         let mut f = Fake::new(ClipRead::Text(password_line()));
-        let out = scrub_clipboard(&mut f, &engine()).unwrap();
+        let (out, _) = scrub_clipboard(&mut f, &engine()).unwrap();
         assert!(
             matches!(out, ClipOutcome::Cleaned { removed: 1, .. }),
             "{out:?}"
@@ -316,23 +320,40 @@ mod tests {
     fn an_unverified_scrub_says_so() {
         let text = "password = x9k2prod\nCookie: sid=1,x9k2prod,z\n";
         let mut f = Fake::new(ClipRead::Text(text.into()));
-        let out = scrub_clipboard(&mut f, &engine().with_verify_cap(0)).unwrap();
+        let (out, warnings) = scrub_clipboard(&mut f, &engine().with_verify_cap(0)).unwrap();
+        assert!(matches!(out, ClipOutcome::Cleaned { .. }), "{out:?}");
         assert!(
-            matches!(
-                out,
-                ClipOutcome::Cleaned {
-                    verified: false,
-                    ..
-                }
-            ),
-            "{out:?}"
+            warnings.iter().any(|w| w.kind == WarningKind::VerifyCapHit),
+            "{warnings:?}"
         );
         assert!(!f.written[0].contains("x9k2prod"), "{:?}", f.written);
         let mut f = Fake::new(ClipRead::Text(text.into()));
-        let out = scrub_clipboard(&mut f, &engine()).unwrap();
+        let (out, warnings) = scrub_clipboard(&mut f, &engine()).unwrap();
+        assert!(matches!(out, ClipOutcome::Cleaned { .. }), "{out:?}");
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// Clean text still carries the engine's warnings: a part too deep to decode was never
+    /// looked at, and hidden characters that were stripped are reported.
+    #[test]
+    fn warnings_come_along_without_findings() {
+        // Plain notes, percent-encoded three times over.
+        let text = ["deploy", "notes", "for", "the", "reporting"].join("%252520");
+        let mut f = Fake::new(ClipRead::Text(text));
+        let (out, warnings) = scrub_clipboard(&mut f, &engine()).unwrap();
+        assert_eq!(out, ClipOutcome::Clean);
         assert!(
-            matches!(out, ClipOutcome::Cleaned { verified: true, .. }),
-            "{out:?}"
+            warnings.iter().any(|w| w.kind == WarningKind::DecodeLimit),
+            "{warnings:?}"
+        );
+        let mut f = Fake::new(ClipRead::Text("pay\u{200B}load".into()));
+        let (out, warnings) = scrub_clipboard(&mut f, &engine()).unwrap();
+        assert_eq!(out, ClipOutcome::Stripped);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.kind == WarningKind::InvisibleChars),
+            "{warnings:?}"
         );
     }
 
@@ -341,7 +362,7 @@ mod tests {
         let mut f = Fake::new(ClipRead::Text(password_line()));
         f.changes_meanwhile = true;
         assert_eq!(
-            scrub_clipboard(&mut f, &engine()).unwrap(),
+            scrub_clipboard(&mut f, &engine()).unwrap().0,
             ClipOutcome::Changed
         );
         assert!(f.written.is_empty());
@@ -351,7 +372,7 @@ mod tests {
     fn clean_text_is_not_rewritten() {
         let mut f = Fake::new(ClipRead::Text("hello".into()));
         assert_eq!(
-            scrub_clipboard(&mut f, &engine()).unwrap(),
+            scrub_clipboard(&mut f, &engine()).unwrap().0,
             ClipOutcome::Clean
         );
         assert!(f.written.is_empty());
@@ -362,7 +383,7 @@ mod tests {
     fn hidden_characters_alone_are_stripped_like_scrub_file_does() {
         let mut f = Fake::new(ClipRead::Text("pay\u{202E}load\u{200B}".into()));
         assert_eq!(
-            scrub_clipboard(&mut f, &engine()).unwrap(),
+            scrub_clipboard(&mut f, &engine()).unwrap().0,
             ClipOutcome::Stripped
         );
         assert_eq!(f.written, ["payload"]);
@@ -372,7 +393,7 @@ mod tests {
     fn protected_content_is_never_touched() {
         let mut f = Fake::new(ClipRead::Protected);
         assert_eq!(
-            scrub_clipboard(&mut f, &engine()).unwrap(),
+            scrub_clipboard(&mut f, &engine()).unwrap().0,
             ClipOutcome::Protected
         );
         assert!(f.written.is_empty());
@@ -382,12 +403,12 @@ mod tests {
     fn no_text_is_reported_as_empty() {
         let mut f = Fake::new(ClipRead::Empty);
         assert_eq!(
-            scrub_clipboard(&mut f, &engine()).unwrap(),
+            scrub_clipboard(&mut f, &engine()).unwrap().0,
             ClipOutcome::Empty
         );
         let mut f = Fake::new(ClipRead::Text(String::new()));
         assert_eq!(
-            scrub_clipboard(&mut f, &engine()).unwrap(),
+            scrub_clipboard(&mut f, &engine()).unwrap().0,
             ClipOutcome::Empty
         );
     }
