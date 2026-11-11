@@ -772,6 +772,18 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         });
     }
 
+    // `{\"password\":\"v\"}`: a JSON document escaped inside a JSON string.
+    if before == Some('"')
+        && key.dashes == 0
+        && ts >= 2
+        && b[ts - 2] == b'\\'
+        && text[key.end..].starts_with("\\\"")
+    {
+        if let Some(rp) = escaped_json_value(text, key.end + 2, line_start) {
+            return Some(rp);
+        }
+    }
+
     // "KEY": v  /  'KEY' => v  /  ENV["KEY"] = v  /  <add key="KEY" value="v"/>
     if let Some(q @ ('"' | '\'' | '`')) = before {
         if key.dashes == 0 && text[key.end..].starts_with(q) {
@@ -2088,6 +2100,58 @@ fn quoted_value(text: &str, p: usize) -> Option<(Option<Range<usize>>, usize, bo
         }
     }
     Some((None, b.len(), false))
+}
+
+/// The value after an escaped JSON key that ends at `p` (`\":\"v\"`, `\": 42`): an escaped
+/// string to its closing `\"`, or a bare word to the next `,`, `}`, `\` or blank.
+fn escaped_json_value(text: &str, p: usize, line_start: bool) -> Option<RawPair> {
+    let b = text.as_bytes();
+    let mut i = p;
+    while matches!(b.get(i), Some(b' ' | b'\t')) {
+        i += 1;
+    }
+    if b.get(i) != Some(&b':') {
+        return None;
+    }
+    i += 1;
+    while matches!(b.get(i), Some(b' ' | b'\t')) {
+        i += 1;
+    }
+    let hi = ceil(text, (i + MAX_XML).min(text.len()));
+    let quoted = text[i..hi].starts_with("\\\"");
+    let (vs, ve) = if quoted {
+        let vs = i + 2;
+        let mut j = vs;
+        loop {
+            match b.get(j) {
+                Some(b'\\') if b.get(j + 1) == Some(&b'"') => break (vs, j),
+                // `\\\\` is an escaped backslash inside the value.
+                Some(b'\\') => j += 2,
+                Some(b'\n' | b'\r') | None => return None,
+                Some(_) if j >= hi => return None,
+                Some(_) => j += 1,
+            }
+        }
+    } else {
+        let e = text[i..hi]
+            .find(|c: char| matches!(c, ',' | '}' | ']' | '\\' | '"') || c.is_whitespace())
+            .map_or(hi, |k| i + k);
+        (i, e)
+    };
+    let ve = floor(text, ve.min(text.len()));
+    Some(RawPair {
+        value: (ve > vs).then_some(vs..ve),
+        syntax: Syntax::QuotedKey,
+        quoted,
+        sep: Sep::Colon,
+        tight: true,
+        line_start,
+        code: false,
+        args: false,
+        stmt_end: false,
+        literal: false,
+        scanned: ve.max(i),
+    })
 }
 
 /// Whether the `&` or `;` at `i` ends an unquoted value: it does when the next pair starts

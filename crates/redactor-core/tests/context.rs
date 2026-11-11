@@ -1506,3 +1506,33 @@ fn config_values_that_look_like_code() {
         assert_clean(text);
     }
 }
+
+/// A JSON document escaped inside a JSON string: `{\"password\":\"v\"}`; and a random value
+/// after a `\n` escape.
+#[test]
+fn escaped_json_keys_and_values() {
+    assert_redacted(
+        r#"{"level":"debug","body":"{\"username\":\"admin\",\"password\":\"Tr0ub4dor&3\"}"}"#,
+        "Tr0ub4dor&3",
+    );
+    assert_redacted(
+        r#"{"msg":"payload {\"api_key\": \"Zq81mXv0pLr3TfK9wQe2Lm4x\", \"retry\": 3}"}"#,
+        "Zq81mXv0pLr3TfK9wQe2Lm4x",
+    );
+    assert_redacted(
+        r#"{"output": "Your API key:\nZq81mXv0pLr3TfK9wQe2Lm4x\nKeep it safe"}"#,
+        "Zq81mXv0pLr3TfK9wQe2Lm4x",
+    );
+    let pat = Gen::named("escaped").github("ghp_");
+    assert_redacted(&format!("echo -e \"\\x1b[32m{pat}\\x1b[0m\"\n"), &pat);
+    // The decode layer reads the `\u001b` string as a whole: the token goes, with its codes.
+    let text = format!("{{\"msg\": \"\\u001b[31m{pat}\\u001b[0m\"}}\n");
+    assert!(!scan_at(&text, Sensitivity::Balanced).output.contains(&pat));
+    for text in [
+        r#"{"level":"debug","body":"{\"username\":\"admin\",\"password\":\"<redacted>\"}"}"#,
+        r#"{"level":"debug","body":"{\"password\":null,\"remember\":true}"}"#,
+        r#"{"log":"Compiling serde v1.0.210\n   Compiling tokio v1.40.0\n"}"#,
+    ] {
+        assert_clean(text);
+    }
+}

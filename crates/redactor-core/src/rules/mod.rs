@@ -471,7 +471,10 @@ impl Detector for CatalogDetector {
                 let rule = &cat.rules[ri].rule;
                 // Cheap pre-check: a match that must start at the anchor cannot be glued to
                 // the character before it.
-                if rule.back == 0 && rule.left.rejects(text[..m.start()].chars().next_back()) {
+                if rule.back == 0
+                    && rule.left.rejects(text[..m.start()].chars().next_back())
+                    && !escape_ends_at(text, m.start())
+                {
                     continue;
                 }
                 hits[ri].push((m.start(), alen));
@@ -698,7 +701,7 @@ fn accept(
     (ss, se): (usize, usize),
     right: bool,
 ) -> Option<Candidate> {
-    if rule.left.rejects(text[..ms].chars().next_back())
+    if rule.left.rejects(text[..ms].chars().next_back()) && !escape_ends_at(text, ms)
         || right && rule.right.rejects(text[me..].chars().next())
     {
         return None;
@@ -747,6 +750,40 @@ fn accept(
             Source::Pattern
         },
     })
+}
+
+/// An escape ends right at `pos`: `\n`, `\r` or `\t` in a JSON or C string, or an ANSI
+/// colour code (`ESC[1;33m`, also written out as `\x1b[`, `\033[`, `\e[`, `\u001b[`). Its
+/// last letter is no word character glued to what follows.
+pub(crate) fn escape_ends_at(text: &str, pos: usize) -> bool {
+    let pre = &text.as_bytes()[..pos];
+    if let [head @ .., b'\\', b'n' | b'r' | b't'] = pre {
+        let more = head.iter().rev().take_while(|&&c| c == b'\\').count();
+        return more % 2 == 0;
+    }
+    let Some(rest) = pre.strip_suffix(b"m") else {
+        return false;
+    };
+    let params = rest
+        .iter()
+        .rev()
+        .take_while(|c| c.is_ascii_digit() || **c == b';')
+        .count();
+    let Some(intro) = rest[..rest.len() - params].strip_suffix(b"[") else {
+        return false;
+    };
+    [
+        &b"\x1b"[..],
+        b"\\x1b",
+        b"\\x1B",
+        b"\\033",
+        b"\\e",
+        b"\\E",
+        b"\\u001b",
+        b"\\u001B",
+    ]
+    .iter()
+    .any(|e| intro.ends_with(e))
 }
 
 /// Documentation filler such as `ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` or `AKIA****…`:

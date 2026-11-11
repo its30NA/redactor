@@ -881,3 +881,27 @@ fn url_userinfo_scan_cap_respects_char_boundaries() {
         let _ = only("url_userinfo_password").scan(&text, &ScanRequest::default());
     }
 }
+
+/// A JSON or C escape (`\n`, `\t`) or an ANSI colour code glued before a token is a
+/// boundary, not a word character; `\\n` (an escaped backslash, then `n`) is not.
+#[test]
+fn escapes_and_colour_codes_bound_a_token() {
+    let mut g = Gen::named("escapes");
+    let pat = g.github("ghp_");
+    for (pre, post) in [
+        ("{\"log\": \"cloning with token\\n", "\\n\"}"),
+        ("{\"log\": \"step\\t", "\\tdone\"}"),
+        ("\x1b[1m", "\x1b[0m"),
+        ("\x1b[1;33m", "\x1b[0m"),
+        ("printf \"\\033[32m", "\\033[0m\""),
+    ] {
+        assert_hit("github_pat", &format!("{pre}{pat}{post}\n"), &pat);
+    }
+    let jwt = g.jwt();
+    assert_hit(
+        "jwt",
+        &format!("{{\"msg\": \"issued token:\\n{jwt}\"}}\n"),
+        &jwt,
+    );
+    assert_miss("github_pat", &format!("path\\\\n{pat}x\n"));
+}

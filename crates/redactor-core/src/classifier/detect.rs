@@ -82,8 +82,10 @@ impl Detector for ClassifierDetector {
             if end - start < PARANOID_LEN {
                 continue;
             }
-            // Leading and trailing separators are not part of a token.
-            let mut s = start;
+            // Leading and trailing separators are not part of a token, nor is the letter of
+            // an escape (`\nZq81…` in a JSON string) or the tail of an ANSI colour code
+            // (`ESC[1mZq81…`) before it.
+            let mut s = escape_tail(text, start, end);
             let mut e = end;
             while s < e && matches!(bytes[s], b'/' | b'-' | b'_' | b'+') {
                 s += 1;
@@ -99,6 +101,32 @@ impl Detector for ClassifierDetector {
             }
         }
     }
+}
+
+/// Where a run starting at `start` begins after an escape glued in front: `n` of `\n`, or
+/// `33m` of `ESC[1;33m`.
+fn escape_tail(text: &str, start: usize, end: usize) -> usize {
+    let b = text.as_bytes();
+    if start > 0 && b[start - 1] == b'\\' && matches!(b[start], b'n' | b'r' | b't') {
+        return if crate::rules::escape_ends_at(text, start + 1) {
+            start + 1
+        } else {
+            start
+        };
+    }
+    let digits = b[start..end]
+        .iter()
+        .take_while(|c| c.is_ascii_digit())
+        .count();
+    let m = start + digits;
+    if m < end
+        && b[m] == b'm'
+        && matches!(b.get(start.wrapping_sub(1)), Some(b'[' | b';'))
+        && crate::rules::escape_ends_at(text, m + 1)
+    {
+        return m + 1;
+    }
+    start
 }
 
 fn judge(text: &str, s: usize, e: usize) -> Option<Candidate> {

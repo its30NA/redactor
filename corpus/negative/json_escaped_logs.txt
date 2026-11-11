@@ -1,0 +1,16 @@
+# JSON logs with escapes and ANSI-coloured output, no secrets
+
+{"level":"info","msg":"request done\nstatus=200\nduration=12ms"}
+{"level":"debug","body":"{\"username\":\"admin\",\"password\":\"<redacted>\"}"}
+{"level":"debug","body":"{\"username\":\"admin\",\"password\":null}"}
+{"level":"debug","body":"{\"password\":\"\",\"remember\":true}"}
+{"log":"Step 1/8 : FROM rust:1.82-slim\n ---> 3f9a1c2b7d4e\nStep 2/8 : WORKDIR /app\n"}
+{"log":"Compiling serde v1.0.210\n   Compiling tokio v1.40.0\n"}
+{"msg":"commit 9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c\nAuthor: build bot"}
+{"msg":"\tat com.example.App.main(App.java:42)\n\tat java.base/java.lang.Thread.run(Thread.java:1583)"}
+{"text":"Line one\nLine two\nnewTokenCount=3\nretryAfterSeconds=30"}
+{"event":"login","fields":"{\"user\":\"alice\",\"token_type\":\"Bearer\",\"expires_in\":3600}"}
+[32mINFO[0m server listening on 0.0.0.0:8080
+[1;31merror[0m[E0425]: cannot find value `tokenCount` in this scope
+[33mwarning[0m: unused variable: `passwordHash`
+\x1b[36mDEBUG\x1b[0m cache warmed in 120ms
