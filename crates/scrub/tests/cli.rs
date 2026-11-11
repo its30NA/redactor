@@ -780,7 +780,8 @@ fn v1_config_loads() {
     // The v1 example file (verbatim copy in tests/fixtures) parses: three allowlist patterns,
     // everything else default.
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for path in [root.join("tests/fixtures/redactor.v1.toml")] {
+    {
+        let path = root.join("tests/fixtures/redactor.v1.toml");
         let cfg = scrub::config::Config::load(Some(&path)).unwrap();
         let aws_docs_key = ["AK", "IA", "IOSFODNN7EXAMPLE"].concat();
         assert_eq!(
