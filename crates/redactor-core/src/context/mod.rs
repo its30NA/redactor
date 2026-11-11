@@ -66,8 +66,8 @@ impl Detector for ContextDetector {
                 found.push(f);
                 Some(end)
             }
-            Event::Cmd { end, cmd, .. } => {
-                let v = command(text, end, cmd)?;
+            Event::Cmd { start, end, cmd } => {
+                let v = command(text, start, end, cmd)?;
                 let f = judge_command(text, v.start, v.end)?;
                 let e = f.end;
                 found.push(f);

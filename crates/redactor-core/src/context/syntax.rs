@@ -13,7 +13,7 @@ use aho_corasick::{AhoCorasick, MatchKind};
 
 use super::keyname::{classify, split_key, KeyClass};
 use super::lexicon::{
-    anchor_words, is_negative, Strength, CONNECTORS, OBJECT_ROOTS, PHRASE_ANCHORS,
+    anchor_words, is_negative, Label, Strength, CONNECTORS, OBJECT_ROOTS, PHRASE_ANCHORS,
 };
 use super::value::value_score;
 use crate::engine::is_builtin_placeholder;
@@ -70,7 +70,7 @@ pub fn extract_pairs(text: &str) -> Vec<Pair> {
             Some(p.scanned)
         }
         Event::Cmd { start, end, cmd } => {
-            let v = command(text, end, cmd)?;
+            let v = command(text, start, end, cmd)?;
             let e = v.end;
             out.push(Pair {
                 key: start..end,
@@ -102,6 +102,8 @@ pub(crate) enum Cmd {
     NetUse,
     Login,
     Htpasswd,
+    /// `u: admin p: v`: a one-letter password field after a user field.
+    ShortPass,
 }
 
 const COMMANDS: &[(&str, Cmd)] = &[
@@ -131,6 +133,7 @@ const COMMANDS: &[(&str, Cmd)] = &[
     ("net use", Cmd::NetUse),
     ("login", Cmd::Login),
     ("htpasswd", Cmd::Htpasswd),
+    ("p:", Cmd::ShortPass),
 ];
 
 enum AnchorKind {
@@ -237,8 +240,10 @@ pub(crate) fn for_each_event(text: &str, mut f: impl FnMut(Event) -> Option<usiz
             AnchorKind::Cmd(cmd) => {
                 let before = char_before(text, s);
                 let after = text[e..].chars().next();
+                // `Login: admin / v`: the login word may take a colon.
+                let colon = cmd == Cmd::Login && after == Some(':');
                 if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
-                    || !after.is_some_and(|c| c == ' ' || c == '\t')
+                    || !(colon || after.is_some_and(|c| c == ' ' || c == '\t'))
                 {
                     continue;
                 }
@@ -926,6 +931,28 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         separator(text, key.end)
     };
     if let Some((sep, tight, after)) = sep_at {
+        // `Credentials: admin / v`, `User/Pass: admin / v`: a user, a slash and its password.
+        if !code && (key.class.label == Label::Credential || user_slash_prefix(prefix)) {
+            if let Some(v) = slash_password(text, after) {
+                return Some(RawPair {
+                    value: Some(v.clone()),
+                    syntax: if line_start {
+                        Syntax::LineAssign
+                    } else {
+                        Syntax::Assign
+                    },
+                    quoted: false,
+                    sep,
+                    tight,
+                    line_start,
+                    code: false,
+                    args: false,
+                    stmt_end: false,
+                    literal: true,
+                    scanned: v.end,
+                });
+            }
+        }
         // A line-start key with a strong name takes the rest of the line, as dotenv, YAML
         // plain scalars, INI and properties read it; elsewhere the value ends at a delimiter.
         // `KEY=v` without spaces may also be a shell prefix (`PGPASSWORD=v psql -h db`):
@@ -1430,6 +1457,41 @@ fn cell_pair(text: &str, key: &Key, prefix: &str, line_start: bool) -> Option<Ra
         literal: true,
         scanned: ve,
     })
+}
+
+/// `User/`, `Username/`, `Login/` right before a password key (`User/Pass: admin / v`).
+fn user_slash_prefix(prefix: &str) -> bool {
+    let p = prefix.trim_start().to_lowercase();
+    [
+        "user/",
+        "username/",
+        "login/",
+        "benutzer/",
+        "benutzername/",
+        "utilisateur/",
+        "usuario/",
+    ]
+    .iter()
+    .any(|u| {
+        p.ends_with(u)
+            && (p.len() == u.len() || !p[..p.len() - u.len()].ends_with(char::is_alphanumeric))
+    })
+}
+
+/// The rest of the line is `user / password` (one word each, the password password-shaped):
+/// the password's range.
+fn slash_password(text: &str, from: usize) -> Option<Range<usize>> {
+    let toks = shell_tokens(text, from);
+    if toks.len() != 3 || &text[toks[1].start..toks[1].end] != "/" {
+        return None;
+    }
+    let user = &text[toks[0].start..toks[0].end];
+    if user.contains('/') || user.ends_with(':') {
+        return None;
+    }
+    let r = unquote(text, toks[2].start, toks[2].end);
+    let v = text[r.clone()].trim_end_matches(['.', ',', ';']);
+    (!v.ends_with(':') && super::looks_like_password(v)).then_some(r.start..r.start + v.len())
 }
 
 fn starts_with_ci(hay: &str, needle: &str) -> bool {
@@ -2068,7 +2130,7 @@ fn unquote(text: &str, s: usize, e: usize) -> Range<usize> {
 }
 
 /// The password argument of a command whose name ends at `end`.
-pub(crate) fn command(text: &str, end: usize, cmd: Cmd) -> Option<Range<usize>> {
+pub(crate) fn command(text: &str, start: usize, end: usize, cmd: Cmd) -> Option<Range<usize>> {
     let toks = shell_tokens(text, end);
     let t = |i: usize| -> &str { &text[toks[i].start..toks[i].end] };
     let next = |i: usize| -> Option<Range<usize>> {
@@ -2146,7 +2208,9 @@ pub(crate) fn command(text: &str, end: usize, cmd: Cmd) -> Option<Range<usize>> 
         // `tool login -u alice -p v`: `-p` after a user option. In a sentence, `the login is
         // alice / v` names a user and its password.
         Cmd::Login => {
-            if toks.len() >= 4 && matches!(t(0), "is" | "ist" | "=" | ":") && t(2) == "/" {
+            // `Login: Google / GitHub / email` lists choices, not a user and a password.
+            let list = toks.len() > 4 && t(4) == "/";
+            if toks.len() >= 4 && matches!(t(0), "is" | "ist" | "=" | ":") && t(2) == "/" && !list {
                 let r = unquote(text, toks[3].start, toks[3].end);
                 let v = text[r.clone()].trim_end_matches(['.', ',', ';']);
                 // `login is demo / Password: v`: a key follows, its own rule takes the value.
@@ -2176,6 +2240,20 @@ pub(crate) fn command(text: &str, end: usize, cmd: Cmd) -> Option<Range<usize>> 
                 .collect();
             let tk = pos.get(if flags.contains('n') { 1 } else { 2 })?;
             Some(unquote(text, tk.start, tk.end))
+        }
+        // `u: admin p: v`, `user: jdoe p: v`: the line is a user field, then `p:`.
+        Cmd::ShortPass => {
+            let ls = line_start(text, start);
+            let pre: Vec<&str> = text[ls..start].split_whitespace().collect();
+            let user = pre.len() == 2
+                && matches!(
+                    pre[0].to_ascii_lowercase().as_str(),
+                    "u:" | "user:" | "username:" | "usr:" | "login:"
+                );
+            if !user || toks.len() != 1 {
+                return None;
+            }
+            Some(unquote(text, toks[0].start, toks[0].end))
         }
         Cmd::NetUse => toks.iter().find_map(|tk| {
             let s = &text[tk.start..tk.end];

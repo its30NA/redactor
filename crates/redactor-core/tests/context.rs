@@ -1192,3 +1192,23 @@ fn call_arguments_fallbacks_and_dumps() {
     assert_clean("self.secret = secret.encode(\"utf-8\")\n");
     assert_clean("INSERT INTO users (email, password) VALUES (?, ?);\n");
 }
+
+/// `user / password` after a credential key, a `user/password` key or a login word: the part
+/// after the slash is the password.
+#[test]
+fn user_slash_password_pairs() {
+    for text in [
+        "Credentials: admin / Tulip-Harbor-91\n",
+        "Zugangsdaten: admin / Tulip-Harbor-91\n",
+        "Identifiants : admin / Tulip-Harbor-91\n",
+        "Login: admin / Tulip-Harbor-91\n",
+        "User/Pass: admin / Tulip-Harbor-91\n",
+        "u: admin p: Tulip-Harbor-91\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    assert_clean("Credentials: see the vault / ask the team lead\n");
+    assert_clean("Credentials: AWS / GCP\n");
+    assert_clean("Login: Google / GitHub / email\n");
+    assert_clean("u: 3 p: 4\n");
+}

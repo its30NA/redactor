@@ -221,6 +221,7 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["creds"], Credential),
     s(&["cred"], Credential),
     s(&["zugangsdaten"], Credential),
+    s(&["identifiants"], Credential),
     s(&["anmeldedaten"], Credential),
     // recovery
     s(&["seed"], RecoveryPhrase),

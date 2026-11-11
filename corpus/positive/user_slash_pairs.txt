@@ -1,0 +1,21 @@
+# "user / password" pairs: a credential key, a user/password key or a login line names a user and its password
+
+Credentials: admin / ⟦*|Tulip-Harbor-91⟧
+
+Zugangsdaten: admin / ⟦*|Tulip-Harbor-91⟧
+
+Identifiants : admin / ⟦*|Tulip-Harbor-91⟧
+
+Login: admin / ⟦Password|Maple-Lantern-58⟧
+
+User/Pass: admin / ⟦Password|Birch-Canyon-24⟧
+
+Username/Password: deploy / ⟦Password|Kx9mPq2vL7⟧
+
+creds: root / ⟦*|Hunter2-Fake-9x⟧
+
+- Credentials: svc_backup / ⟦*|Cedar-Quill-37⟧.
+
+u: admin p: ⟦Password|Otter-Meadow-63⟧
+
+user: jdoe p: ⟦Password|Fern-Glacier-17⟧

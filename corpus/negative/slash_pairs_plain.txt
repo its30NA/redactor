@@ -1,0 +1,15 @@
+# slashes after credential keys and login words that name no password
+
+Credentials: see the vault / ask the team lead
+Credentials: none / not needed
+Credentials: AWS / GCP
+Login: Google / GitHub / email
+Login: SSO / SAML
+User/Pass: see the onboarding doc
+Login: https://example.com/login
+Build ratio: 3 / 4
+CPU: 4 / 8 cores
+u: 3 p: 4
+up: 10 down: 2
+temp: 21 p: 1013
+Group: admin / users
