@@ -40,7 +40,7 @@
 
 # Values that are left alone: regular expressions, tested against each value that was found.
 # Keep them narrow. scrub refuses an entry that would let everything through, such as `.*`,
-# an empty pattern or `^ghp_`.
+# an empty pattern or a bare provider prefix.
 # allowlist = [
 #     "^db\\.internal\\.example\\.net$",
 #     "^Tulip-Harbor-91$",   # a made-up value your docs use on purpose

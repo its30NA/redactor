@@ -348,7 +348,7 @@ A config file can switch detection off, so `scrub` treats one with care:
   with `chmod o-w FILE`, or move it.
 - **It refuses catch-all allowlists.** An `allowlist` pattern that matches the empty string (`.*`, `a*`,
   `|x`), that matches a large share of random secret-shaped values made up at run time (`\w`, `\d`,
-  `[a-z]`, a single letter), or that matches every random token of one provider's format (`^ghp_`), stops
+  `[a-z]`, a single letter), or that matches every random token that starts with one provider's prefix, stops
   the run with exit code 2. Narrow patterns keep working: literal
   placeholder values, `example\.com`, a fixture prefix such as `^test_`, or a 40-hex-digit commit id.
 - **`scrub check` warns about weaker settings.** Before the pre-commit check runs, it names the config file

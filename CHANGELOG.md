@@ -61,7 +61,7 @@ All notable changes to this project are documented here. The format follows
   `template`.
 - `scrub` treats a file as binary when at least 5 % of its first 8 KiB are control bytes, not at the first NUL.
   `scan --write` never rewrites a file that contains NUL bytes.
-- `scrub` refuses allowlist patterns that match every token of one provider's format (`^ghp_`), `scrub check`
+- `scrub` refuses allowlist patterns that match every token that starts with one provider's prefix, `scrub check`
   prints every setting that lowers detection on each run, and a config that leaves `check` unable to detect
   common secrets makes it exit 2.
 - `scrub scan` and `scrub check` run git at the repository's top level with output-changing settings off,

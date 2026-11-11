@@ -61,8 +61,8 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
   replace refs). Content added with `git commit --amend` that is already in HEAD is not checked again.
 - *A planted config file.* `scrub` searches for `redactor.toml` only up to the repository root or the
   home folder, names every config file it loads, refuses files writable by every user or owned by
-  another user, and refuses catch-all allowlist patterns, including a pattern that matches every token of
-  one provider's format (`^ghp_`). `scrub check` prints every allowlist entry, disabled rule and custom
+  another user, and refuses catch-all allowlist patterns, including a pattern that matches every token that
+  starts with one provider's prefix. `scrub check` prints every allowlist entry, disabled rule and custom
   placeholder template on each run, and exits 2 if the settings leave it unable to detect a set of
   common secrets at all.
 - *UI injection.* The window has a content security policy of `default-src 'none'` with only
