@@ -13,7 +13,8 @@ use aho_corasick::{AhoCorasick, MatchKind};
 
 use super::keyname::{classify, split_key, KeyClass};
 use super::lexicon::{
-    anchor_words, is_negative, Label, Strength, CONNECTORS, OBJECT_ROOTS, PHRASE_ANCHORS,
+    anchor_words, is_lexicon_word, is_negative, Label, Strength, CONNECTORS, FUNCTION_WORDS,
+    OBJECT_ROOTS, PHRASE_ANCHORS,
 };
 use super::value::value_score;
 use crate::engine::is_builtin_placeholder;
@@ -2278,7 +2279,9 @@ fn line_value(text: &str, p: usize, cx: Ctx, raw: RawPair) -> RawPair {
         // A shell or logfmt line: the scan resumes after the first word, so the fields
         // that follow are read as pairs of their own.
         let i = word_end(text, p, None);
-        if matches!(b.get(i), Some(b' ' | b'\t')) && shell_tail(&text[i..line_end(text, i)]) {
+        if matches!(b.get(i), Some(b' ' | b'\t'))
+            && shell_tail(&text[p..i], &text[i..line_end(text, i)])
+        {
             let mut s = &text[p..i];
             if let Some(c) = fields_tail(s) {
                 s = &s[..c];
@@ -2522,19 +2525,42 @@ fn fields_tail(s: &str) -> Option<usize> {
 
 /// After the first word of a `KEY=v …` line: a command (an option, a shell operator, a
 /// path) or another `name=` field. Then the line is shell or logfmt, not dotenv.
-fn shell_tail(tail: &str) -> bool {
+/// A passphrase is no shell line: `my secret -pass phrase` (a function word as the value or
+/// a key word as the command), `correct horse battery=staple` (a plain word, not a field,
+/// right after the value: a command, and `name=` among its arguments does not make logfmt).
+fn shell_tail(first: &str, tail: &str) -> bool {
+    let Some(w1) = tail.split_whitespace().next() else {
+        return false;
+    };
+    let field = |w: &str| {
+        w.find('=').is_some_and(|k| {
+            k > 0
+                && w[..k]
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"_.-".contains(&c))
+        })
+    };
+    let plain = w1.bytes().all(|c| c.is_ascii_alphabetic());
+    if plain {
+        let lower = w1.to_ascii_lowercase();
+        let first = first.to_ascii_lowercase();
+        if is_lexicon_word(&lower)
+            || FUNCTION_WORDS.contains(&lower.as_str())
+            || FUNCTION_WORDS.contains(&first.as_str())
+        {
+            return false;
+        }
+    }
     tail.split_whitespace().any(|w| {
+        if plain && field(w) {
+            return false;
+        }
         let b = w.as_bytes();
         (b[0] == b'-' && b.len() > 1)
             || matches!(b[0], b'&' | b'|' | b';' | b'>' | b'<' | b'/')
             || w.starts_with("./")
             || w.starts_with("2>")
-            || w.find('=').is_some_and(|k| {
-                k > 0
-                    && w[..k]
-                        .bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || b"_.-".contains(&c))
-            })
+            || field(w)
     })
 }
 

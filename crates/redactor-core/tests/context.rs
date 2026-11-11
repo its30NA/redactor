@@ -1648,3 +1648,25 @@ fn totp_seeds_and_license_keys() {
         assert!(out.findings.is_empty(), "{text:?}: {:?}", out.findings);
     }
 }
+
+/// A dotenv passphrase with a dash option or an `=` in it is the whole line, not a shell
+/// prefix or a logfmt field; real shell prefixes and logfmt lines keep their first word.
+#[test]
+fn dotenv_passphrases_are_not_shell_lines() {
+    assert_redacted(
+        "DB_PASSWORD=my secret -pass phrase\n",
+        "my secret -pass phrase",
+    );
+    assert_redacted(
+        "SECRET=correct horse battery=staple\n",
+        "correct horse battery=staple",
+    );
+    assert_redacted(
+        "PGPASSWORD=Tulip-Harbor-91 psql -h db.internal -U app shop\n",
+        "Tulip-Harbor-91",
+    );
+    assert_redacted(
+        "level=info password=Tulip-Harbor-91 user=app attempt=2\n",
+        "Tulip-Harbor-91",
+    );
+}

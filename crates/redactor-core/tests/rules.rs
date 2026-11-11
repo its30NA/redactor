@@ -917,3 +917,43 @@ fn escapes_and_colour_codes_bound_a_token() {
     );
     assert_miss("github_pat", &format!("path\\\\n{pat}x\n"));
 }
+
+/// JWE (five parts, the key part empty for direct encryption) and a JWT wrapped after its
+/// dots are one token; a quote inside a connection-string password is part of it.
+#[test]
+fn jwe_wrapped_jwt_and_quoted_connection_passwords() {
+    let mut g = Gen::named("jwe");
+    let header = b64url_encode(br#"{"alg":"RSA-OAEP","enc":"A256GCM"}"#);
+    let jwe = format!(
+        "{header}.{}.{}.{}.{}",
+        g.alnum(64),
+        g.alnum(16),
+        g.alnum(40),
+        g.alnum(22)
+    );
+    assert_hit("jwt", &format!("token: {jwe}\n"), &jwe);
+    let dir = b64url_encode(br#"{"alg":"dir","enc":"A256GCM"}"#);
+    let direct = format!("{dir}..{}.{}.{}", g.alnum(16), g.alnum(40), g.alnum(22));
+    assert_hit("jwt", &format!("token: {direct}\n"), &direct);
+    let jwt = g.jwt();
+    let wrapped = jwt.replace('.', ".\n ");
+    assert_hit(
+        "jwt",
+        &format!("Authorization: Bearer {wrapped}\n"),
+        &wrapped,
+    );
+    assert_hit(
+        "connection_string_password",
+        "Server=db1;Database=shop;User Id=sa;Password=P@ss'word1;\n",
+        "P@ss'word1",
+    );
+    assert_hit(
+        "connection_string_password",
+        "Server=db1;Database=shop;User Id=sa;Password='Kiwi-2024x';\n",
+        "Kiwi-2024x",
+    );
+    assert_miss(
+        "connection_string_password",
+        "Server=db1;Database=shop;User Id=sa;Password=${DB_PASSWORD};\n",
+    );
+}

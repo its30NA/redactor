@@ -418,6 +418,18 @@ pub fn corpus_token(g: &mut Gen, name: &str) -> Option<(String, Option<&'static 
         ),
         // Keys and crypto material
         "jwt" => l(g.jwt(), "JSON Web Token"),
+        "jwe" => l(
+            format!(
+                "{}.{}.{}.{}.{}",
+                b64url_encode(br#"{"alg":"RSA-OAEP","enc":"A256GCM"}"#),
+                g.alnum(64),
+                g.alnum(16),
+                g.alnum(40),
+                g.alnum(22)
+            ),
+            "JSON Web Token",
+        ),
+        "jwt_wrapped" => l(g.jwt().replace('.', ".\n "), "JSON Web Token"),
         "wif" => l(g.wif(), "Bitcoin Private Key"),
         "bip39_12" => l(g.bip39(12, true), "Recovery Phrase"),
         "bip39_24" => l(g.bip39(24, true), "Recovery Phrase"),

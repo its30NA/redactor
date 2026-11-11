@@ -64,6 +64,10 @@ fn basic_auth(h: &Hit) -> Verdict {
 
 /// `Password=` is a connection-string password only on a line with other connection keys.
 fn connection_string(h: &Hit) -> Verdict {
+    // `Password=${DB_PASSWORD};`: a template, not a value.
+    if ["${", "$(", "{{"].iter().any(|t| h.secret().starts_with(t)) {
+        return Verdict::Reject;
+    }
     let line = h.line();
     if !line.contains(';') {
         return Verdict::Reject;
@@ -442,7 +446,9 @@ pub(super) fn rules() -> Vec<Rule> {
             "Password",
             "Server=…;User Id=…;Password=<value>;",
             &["password", "pwd"],
-            r#"(?i:password|pwd)\s*=\s*["'{]?(?P<s>[^;"'}\r\n]+)"#,
+            // A quote inside the value (`P@ss'word1`) is a character of it; one right
+            // before the `;` or the end closes a quoted value.
+            r#"(?i:password|pwd)\s*=\s*["'{]?(?P<s>[^;"'}\r\n]+(?:'[^;"'}\s]+)*)"#,
             0.95,
         )
         .ci()

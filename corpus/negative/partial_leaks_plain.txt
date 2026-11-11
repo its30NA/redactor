@@ -1,0 +1,9 @@
+# shell prefixes, logfmt lines and connection strings around the same shapes, no secret
+
+PGPASSWORD=$PGPASS psql -h db.internal -U app shop
+RUST_LOG=debug cargo run --release -- --port 8080
+NODE_ENV=production node server.js --port 3000
+level=info msg="token refreshed" user=app attempt=2
+Server=db1;Database=shop;Integrated Security=true;
+Server=db1;Database=shop;User Id=sa;Password=${DB_PASSWORD};
+Authorization: Bearer <token>

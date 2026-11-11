@@ -46,9 +46,16 @@ pub(super) fn rules() -> Vec<Rule> {
         r(
             "jwt",
             "JSON Web Token",
-            "eyJ… . … . … (header decodes to JSON with alg/typ)",
+            "eyJ… . … . … (header decodes to JSON with alg/typ); JWE with 5 parts; wrapped after a dot",
             &["eyJ"],
-            r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*",
+            // JWS; JWE (`h.key.iv.ciphertext.tag`, the key empty for direct encryption);
+            // a JWS wrapped after its dots (`h.⏎ payload.⏎ signature`).
+            concat!(
+                r"eyJ[A-Za-z0-9_-]{8,}\.(?:",
+                r"[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)?",
+                r"|\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+                r"|\r?\n[ \t]{0,8}eyJ[A-Za-z0-9_-]{8,}\.(?:\r?\n[ \t]{0,8})?[A-Za-z0-9_-]{16,})",
+            ),
             0.95,
         )
         .fwd(16384)

@@ -1,0 +1,8 @@
+# values the detectors used to cut short: a quote inside a connection-string password, JWE, a JWT wrapped over lines, dotenv passphrases with a dash or an equals sign
+
+Server=db1;Database=shop;User Id=sa;Password=⟦Password|P@ss'word1⟧;
+Server=db2;Database=crm;User Id=app;Password=⟦Password|it's-Kiwi-77⟧;Encrypt=true
+DB_PASSWORD=⟦Password|my secret -pass phrase⟧
+SECRET=⟦*|correct horse battery=staple⟧
+token: ⟦gen:jwe⟧
+Authorization: Bearer ⟦gen:jwt_wrapped⟧
