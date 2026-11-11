@@ -741,6 +741,27 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
     // kind closes the string, it does not open a value.
     let closing = open_quote(prefix);
 
+    // `<auth:password>`: a namespace prefix that happens to be a key word names no value.
+    if matches!(before, Some('<') | Some('/'))
+        && b.get(key.end) == Some(&b':')
+        && b.get(key.end + 1).is_some_and(|c| c.is_ascii_alphabetic())
+        && (before == Some('<') || prefix.ends_with("</"))
+    {
+        return Some(RawPair {
+            value: None,
+            syntax: Syntax::Xml,
+            quoted: false,
+            sep: Sep::None,
+            tight: true,
+            line_start,
+            code: false,
+            args: false,
+            stmt_end: false,
+            literal: false,
+            scanned: key.end,
+        });
+    }
+
     // <KEY>v</KEY>, <ns2:KEY>v</ns2:KEY>, <KEY attr="x">v</KEY>, <KEY><![CDATA[v]]></KEY>
     // Strong keys only: `<code>…</code>` and `<key>…</key>` are HTML and plist markup.
     let xml_open = before == Some('<') || before == Some(':') && xml_ns_prefix(prefix);
@@ -951,6 +972,24 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
     if (key.dashes > 0 && flag_lead(before)) || slash {
         let p = key.end;
         let c = b.get(p).copied();
+        // An argv array: `["--password", "v"]`, `- --redis-password⏎  - v`.
+        if key.dashes > 0 {
+            if let Some(v) = argv_next(text, key, before, prefix) {
+                return Some(RawPair {
+                    scanned: v.end,
+                    value: Some(v),
+                    syntax: Syntax::Flag,
+                    quoted: true,
+                    sep: Sep::None,
+                    tight: false,
+                    line_start: false,
+                    code: false,
+                    args: false,
+                    stmt_end: false,
+                    literal: true,
+                });
+            }
+        }
         let after = match c {
             Some(b'=') => p + 1,
             Some(b':') if slash => p + 1,
@@ -1379,6 +1418,165 @@ fn fallback_literal(text: &str, p: usize) -> Option<Range<usize>> {
 }
 
 /// `<value>v</value>` (any case) at `p`: the range of `v`.
+/// The element after an option in an argv array: the next quoted string after
+/// `"--password",`, or the next YAML list item after `- --password` on a line of its own.
+fn argv_next(text: &str, key: &Key, before: Option<char>, prefix: &str) -> Option<Range<usize>> {
+    let b = text.as_bytes();
+    match before {
+        Some(q @ ('"' | '\'')) => {
+            let q = q as u8;
+            if b.get(key.end) != Some(&q) {
+                return None;
+            }
+            let mut i = key.end + 1;
+            while matches!(b.get(i), Some(b' ' | b'\t')) {
+                i += 1;
+            }
+            if b.get(i) != Some(&b',') {
+                return None;
+            }
+            i += 1;
+            while matches!(b.get(i), Some(b' ' | b'\t')) {
+                i += 1;
+            }
+            if b.get(i) != Some(&q) {
+                return None;
+            }
+            let (value, _, closed) = quoted_value(text, i)?;
+            value.filter(|_| closed)
+        }
+        Some(' ' | '\t') if prefix.trim() == "-" => {
+            // `- --redis-password` alone on its line, the value as the next item.
+            let le = line_end(text, key.end);
+            if !text[key.end..le].trim().is_empty() {
+                return None;
+            }
+            let next = le + text[le..].find('\n')? + 1;
+            let line = &text[next..line_end(text, next)];
+            let item = line.trim_start().strip_prefix("- ")?;
+            let indent = line.len() - line.trim_start().len();
+            if indent != prefix.len() - prefix.trim_start().len() {
+                return None;
+            }
+            let vs = next + (line.len() - item.len());
+            let item = item.trim_end();
+            if item.is_empty() || item.starts_with('-') || item.contains(char::is_whitespace) {
+                return None;
+            }
+            Some(unquote(text, vs, vs + item.len()))
+        }
+        _ => None,
+    }
+}
+
+/// `["v1", "v2"]` after a key ending at `p` (its closing quote, `]`, the separator and
+/// blanks skipped): the ranges of the string elements, on one line. Empty when an element
+/// is not a string literal (`[user, password]` is code).
+pub(crate) fn array_items(text: &str, p: usize) -> Vec<Range<usize>> {
+    let b = text.as_bytes();
+    let le = line_end(text, p).min(p + 1024);
+    let mut i = p;
+    while i < le && matches!(b[i], b'"' | b'\'' | b']' | b' ' | b'\t') {
+        i += 1;
+    }
+    if i < le && matches!(b[i], b':' | b'=') {
+        i += 1;
+    } else {
+        return Vec::new();
+    }
+    while i < le && matches!(b[i], b' ' | b'\t') {
+        i += 1;
+    }
+    if b.get(i) != Some(&b'[') {
+        return Vec::new();
+    }
+    i += 1;
+    let mut out = Vec::new();
+    loop {
+        while i < le && matches!(b[i], b' ' | b'\t') {
+            i += 1;
+        }
+        if i >= le || !matches!(b[i], b'"' | b'\'') {
+            return Vec::new();
+        }
+        let Some((value, end, true)) = quoted_value(text, i) else {
+            return Vec::new();
+        };
+        if end > le {
+            return Vec::new();
+        }
+        out.extend(value);
+        i = end;
+        while i < le && matches!(b[i], b' ' | b'\t') {
+            i += 1;
+        }
+        match b.get(i) {
+            Some(b',') if out.len() < 64 => i += 1,
+            Some(b']') => return out,
+            _ => return Vec::new(),
+        }
+    }
+}
+
+/// The value of a key that ends its line (after `:`): the next line holds it when that
+/// line is one word, after at most one blank line (`Password:⏎  v`, `Password:⏎⏎v`); or the
+/// one line of a YAML block scalar (`password: |⏎    v`). `block` tells which.
+pub(crate) fn next_line_value(text: &str, key_end: usize) -> Option<(Range<usize>, bool)> {
+    let le = line_end(text, key_end);
+    let rest = text[key_end..le].trim_start_matches(['"', '\'']).trim();
+    let rest = rest.strip_prefix(':')?.trim();
+    let block = !rest.is_empty();
+    if block {
+        let ind = rest.trim_end_matches(|c: char| c.is_ascii_digit());
+        if !matches!(ind, "|" | "|-" | "|+" | ">" | ">-" | ">+") {
+            return None;
+        }
+    }
+    let ls = line_start(text, key_end);
+    let key_indent = text[ls..key_end].len() - text[ls..key_end].trim_start().len();
+    let mut i = le;
+    let mut blanks = 0;
+    let (vs, line) = loop {
+        i += text[i..].find('\n')? + 1;
+        let e = line_end(text, i);
+        let line = &text[i..e];
+        if line.trim().is_empty() {
+            blanks += 1;
+            if blanks > 1 || block {
+                return None;
+            }
+            continue;
+        }
+        break (i, line);
+    };
+    let indent = line.len() - line.trim_start().len();
+    let word = line.trim();
+    if word.contains(char::is_whitespace)
+        || word.starts_with(['-', '#', '[', '{', '<', '|', '>'])
+        || word.ends_with(':')
+    {
+        return None;
+    }
+    if block || blanks == 0 && indent > key_indent {
+        // A block scalar or an indented plain scalar: the only line of the value.
+        let after = vs + line.len();
+        let next = text[after..]
+            .strip_prefix('\n')
+            .or(text[after..].strip_prefix("\r\n"));
+        if let Some(n) = next {
+            let nl = &n[..n.find('\n').unwrap_or(n.len())];
+            let nind = nl.len() - nl.trim_start().len();
+            if !nl.trim().is_empty() && nind > key_indent {
+                return None;
+            }
+        }
+    } else if indent > key_indent {
+        return None;
+    }
+    let s = vs + indent;
+    Some((s..s + word.len(), block))
+}
+
 /// `<ns2:` right before a key: an XML namespace prefix.
 fn xml_ns_prefix(prefix: &str) -> bool {
     let Some(rest) = prefix.strip_suffix(':') else {
@@ -2002,6 +2200,19 @@ fn value_after(text: &str, p: usize, cx: Ctx) -> Option<RawPair> {
             p += 1;
         }
         _ => {}
+    }
+    // `password = """v"""`: a triple-quoted string on one line; one over several lines is a
+    // docstring or a block, not a value.
+    if text[p..].starts_with("\"\"\"") || text[p..].starts_with("\'\'\'") {
+        let q = &text[p..p + 3];
+        let le = line_end(text, p);
+        let close = text[p + 3..le].find(q).map(|i| p + 3 + i);
+        return Some(RawPair {
+            value: close.filter(|&c| c > p + 3).map(|c| p + 3..c),
+            quoted: true,
+            scanned: close.map_or(le, |c| c + 3),
+            ..raw
+        });
     }
     if let Some(b'"' | b'\'' | b'`') = b.get(p) {
         let (value, scanned, closed) = quoted_value(text, p)?;

@@ -2,12 +2,12 @@
 
 mysql -u USER -p ⟦Password|Hunter2-Fake-9x⟧ shop
 mysql -u root -p⟦Password|Tulip-Harbor-91⟧ shop
-mysqldump -u backup -p'⟦Password|Tulip-Harbor-91⟧' shop > dump.sql
-unrar x -p⟦Password|Tulip-Harbor-91⟧ archive.rar
-7z a -p⟦*|Tulip-Harbor-91⟧ out.7z folder
-ssh-keygen -N ⟦Password|Tulip-Harbor-91⟧ -f ~/.ssh/id_new
-snmp-server community ⟦Password|Tulip-Harbor-91⟧ RO
+mysqldump -u backup -p'⟦Password|Velvet-Comet-17⟧' shop > dump.sql
+unrar x -p⟦Password|Velvet-Comet-18⟧ archive.rar
+7z a -p⟦*|Velvet-Comet-19⟧ out.7z folder
+ssh-keygen -N ⟦Password|Velvet-Comet-20⟧ -f ~/.ssh/id_new
+snmp-server community ⟦Password|Velvet-Comet-21⟧ RO
 redis-cli -h cache.internal -a ⟦Password|Kiwi2024x⟧ ping
 sqlcmd -S db1 -U sa -P ⟦Password|Cedar-Quill-37⟧ -d shop
-net user svc_backup ⟦Password|Cedar-Quill-37⟧ /add
+net user svc_backup ⟦Password|Velvet-Comet-22⟧ /add
 DB_PASSWORD=⟦Password|[Tulip-Harbor-91]⟧

@@ -5,7 +5,7 @@
 {"log": "cloning with token\n⟦gen:github_pat⟧\n"}
 {"log": "step 3 using\t⟦gen:gitlab⟧\tdone"}
 {"msg": "issued token:\n⟦gen:jwt⟧"}
-{"output": "Your API key:\n⟦*|Zq81mXv0pLr3TfK9wQe2Lm4x⟧\nKeep it safe"}
+{"output": "Your API key:\n⟦*|Xk71mXv0pLr3TfK9wQe2Lm4x⟧\nKeep it safe"}
 [32mINFO[0m token loaded [1m⟦gen:github_pat#2⟧[0m
 \x1b[33mWARN\x1b[0m fallback token \x1b[1m⟦gen:huggingface⟧\x1b[0m
 \u001b[31mERROR\u001b[0m bad key \u001b[1;33m⟦gen:npm⟧\u001b[0m

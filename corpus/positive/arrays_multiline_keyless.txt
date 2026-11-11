@@ -1,0 +1,45 @@
+# argv arrays, arrays of secrets, values on the next line, YAML block scalars, triple quotes, Kubernetes Secret data, keyless credential lines
+
+"args": ["--user", "admin", "--password", "⟦Password|Amber-Falcon-12⟧"]
+    command: ["redis-server", "--requirepass", "⟦Password|Birch-Lantern-23⟧"]
+subprocess.run(["mysql", "-u", "root", "--password", "⟦Password|Coral-Meadow-34⟧", "shop"])
+cmd = ['vault', 'login', '--token', '⟦*|Zq81mXv0pLr3TfK9wQe2Lm4x⟧']
+        args:
+          - --redis-password
+          - ⟦Password|Dune-Harbor-45⟧
+          - --port=6379
+{"passwords": ["⟦Password|Ember-Willow-56⟧", "⟦Password|Fjord-Pepper-67⟧"]}
+api_keys = ["⟦*|Zq81mXv0pLr3TfK9wQe2Lm4x⟧", "⟦*|kT9mQ2xL7pW4zR8vB3nCq5Ye⟧"]
+
+Password:
+  ⟦Password|Granite-Owl-78⟧
+
+Password:
+
+⟦Password|Hazel-Rocket-89⟧
+
+stringData:
+  password: |
+    ⟦Password|Indigo-Maple-90⟧
+  db_password: >-
+    ⟦Password|Juniper-Kite-13⟧
+password = """⟦Password|Kestrel-Moss-24⟧"""
+secret = '''⟦*|Lilac-Ridge-35⟧'''
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: smtp
+type: Opaque
+data:
+  smtp-relay: ⟦*|VHVsaXAtSGFyYm9yLTkx⟧
+  username: ⟦*|YWRtaW4=⟧
+
+$ kubectl get secret db -o jsonpath='{.data.pw}' | base64 -d
+⟦Password|Marble-Fox-46⟧
+$ kubectl get secret db -o jsonpath="{.data.password}" | base64 --decode; echo
+⟦Password|Nectar-Pine-57⟧
+
+admin:⟦Password|Onyx-Brook-68⟧
+[smtp.example.com]:587 mailer@example.com:⟦Password|Prairie-Gull-79⟧
+smtp.gmail.com:587 alerts@example.com:⟦Password|Quartz-Fern-81⟧

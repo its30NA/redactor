@@ -1,12 +1,12 @@
 # XML elements with a namespace prefix, attributes or CDATA, and name/key attributes whose element text is the value
 
 <ns2:password>⟦Password|Hunter2-Fake-9x⟧</ns2:password>
-<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">⟦Password|Hunter2-Fake-9x⟧</wsse:Password>
-<password encrypted="false">⟦Password|Hunter2-Fake-9x⟧</password>
-<password><![CDATA[⟦Password|Hunter2-Fake-9x⟧]]></password>
+<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">⟦Password|Velvet-Comet-11⟧</wsse:Password>
+<password encrypted="false">⟦Password|Velvet-Comet-12⟧</password>
+<password><![CDATA[⟦Password|Velvet-Comet-13⟧]]></password>
 <ns1:clientSecret xsi:type="xsd:string"><![CDATA[⟦*|Zq81mXv0pLr3TfK9wQe2Lm4x⟧]]></ns1:clientSecret>
-<property name="hibernate.connection.password">⟦Password|Hunter2-Fake-9x⟧</property>
-<entry key="db.password">⟦Password|Hunter2-Fake-9x⟧</entry>
+<property name="hibernate.connection.password">⟦Password|Velvet-Comet-14⟧</property>
+<entry key="db.password">⟦Password|Velvet-Comet-15⟧</entry>
 <add key="SmtpPassword">⟦Password|Tulip-Harbor-91⟧</add>
 <property name="javax.net.ssl.keyStorePassword"><![CDATA[⟦Password|Cedar-Quill-37⟧]]></property>
-<soapenv:Body><auth:Login><auth:username>svc</auth:username><auth:password>⟦Password|Tulip-Harbor-91⟧</auth:password></auth:Login></soapenv:Body>
+<soapenv:Body><auth:Login><auth:username>svc</auth:username><auth:password>⟦Password|Velvet-Comet-16⟧</auth:password></auth:Login></soapenv:Body>

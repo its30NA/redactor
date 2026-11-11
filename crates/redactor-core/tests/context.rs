@@ -1561,3 +1561,65 @@ fn xml_prefixes_attributes_and_cdata() {
         assert_clean(text);
     }
 }
+
+/// Values beyond the key's own line: argv arrays, arrays of secrets, the next line, YAML
+/// block scalars, triple quotes, Kubernetes Secret data, decoded `kubectl` output and lines
+/// that are only a credential.
+#[test]
+fn arrays_next_lines_and_keyless_credentials() {
+    for (text, secret) in [
+        (
+            "\"args\": [\"--user\", \"admin\", \"--password\", \"Hunter2-Fake-9x\"]\n",
+            "Hunter2-Fake-9x",
+        ),
+        (
+            "        args:\n          - --redis-password\n          - Hunter2-Fake-9x\n",
+            "Hunter2-Fake-9x",
+        ),
+        (
+            "    command: [\"redis-server\", \"--requirepass\", \"Hunter2-Fake-9x\"]\n",
+            "Hunter2-Fake-9x",
+        ),
+        (
+            "subprocess.run([\"mysql\", \"-u\", \"root\", \"--password\", \"Hunter2-Fake-9x\", \"shop\"])\n",
+            "Hunter2-Fake-9x",
+        ),
+        ("{\"passwords\": [\"Tulip-Harbor-91\", \"Cedar-Quill-37\"]}\n", "Cedar-Quill-37"),
+        ("Password:\n  Hunter2-Fake-9x\n", "Hunter2-Fake-9x"),
+        ("Password:\n\nTulip-Harbor-91\n", "Tulip-Harbor-91"),
+        ("stringData:\n  password: |\n    Hunter2-Fake-9x\n", "Hunter2-Fake-9x"),
+        ("  db_password: >-\n    Hunter2-Fake-9x\n", "Hunter2-Fake-9x"),
+        ("password = \"\"\"Tulip-Harbor-91\"\"\"\n", "Tulip-Harbor-91"),
+        (
+            "apiVersion: v1\nkind: Secret\ndata:\n  smtp-relay: VHVsaXAtSGFyYm9yLTkx\n  username: YWRtaW4=\n",
+            "YWRtaW4=",
+        ),
+        (
+            "$ kubectl get secret db -o jsonpath='{.data.pw}' | base64 -d\nTulip-Harbor-91\n",
+            "Tulip-Harbor-91",
+        ),
+        ("admin:Hunter2-Fake-9x\n", "Hunter2-Fake-9x"),
+        (
+            "[smtp.example.com]:587 mailer@example.com:Tulip-Harbor-91\n",
+            "Tulip-Harbor-91",
+        ),
+    ] {
+        assert_redacted(text, secret);
+    }
+    for text in [
+        "\"args\": [\"--password-file\", \"/run/secrets/db\"]\n",
+        "    command: [\"redis-server\", \"--requirepass\", \"${REDIS_PASSWORD}\"]\n",
+        "fields = [\"username\", \"password\", \"remember_me\"]\n",
+        "secrets: [\"db_password\", \"api_key\"]\n",
+        "Password:\n  required: true\n  minLength: 12\n",
+        "Password:\n\nThe password must be at least 12 characters long.\n",
+        "description: >-\n  Rotates the API token every 24 hours.\n",
+        "docstring = \"\"\"Return the password hash.\"\"\"\n",
+        "kind: ConfigMap\ndata:\n  LOG_LEVEL: info\n",
+        "node:18-alpine\n",
+        "localhost:8080\n",
+        "github.com:22 git@github.com:org/repo.git\n",
+    ] {
+        assert_clean(text);
+    }
+}

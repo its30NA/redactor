@@ -36,7 +36,10 @@ use lexicon::{
     TYPE_NAMES,
 };
 use prose::{prose_value, ProseHit};
-use syntax::{ceil, command, floor, for_each_event, line_end, pair, Event, Key, RawPair, Sep};
+use syntax::{
+    array_items, ceil, command, floor, for_each_event, line_end, next_line_value, pair, Event, Key,
+    RawPair, Sep,
+};
 pub(crate) use value::{looks_like_password, value_score};
 
 /// Detector id (`EngineConfig::disabled` takes it).
@@ -57,6 +60,8 @@ impl Detector for ContextDetector {
                 if let Some(p) = pair(text, &key) {
                     if let Some(f) = judge_pair(text, &key, &p) {
                         found.push(f);
+                    } else if p.value.is_none() && key.class.strength == Strength::Strong {
+                        return Some(p.scanned.max(beyond_line(text, &key, &p, &mut found)));
                     }
                     return Some(p.scanned);
                 }
@@ -83,6 +88,9 @@ impl Detector for ContextDetector {
         table_columns(text, &mut found);
         plan_changes(text, &mut found);
         sql_inserts(text, &mut found);
+        secret_manifest_data(text, &mut found);
+        decoded_secret_output(text, &mut found);
+        credential_lines(text, &mut found);
         drop_identifiers(text, &mut found);
         out.extend(found.into_iter().map(|f| Candidate {
             start: f.start,
@@ -95,6 +103,43 @@ impl Detector for ContextDetector {
             source: Source::Context,
         }));
     }
+}
+
+/// The values of a secret key that has none on its own line: the string elements of an
+/// array (`"passwords": ["v1", "v2"]`), the next line (`Password:⏎  v`) or the line of a
+/// YAML block scalar (`password: |⏎    v`). Returns how far it read.
+fn beyond_line(text: &str, key: &Key, p: &RawPair, found: &mut Vec<Found>) -> usize {
+    let mut end = 0;
+    for v in array_items(text, key.end) {
+        let s = &text[v.clone()];
+        // A list of names (`["db_password", "api_key"]`) names secrets; only values shaped
+        // like a password or a random token are judged.
+        if looks_like_password(s) || value_score(s) >= 0.5 {
+            let rp = RawPair {
+                value: Some(v.clone()),
+                quoted: true,
+                ..p.clone()
+            };
+            found.extend(judge_pair(text, key, &rp));
+        }
+        end = v.end;
+    }
+    if end > 0 || p.code || !p.line_start || p.sep != Sep::Colon {
+        return end;
+    }
+    if let Some((v, block)) = next_line_value(text, key.end) {
+        let s = &text[v.clone()];
+        if block || looks_like_password(s) || value_score(s) >= 0.5 {
+            let rp = RawPair {
+                value: Some(v.clone()),
+                quoted: true,
+                ..p.clone()
+            };
+            found.extend(judge_pair(text, key, &rp));
+            end = v.end;
+        }
+    }
+    end
 }
 
 /// A judged value.
@@ -119,6 +164,9 @@ const R_PROSE: &str = "Secret named in a sentence";
 const R_PIN: &str = "Digits of a PIN field";
 const R_TF_DEFAULT: &str = "Default of a secret-named Terraform variable";
 const R_WEBHOOK: &str = "Random path segment of a webhook URL";
+const R_K8S_DATA: &str = "Data of a Kubernetes Secret";
+const R_DECODED: &str = "Output of a command that prints a secret";
+const R_CRED_LINE: &str = "Password of a user:password line";
 
 /// The first path or query segment of a URL that reads as a generated secret (16+
 /// characters, letters and digits, random-looking).
@@ -423,6 +471,187 @@ fn expansion_default(v: &str) -> Option<std::ops::Range<usize>> {
     }
     let start = 2 + name_end + op.len();
     Some(start..start + d.len())
+}
+
+/// Lines of `text` with their start offsets.
+fn lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    text.split_inclusive('\n').scan(0usize, |at, l| {
+        let s = *at;
+        *at += l.len();
+        Some((s, l.trim_end_matches(['\n', '\r'])))
+    })
+}
+
+/// `kind: Secret` manifests: every value under the top-level `data:` (base64) or
+/// `stringData:` is a secret, whatever its key is named. Documents split at `---`.
+fn secret_manifest_data(text: &str, found: &mut Vec<Found>) {
+    if !text.contains("kind: Secret") {
+        return;
+    }
+    let mut secret = false;
+    let mut block = false;
+    let mut values: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut flush = |secret: bool, values: &mut Vec<std::ops::Range<usize>>| {
+        if secret {
+            for r in values.drain(..) {
+                found.push(Found {
+                    start: r.start,
+                    end: r.end,
+                    label: Label::Secret,
+                    confidence: 0.8,
+                    reason: R_K8S_DATA,
+                    ident_check: false,
+                });
+            }
+        }
+        values.clear();
+    };
+    for (at, line) in lines(text) {
+        if line.trim_end() == "---" {
+            flush(secret, &mut values);
+            secret = false;
+            block = false;
+            continue;
+        }
+        if !line.starts_with([' ', '\t']) {
+            let l = line.trim_end();
+            if l == "kind: Secret" {
+                secret = true;
+            }
+            block = l == "data:" || l == "stringData:";
+            continue;
+        }
+        if !block {
+            continue;
+        }
+        let t = line.trim_start();
+        let Some((k, v)) = t.split_once(": ") else {
+            continue;
+        };
+        let v = v.trim();
+        let v = v
+            .strip_prefix(['"', '\''])
+            .and_then(|r| r.strip_suffix(['"', '\'']))
+            .unwrap_or(v);
+        if k.contains(char::is_whitespace) || v.is_empty() || never_a_value(v, Label::Secret) {
+            continue;
+        }
+        let s = at + line.len() - t.len() + t.find(v).unwrap_or(0);
+        values.push(s..s + v.len());
+    }
+    flush(secret, &mut values);
+}
+
+/// `kubectl get secret db -o jsonpath='{.data.pw}' | base64 -d` followed by its output: the
+/// next line, when it is one word, is the decoded secret.
+fn decoded_secret_output(text: &str, found: &mut Vec<Found>) {
+    if !text.contains("kubectl get secret") {
+        return;
+    }
+    let mut decode = false;
+    for (at, line) in lines(text) {
+        let t = line.trim();
+        if decode && !t.is_empty() && !t.contains(char::is_whitespace) && !t.starts_with('$') {
+            let s = at + line.len() - line.trim_start().len();
+            found.push(Found {
+                start: s,
+                end: s + t.len(),
+                label: Label::Password,
+                confidence: 0.8,
+                reason: R_DECODED,
+                ident_check: false,
+            });
+        }
+        decode = line.contains("kubectl get secret")
+            && ["base64 -d", "base64 --decode", "base64 -D"]
+                .iter()
+                .any(|d| line.contains(d));
+    }
+}
+
+/// A line that is only a credential: `admin:Hunter2-Fake-9x` (a lowercase user name and a
+/// password with lower and upper case and digits), or a Postfix `sasl_passwd` line
+/// (`[smtp.example.com]:587 user@example.com:v`).
+fn credential_lines(text: &str, found: &mut Vec<Found>) {
+    if !text.contains(':') {
+        return;
+    }
+    for (at, line) in lines(text) {
+        let t = line.trim();
+        if t.len() > 200 || t.len() < 6 {
+            continue;
+        }
+        let lead = at + line.len() - line.trim_start().len();
+        let cred = if let Some((host, cred)) = t.split_once([' ', '\t']) {
+            sasl_password(host, cred.trim())
+        } else {
+            user_password(t)
+        };
+        if let Some(off) = cred.then(|| t.rfind(':')).flatten().map(|i| i + 1) {
+            found.push(Found {
+                start: lead + off,
+                end: lead + t.len(),
+                label: Label::Password,
+                confidence: 0.75,
+                reason: R_CRED_LINE,
+                ident_check: false,
+            });
+        }
+    }
+}
+
+/// `admin:Hunter2-Fake-9x`.
+fn user_password(t: &str) -> bool {
+    let Some((user, pw)) = t.split_once(':') else {
+        return false;
+    };
+    let user_ok = (1..=32).contains(&user.len())
+        && user.starts_with(|c: char| c.is_ascii_lowercase())
+        && user
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+        && !matches!(
+            user,
+            "http" | "https" | "ftp" | "ssh" | "git" | "file" | "data" | "urn" | "mailto" | "tel"
+        )
+        && !user.starts_with("sha")
+        && !user.starts_with("md5");
+    let n = pw.chars().count();
+    let pw_ok = (8..=64).contains(&n)
+        && !pw.contains([
+            ':', '/', '@', '\\', '"', '\'', '(', ')', '<', '>', '{', '}', ',',
+        ])
+        && pw.bytes().any(|b| b.is_ascii_lowercase())
+        && pw.bytes().any(|b| b.is_ascii_uppercase())
+        && pw.bytes().any(|b| b.is_ascii_digit());
+    user_ok && pw_ok
+}
+
+/// `[smtp.example.com]:587 user@example.com:v` or `smtp.example.com:587 user@x:v`.
+fn sasl_password(host: &str, cred: &str) -> bool {
+    let bracketed = host.starts_with('[') && host.contains(']');
+    let (name, port) = match host.rsplit_once(':') {
+        Some((n, p)) if !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) => (n, true),
+        _ => (host, false),
+    };
+    let name = name.trim_start_matches('[').trim_end_matches(']');
+    let host_ok = name.contains('.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    let Some((user, pw)) = cred.rsplit_once(':') else {
+        return false;
+    };
+    if !host_ok || !(bracketed || port && user.contains('@')) || cred.contains(char::is_whitespace)
+    {
+        return false;
+    }
+    let pw_ok = pw.chars().count() >= 4
+        && !pw.contains(['/', '@'])
+        && (looks_like_password(pw) || value_score(pw) >= 0.5)
+        && !never_a_value(pw, Label::Password);
+    let user_ok = !user.is_empty() && !user.contains(['/', ':']);
+    pw_ok && user_ok
 }
 
 /// Every character is a digit (ASCII, Persian or Arabic-Indic).

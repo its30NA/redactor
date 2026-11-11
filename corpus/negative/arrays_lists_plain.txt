@@ -1,0 +1,66 @@
+# argv arrays, word lists, YAML blocks and colon lines with no secret
+
+"args": ["--user", "admin", "--password-file", "/run/secrets/db"]
+"args": ["--password", "$(DB_PASSWORD)"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+subprocess.run(["mysql", "-u", "root", "--password", password, "shop"])
+cmd = ["git", "commit", "-m", "update password docs"]
+        args:
+          - --redis-password-file
+          - /run/secrets/redis
+          - --port=6379
+{"passwords": []}
+{"passwords": ["<redacted>", "<redacted>"]}
+{"password_rules": ["min length 12", "one digit", "one symbol"]}
+tags = ["password", "token", "secret", "auth"]
+keywords: [password, reset, login, account]
+fields = ["username", "password", "remember_me"]
+
+Password:
+  required: true
+  minLength: 12
+
+Password:
+
+The password must be at least 12 characters long.
+
+Password:
+  - must be 12+ characters
+  - must contain a digit
+
+stringData:
+  password: |
+    ${DB_PASSWORD}
+description: >-
+  Rotates the API token every 24 hours and
+  stores it in the vault.
+password = """
+"""
+docstring = """Return the password hash for user."""
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  LOG_LEVEL: info
+  API_URL: https://api.example.com/v1
+
+$ kubectl get secret db -o jsonpath='{.data.pw}' | base64 -d
+error: secret "db" not found
+$ kubectl get secrets
+NAME                  TYPE                                  DATA   AGE
+default-token-x7k2p   kubernetes.io/service-account-token   3      12d
+
+localhost:8080
+node:18-alpine
+python:3.12-slim
+redis:7.2.4-alpine
+nginx:1.27
+Error:FileNotFound
+http:80 https:443
+[smtp.example.com]:587
+smtp.gmail.com:587 tls
+127.0.0.1:5432 postgres
+github.com:22 git@github.com:org/repo.git
