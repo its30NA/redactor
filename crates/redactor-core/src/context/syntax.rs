@@ -104,6 +104,48 @@ pub(crate) enum Cmd {
     Htpasswd,
     /// `u: admin p: v`: a one-letter password field after a user field.
     ShortPass,
+    /// `-p`/`-P` after a user option (`sqlcmd -U sa -P v`, `mongosh -u root -p v`).
+    UserOpt,
+    /// `redis-cli -a v`.
+    Redis,
+    /// `xfreerdp /p:v`.
+    Rdp,
+    /// `schtasks /ru user /rp v`.
+    Schtasks,
+    /// `net user name v`.
+    NetUser,
+    /// `rabbitmqctl add_user name v`.
+    Rabbitmq,
+    /// `useradd -p v`.
+    Useradd,
+    /// `smbclient -U user%v`.
+    Smb,
+    /// `lftp -u user,v`.
+    Lftp,
+    /// HTTPie: `http -a user:v`.
+    Httpie,
+    /// `expdp user/v@db`: Oracle tools whose first argument is the login.
+    OracleTool,
+    /// `db2 connect to db user u using v`.
+    Db2,
+    /// `openssl enc -k v`.
+    Openssl,
+    /// `unrar x -pv`, `rar a -hpv`.
+    Rar,
+    /// `ssh-keygen -N v`, `-P v`.
+    SshKeygen,
+    /// `vault login TOKEN`.
+    Vault,
+    /// `echo v | sudo -S …`.
+    Sudo,
+    /// `echo 'user:v' | chpasswd`.
+    Chpasswd,
+    /// `echo v | passwd --stdin user`.
+    PasswdStdin,
+    /// Cisco `enable secret 0 v`, `enable password v`.
+    Enable,
+    /// Cisco `snmp-server community v RO`.
+    SnmpCommunity,
 }
 
 const COMMANDS: &[(&str, Cmd)] = &[
@@ -134,6 +176,51 @@ const COMMANDS: &[(&str, Cmd)] = &[
     ("login", Cmd::Login),
     ("htpasswd", Cmd::Htpasswd),
     ("p:", Cmd::ShortPass),
+    ("sqlcmd", Cmd::UserOpt),
+    ("osql", Cmd::UserOpt),
+    ("bcp", Cmd::UserOpt),
+    ("mongosh", Cmd::UserOpt),
+    ("mongo", Cmd::UserOpt),
+    ("mongodump", Cmd::UserOpt),
+    ("mongorestore", Cmd::UserOpt),
+    ("mongoexport", Cmd::UserOpt),
+    ("mongoimport", Cmd::UserOpt),
+    ("cqlsh", Cmd::UserOpt),
+    ("psexec", Cmd::UserOpt),
+    ("paexec", Cmd::UserOpt),
+    ("rdesktop", Cmd::UserOpt),
+    ("redis-cli", Cmd::Redis),
+    ("xfreerdp", Cmd::Rdp),
+    ("wfreerdp", Cmd::Rdp),
+    ("sdl-freerdp", Cmd::Rdp),
+    ("schtasks", Cmd::Schtasks),
+    ("net user", Cmd::NetUser),
+    ("rabbitmqctl", Cmd::Rabbitmq),
+    ("useradd", Cmd::Useradd),
+    ("usermod", Cmd::Useradd),
+    ("smbclient", Cmd::Smb),
+    ("rpcclient", Cmd::Smb),
+    ("smbcacls", Cmd::Smb),
+    ("lftp", Cmd::Lftp),
+    ("http", Cmd::Httpie),
+    ("https", Cmd::Httpie),
+    ("expdp", Cmd::OracleTool),
+    ("impdp", Cmd::OracleTool),
+    ("rman", Cmd::OracleTool),
+    ("sqlldr", Cmd::OracleTool),
+    ("dgmgrl", Cmd::OracleTool),
+    ("db2", Cmd::Db2),
+    ("openssl", Cmd::Openssl),
+    ("unrar", Cmd::Rar),
+    ("rar", Cmd::Rar),
+    ("ssh-keygen", Cmd::SshKeygen),
+    ("vault", Cmd::Vault),
+    ("sudo", Cmd::Sudo),
+    ("chpasswd", Cmd::Chpasswd),
+    ("passwd --stdin", Cmd::PasswdStdin),
+    ("enable secret", Cmd::Enable),
+    ("enable password", Cmd::Enable),
+    ("snmp-server community", Cmd::SnmpCommunity),
 ];
 
 enum AnchorKind {
@@ -242,8 +329,11 @@ pub(crate) fn for_each_event(text: &str, mut f: impl FnMut(Event) -> Option<usiz
                 let after = text[e..].chars().next();
                 // `Login: admin / v`: the login word may take a colon.
                 let colon = cmd == Cmd::Login && after == Some(':');
+                // `echo 'u:v' | chpasswd` ends its line: the value came before the name.
+                let piped = matches!(cmd, Cmd::Chpasswd | Cmd::PasswdStdin)
+                    && after.is_none_or(|c| c == '\n' || c == '\r');
                 if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
-                    || !(colon || after.is_some_and(|c| c == ' ' || c == '\t'))
+                    || !(colon || piped || after.is_some_and(|c| c == ' ' || c == '\t'))
                 {
                     continue;
                 }
@@ -861,6 +951,26 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                 rp.value = Some(v.start..v.end - 1).filter(|r| r.end > r.start);
             }
         }
+        // `-Password (ConvertTo-SecureString …)`, `-Credential (Get-Credential)`: a PowerShell
+        // subexpression, not the value; the scan goes on inside it.
+        if let Some(v) = rp.value.clone() {
+            let s = &text[v.clone()];
+            let cmdlet = s.strip_prefix('(').is_some_and(|r| {
+                r.split_once('-').is_some_and(|(verb, noun)| {
+                    verb.len() >= 2
+                        && verb.bytes().all(|c| c.is_ascii_alphabetic())
+                        && noun
+                            .trim_end_matches(')')
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric())
+                })
+            });
+            if cmdlet {
+                rp.value = None;
+                rp.scanned = v.start;
+                return Some(rp);
+            }
+        }
         // `-passin pass:secret` (OpenSSL): only the `pass:` form carries the password.
         if key.words.len() == 1 && matches!(key.words[0].as_str(), "passin" | "passout") {
             if let Some(v) = rp.value.clone() {
@@ -868,6 +978,19 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                     .starts_with("pass:")
                     .then(|| v.start + 5..v.end)
                     .filter(|r| r.end > r.start);
+            }
+        }
+        // OpenSSL `-pass env:VAR`, `file:path`, `fd:3`, `stdin` name a source; `pass:v` holds
+        // the password.
+        if key.dashes == 1 && key.words.len() == 1 && key.words[0] == "pass" {
+            if let Some(v) = rp.value.clone() {
+                let s = &text[v.clone()];
+                if s.starts_with("pass:") {
+                    rp.value = Some(v.start + 5..v.end).filter(|r| r.end > r.start);
+                } else if ["env:", "file:", "fd:"].iter().any(|p| s.starts_with(p)) || s == "stdin"
+                {
+                    rp.value = None;
+                }
             }
         }
         return Some(rp);
@@ -1031,9 +1154,17 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
             .iter()
             .any(|w| starts_with_ci(line.trim_start(), w));
         let dockerfile = prefix.trim() == "ENV";
+        // Config directives: redis `requirepass v`, nslcd `bindpw v`, kickstart `rootpw v`.
         let redis = line_start
             && key.words.len() == 1
-            && matches!(key.words[0].as_str(), "requirepass" | "masterauth");
+            && matches!(
+                key.words[0].as_str(),
+                "requirepass" | "masterauth" | "bindpw" | "rootpw"
+            );
+        // Cisco `username admin privilege 15 secret 0 v`, `username netops password 7 v`.
+        let cisco = key.words.len() == 1
+            && matches!(key.words[0].as_str(), "secret" | "password")
+            && starts_with_ci(line.trim_start(), "username ");
         // SQL `CREATE USER x WITH PASSWORD 'v'`: only `password`, only on a SQL-ish line
         // ("the token \"NUMBER\"" and "pass 'ignore'" are prose).
         let quoted_next = matches!(b.get(after), Some(b'"' | b'\''))
@@ -1044,7 +1175,22 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
             && ["user", "role", "login", "with"]
                 .iter()
                 .any(|w| contains_ci(line, w));
-        if netrc || redis || quoted_next {
+        if netrc || redis || quoted_next || cisco {
+            let mut after = after;
+            // Kickstart `rootpw --plaintext v`; Cisco `secret 0 v` (a digit names the type).
+            loop {
+                let w = word_end(text, after, None);
+                let word = &text[after..w];
+                let skip = (redis && word.starts_with("--"))
+                    || (cisco && word.len() == 1 && word.as_bytes()[0].is_ascii_digit());
+                if !skip || !matches!(b.get(w), Some(b' ' | b'\t')) {
+                    break;
+                }
+                after = skip_blank(text, w);
+            }
+            if redis && text[after..].starts_with("--") {
+                return None;
+            }
             let cx = Ctx::new(
                 Mode::Token,
                 Sep::None,
@@ -2119,6 +2265,80 @@ fn shell_tokens(text: &str, from: usize) -> Vec<Tok> {
     out
 }
 
+/// The value after the first of `opts` (one shell word, not an option).
+fn opt_value(text: &str, toks: &[Tok], opts: &[&str]) -> Option<Range<usize>> {
+    let i = toks
+        .iter()
+        .position(|tk| opts.contains(&&text[tk.start..tk.end]))?;
+    let n = toks.get(i + 1)?;
+    (!text[n.start..n.end].starts_with('-')).then(|| unquote(text, n.start, n.end))
+}
+
+/// The value after a password option (`opts`) that follows a user option (`-u`, `-U`,
+/// `--user`, `--username`, `/u`, `/ru`).
+fn after_user_opt(text: &str, toks: &[Tok], opts: &[&str]) -> Option<Range<usize>> {
+    let t = |i: usize| &text[toks[i].start..toks[i].end];
+    let user = (0..toks.len()).position(|i| {
+        matches!(
+            t(i),
+            "-u" | "-U" | "--user" | "--username" | "-user" | "-username" | "/u" | "/U" | "/ru"
+        )
+    })?;
+    (user + 1..toks.len()).find_map(|i| {
+        if !opts.contains(&t(i)) {
+            return None;
+        }
+        let n = toks.get(i + 1)?;
+        (!text[n.start..n.end].starts_with('-')).then(|| unquote(text, n.start, n.end))
+    })
+}
+
+/// `echo v | cmd`, `printf '%s' v | cmd`: the value piped into the command starting at
+/// `start`, from the pipeline stage right before it.
+fn piped_echo(text: &str, start: usize) -> Option<Range<usize>> {
+    let ls = line_start(text, start);
+    let pre = text[ls..start].trim_end().strip_suffix('|')?;
+    if pre.ends_with('|') {
+        return None;
+    }
+    let stage = pre.rfind([';', '|', '&']).map_or(0, |i| i + 1);
+    let from = ls + stage;
+    let end = ls + pre.len();
+    let toks: Vec<Tok> = shell_tokens(text, from)
+        .into_iter()
+        .filter(|tk| tk.end <= end)
+        .collect();
+    let t = |i: usize| &text[toks[i].start..toks[i].end];
+    // A shell prompt before the command.
+    let mut i = usize::from(
+        toks.first()
+            .is_some_and(|_| matches!(t(0), "$" | "#" | ">" | "PS>")),
+    );
+    let cmd = toks.get(i).map(|_| t(i))?;
+    i += 1;
+    match cmd {
+        "echo" => {
+            while i < toks.len() && matches!(t(i), "-n" | "-e" | "-ne" | "-en" | "-E") {
+                i += 1;
+            }
+        }
+        "printf" => {
+            if toks.len() == i + 2 && t(i).trim_matches(['\'', '"']) == "%s" {
+                i += 1;
+            }
+        }
+        _ => return None,
+    }
+    if toks.len() != i + 1 {
+        return None;
+    }
+    let r = unquote(text, toks[i].start, toks[i].end);
+    // `echo "pw\n"`: an escape at the end is not part of the password.
+    let v = &text[r.clone()];
+    let e = r.start + v.strip_suffix("\\n").unwrap_or(v).len();
+    Some(r.start..e)
+}
+
 /// Strips one pair of surrounding quotes.
 fn unquote(text: &str, s: usize, e: usize) -> Range<usize> {
     let b = text.as_bytes();
@@ -2152,17 +2372,161 @@ pub(crate) fn command(text: &str, start: usize, end: usize, cmd: Cmd) -> Option<
             let colon = text[cred.clone()].find(':')?;
             Some(cred.start + colon + 1..cred.end)
         }),
-        Cmd::Mysql | Cmd::SevenZip => (0..toks.len()).find_map(|i| {
+        Cmd::Mysql | Cmd::SevenZip => (0..toks.len())
+            .find_map(|i| {
+                let tok = t(i);
+                (tok.len() > 2 && tok.starts_with("-p") && !tok.starts_with("--"))
+                    .then(|| unquote(text, toks[i].start + 2, toks[i].end))
+            })
+            .or_else(|| {
+                // `mysql -u root -p v`: mysql reads `v` as the database and prompts, but
+                // people write it for the password; only a password-shaped word counts.
+                if cmd != Cmd::Mysql {
+                    return None;
+                }
+                let r = after_user_opt(text, &toks, &["-p"])?;
+                super::looks_like_password(&text[r.clone()]).then_some(r)
+            }),
+        Cmd::Sshpass => (0..toks.len()).find_map(|i| {
             let tok = t(i);
-            (tok.len() > 2 && tok.starts_with("-p") && !tok.starts_with("--"))
-                .then(|| unquote(text, toks[i].start + 2, toks[i].end))
+            if tok == "-p" {
+                next(i)
+            } else {
+                // `sshpass -pv`
+                (tok.len() > 2 && tok.starts_with("-p"))
+                    .then(|| unquote(text, toks[i].start + 2, toks[i].end))
+            }
         }),
-        Cmd::Sshpass => (0..toks.len()).find_map(|i| (t(i) == "-p").then(|| next(i)).flatten()),
+        Cmd::UserOpt => after_user_opt(text, &toks, &["-p", "-P", "-pw"]),
+        Cmd::Redis => opt_value(text, &toks, &["-a"]),
+        Cmd::Rdp => toks.iter().find_map(|tk| {
+            let s = &text[tk.start..tk.end];
+            s.strip_prefix("/p:")
+                .map(|r| unquote(text, tk.end - r.len(), tk.end))
+        }),
+        Cmd::Schtasks => opt_value(text, &toks, &["/rp", "/RP"])
+            .or_else(|| after_user_opt(text, &toks, &["/p", "/P"])),
+        Cmd::NetUser => {
+            let name = toks.first()?;
+            let pw = toks.get(1)?;
+            let v = &text[pw.start..pw.end];
+            (!text[name.start..name.end].starts_with('/') && !v.starts_with('/') && v != "*")
+                .then(|| unquote(text, pw.start, pw.end))
+        }
+        Cmd::Rabbitmq => {
+            let i = (0..toks.len()).find(|&i| matches!(t(i), "add_user" | "change_password"))?;
+            let tk = toks.get(i + 2)?;
+            (!text[tk.start..tk.end].starts_with('-')).then(|| unquote(text, tk.start, tk.end))
+        }
+        Cmd::Useradd => opt_value(text, &toks, &["-p"]),
+        Cmd::Smb => (0..toks.len()).find_map(|i| {
+            let tok = t(i);
+            let cred = if tok == "-U" || tok == "--user" {
+                next(i)?
+            } else {
+                let rest = tok
+                    .strip_prefix("--user=")
+                    .or_else(|| tok.strip_prefix("-U"))
+                    .filter(|r| !r.is_empty())?;
+                unquote(text, toks[i].end - rest.len(), toks[i].end)
+            };
+            let pct = text[cred.clone()].find('%')?;
+            Some(cred.start + pct + 1..cred.end)
+        }),
+        Cmd::Lftp => {
+            let cred = opt_value(text, &toks, &["-u", "--user"])?;
+            let comma = text[cred.clone()].find(',')?;
+            Some(cred.start + comma + 1..cred.end)
+        }
+        Cmd::Httpie => (0..toks.len()).find_map(|i| {
+            let tok = t(i);
+            let cred = if matches!(tok, "-a" | "--auth") {
+                next(i)?
+            } else {
+                let rest = tok.strip_prefix("--auth=")?;
+                unquote(text, toks[i].end - rest.len(), toks[i].end)
+            };
+            let colon = text[cred.clone()].find(':')?;
+            Some(cred.start + colon + 1..cred.end)
+        }),
+        Cmd::OracleTool => toks.iter().enumerate().find_map(|(i, tk)| {
+            let s = &text[tk.start..tk.end];
+            let (off, login) = match s.get(..7) {
+                Some(p) if p.eq_ignore_ascii_case("userid=") => (7, &s[7..]),
+                _ if i == 0 || i == 1 && t(0).eq_ignore_ascii_case("target") => (0, s),
+                _ => return None,
+            };
+            let slash = login.find('/')?;
+            let rest = &login[slash + 1..];
+            let pe = rest.find('@').unwrap_or(rest.len());
+            let st = tk.start + off + slash + 1;
+            (slash > 0 && pe > 0 && !login[..slash].contains(['=', '\\', ':']))
+                .then_some(st..st + pe)
+        }),
+        Cmd::Db2 => {
+            let i = (0..toks.len()).find(|&i| t(i).eq_ignore_ascii_case("using"))?;
+            (0..i)
+                .any(|j| t(j).eq_ignore_ascii_case("user"))
+                .then(|| next(i))
+                .flatten()
+        }
+        Cmd::Openssl => opt_value(text, &toks, &["-k"]),
+        Cmd::Rar => (0..toks.len()).find_map(|i| {
+            let tok = t(i);
+            let rest = tok.strip_prefix("-hp").or_else(|| tok.strip_prefix("-p"))?;
+            (!rest.is_empty() && rest != "-")
+                .then(|| unquote(text, toks[i].end - rest.len(), toks[i].end))
+        }),
+        Cmd::SshKeygen => (0..toks.len()).find_map(|i| {
+            if !matches!(t(i), "-N" | "-P") {
+                return None;
+            }
+            next(i).filter(|r| r.end > r.start && !text[r.clone()].starts_with('-'))
+        }),
+        Cmd::Vault => {
+            if toks.first().is_none_or(|_| t(0) != "login") {
+                return None;
+            }
+            let tk = toks[1..]
+                .iter()
+                .find(|tk| !text[tk.start..tk.end].starts_with('-'))?;
+            let s = &text[tk.start..tk.end];
+            (!s.contains('=')).then(|| unquote(text, tk.start, tk.end))
+        }
+        Cmd::Sudo => {
+            if !(0..toks.len()).any(|i| matches!(t(i), "-S" | "--stdin")) {
+                return None;
+            }
+            piped_echo(text, start)
+        }
+        Cmd::Chpasswd => {
+            let r = piped_echo(text, start)?;
+            let colon = text[r.clone()].find(':')?;
+            Some(r.start + colon + 1..r.end)
+        }
+        Cmd::PasswdStdin => piped_echo(text, start),
+        Cmd::Enable => {
+            // `enable secret 0 v`: a digit names the encryption type.
+            let i = usize::from(
+                toks.first()
+                    .is_some_and(|_| t(0).len() == 1 && t(0).as_bytes()[0].is_ascii_digit()),
+            );
+            let tk = toks.get(i)?;
+            Some(unquote(text, tk.start, tk.end))
+        }
+        Cmd::SnmpCommunity => {
+            let tk = toks.first()?;
+            Some(unquote(text, tk.start, tk.end))
+        }
         Cmd::Ldap => (0..toks.len()).find_map(|i| (t(i) == "-w").then(|| next(i)).flatten()),
         Cmd::Zip => (0..toks.len()).find_map(|i| (t(i) == "-P").then(|| next(i)).flatten()),
         Cmd::DockerLogin => {
             if !(0..toks.len()).any(|i| t(i) == "login") {
                 return None;
+            }
+            // `echo v | docker login -u ci --password-stdin`
+            if (0..toks.len()).any(|i| t(i) == "--password-stdin") {
+                return piped_echo(text, start);
             }
             (0..toks.len()).find_map(|i| (t(i) == "-p").then(|| next(i)).flatten())
         }
@@ -2181,11 +2545,13 @@ pub(crate) fn command(text: &str, start: usize, end: usize, cmd: Cmd) -> Option<
             if !lower.contains("-asplaintext") {
                 return None;
             }
-            let i = usize::from(
-                toks.first()
-                    .is_some_and(|_| t(0).eq_ignore_ascii_case("-string")),
-            );
-            let tk = toks.get(i)?;
+            // `-String v`, or the first argument that is not a switch (`-AsPlainText v`).
+            let tk = match (0..toks.len()).find(|&i| t(i).eq_ignore_ascii_case("-string")) {
+                Some(i) => toks.get(i + 1)?,
+                None => toks
+                    .iter()
+                    .find(|tk| !text[tk.start..tk.end].starts_with('-'))?,
+            };
             if text[tk.start..tk.end].starts_with('-') {
                 return None;
             }

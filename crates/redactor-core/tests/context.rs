@@ -1212,3 +1212,60 @@ fn user_slash_password_pairs() {
     assert_clean("Login: Google / GitHub / email\n");
     assert_clean("u: 3 p: 4\n");
 }
+
+/// Password arguments of database, remote-access, archive and account commands, a secret
+/// piped into `sudo -S`, `--password-stdin` or `chpasswd`, and config directives that take
+/// the password after a blank.
+#[test]
+fn tool_password_arguments() {
+    for text in [
+        "sqlcmd -S localhost -U sa -P 'Tulip-Harbor-91' -Q \"SELECT 1\"\n",
+        "redis-cli -h cache.internal -p 6379 -a Tulip-Harbor-91 ping\n",
+        "mongosh \"mongodb://db.internal:27017/shop\" -u root -p Tulip-Harbor-91\n",
+        "sshpass -pTulip-Harbor-91 ssh root@10.0.0.9\n",
+        "echo \"Tulip-Harbor-91\" | sudo -S systemctl restart nginx\n",
+        "echo \"Tulip-Harbor-91\" | docker login -u ci --password-stdin registry.example.com\n",
+        "echo 'deploy:Tulip-Harbor-91' | chpasswd\n",
+        "mysql -h db.internal -u root -p Tulip-Harbor-91\n",
+        "xfreerdp /v:10.0.0.9 /u:Administrator /p:Tulip-Harbor-91 /cert:ignore\n",
+        "schtasks /create /tn backup /tr c:\\b.cmd /ru CORP\\svc /rp Tulip-Harbor-91\n",
+        "net user svc_backup Tulip-Harbor-91 /add\n",
+        "rabbitmqctl add_user worker Tulip-Harbor-91\n",
+        "useradd -m -p Tulip-Harbor-91 deploy\n",
+        "smbclient //fileserver/share -U jdoe%Tulip-Harbor-91\n",
+        "lftp -u deploy,Tulip-Harbor-91 sftp://files.example.com\n",
+        "http -a admin:Tulip-Harbor-91 GET https://api.example.com/v1/users\n",
+        "expdp scott/Tulip-Harbor-91@ORCL schemas=SCOTT dumpfile=scott.dmp\n",
+        "db2 connect to SAMPLE user db2inst1 using Tulip-Harbor-91\n",
+        "openssl enc -aes-256-cbc -salt -in a.txt -out a.enc -k Tulip-Harbor-91\n",
+        "unrar x -pTulip-Harbor-91 archive.rar\n",
+        "ssh-keygen -t ed25519 -N \"Tulip-Harbor-91\" -f ~/.ssh/id_deploy\n",
+        "$sec = ConvertTo-SecureString -AsPlainText \"Tulip-Harbor-91\" -Force\n",
+        "Set-LocalUser -Name \"svc\" -Password (ConvertTo-SecureString -AsPlainText \"Tulip-Harbor-91\" -Force)\n",
+        "rootpw --plaintext Tulip-Harbor-91\n",
+        "bindpw Tulip-Harbor-91\n",
+        "enable secret 0 Tulip-Harbor-91\n",
+        "username admin privilege 15 secret 0 Tulip-Harbor-91\n",
+        "snmp-server community Tulip-Harbor-91 RO\n",
+    ] {
+        assert_redacted(text, "Tulip-Harbor-91");
+    }
+    assert_redacted(
+        "vault login s.Zq81mXv0pLr3TfK9wQe2Lm4x\n",
+        "s.Zq81mXv0pLr3TfK9wQe2Lm4x",
+    );
+    for text in [
+        "  -p, --password <password>   Password to use when connecting to the server\n",
+        "mysql -u root -p shop\n",
+        "redis-cli -h cache.internal -p 6379 info\n",
+        "echo \"$SUDO_PASSWORD\" | sudo -S apt-get update\n",
+        "sudo -S systemctl restart nginx\n",
+        "echo \"hello world\" | sudo tee /etc/motd\n",
+        "net user svc_backup * /add\n",
+        "ssh-keygen -t ed25519 -N \"\" -f ~/.ssh/id_deploy\n",
+        "vault login -method=oidc\n",
+        "unrar x -p- archive.rar\n",
+    ] {
+        assert_clean(text);
+    }
+}

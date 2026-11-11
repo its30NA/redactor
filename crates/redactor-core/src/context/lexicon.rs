@@ -188,6 +188,8 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["destkeypass"], Password),
     s(&["requirepass"], Password),
     s(&["masterauth"], Password),
+    s(&["bindpw"], Password),
+    s(&["rootpw"], Password),
     s(&["passin"], Password),
     s(&["passout"], Password),
     // PIN

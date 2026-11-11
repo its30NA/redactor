@@ -307,7 +307,11 @@ const WORD_SCORE: f32 = 0.2;
 
 fn judge_command(text: &str, s: usize, e: usize) -> Option<Found> {
     let v = &text[s..e];
-    if never_a_value(v, Label::Password) || v == "*" {
+    // `-pPASSWORD.` in a sentence: the full stop is the sentence's.
+    if never_a_value(v, Label::Password)
+        || never_a_value(v.trim_end_matches('.'), Label::Password)
+        || v == "*"
+    {
         return None;
     }
     let random = value_score(v) >= 0.5;

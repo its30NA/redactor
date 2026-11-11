@@ -1,0 +1,67 @@
+# command lines and help text that name a password option but hold no password
+
+  -p, --password <password>   Password to use when connecting to the server
+  -P password                 Specifies the password for the login ID
+  -a <password>               Password to use when connecting to the server.
+  -U login_id -P password     SQL Server authentication
+sqlcmd -S localhost -U sa -P <password> -Q "SELECT 1"
+sqlcmd -S localhost -E -Q "SELECT 1"
+bcp shop.dbo.orders out orders.dat -S db1 -T -c
+redis-cli -h cache.internal ping
+redis-cli -h cache.internal -p 6379 info
+redis-cli -a "$REDIS_PASSWORD" ping
+mysql -u root -p
+mysql -u root -p shop
+mysql -h db.internal -u root -p -e "SHOW DATABASES"
+mongosh "mongodb://db.internal:27017/shop" -u root -p
+mongosh -u root -p "$MONGO_PASSWORD"
+cqlsh cassandra.internal -u cassandra
+psexec \\srv01 -u CORP\admin cmd
+sshpass -e ssh root@10.0.0.9
+sshpass -f ~/.pw ssh root@10.0.0.9
+echo "hello world" | sudo tee /etc/motd
+echo "$SUDO_PASSWORD" | sudo -S apt-get update
+sudo -S systemctl restart nginx
+sudo systemctl restart nginx
+echo $CI_JOB_TOKEN | docker login -u gitlab-ci-token --password-stdin registry.example.com
+echo "$REGISTRY_PASSWORD" | docker login -u ci --password-stdin registry.example.com
+cat ~/registry_password.txt | docker login --username ci --password-stdin
+echo "deploy:$NEW_PASSWORD" | chpasswd
+chpasswd < users.txt
+net user
+net user jdoe /domain
+net user svc_backup * /add
+net user svc_backup /delete
+rabbitmqctl list_users
+rabbitmqctl add_user worker "$RABBIT_PASSWORD"
+useradd -m -s /bin/bash deploy
+usermod -aG docker deploy
+smbclient //fileserver/share -U jdoe
+smbclient -L //fileserver -N
+lftp -u deploy sftp://files.example.com
+http -a admin GET https://api.example.com/v1/users
+http GET https://api.example.com/v1/users
+http requests are retried three times
+expdp scott@ORCL schemas=SCOTT dumpfile=scott.dmp directory=DATA_PUMP_DIR
+db2 connect to SAMPLE user db2inst1
+db2 connect to SAMPLE
+openssl enc -aes-256-cbc -salt -in a.txt -out a.enc -pass env:ENC_PASS
+openssl enc -d -aes-256-cbc -in a.enc -out a.txt -k "$ENC_KEY"
+openssl req -new -key server.key -out server.csr
+unrar x -p- archive.rar
+unrar x archive.rar
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_deploy
+ssh-keygen -t ed25519 -N '' -C "deploy@ci"
+vault login -method=oidc
+vault login
+vault login -method=userpass username=jdoe
+xfreerdp /v:10.0.0.9 /u:Administrator /cert:ignore
+schtasks /create /tn backup /tr c:\b.cmd /ru SYSTEM /sc daily
+snmp-server community <string> RO
+snmp-server location Building 4
+enable secret 5 <hash>
+rootpw --lock
+bindpw
+username admin privilege 15
+Use sudo -S to read the password from standard input.
+The -p option of mysql takes the password glued to it: -pPASSWORD.
