@@ -600,22 +600,6 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
     let prefix = &text[ls..ts];
     let line_start = is_line_start_prefix(prefix);
     let mut code = is_code_prefix(prefix) || key.member;
-    let none = |scanned: usize| RawPair {
-        value: None,
-        syntax: Syntax::Assign,
-        quoted: false,
-        sep: Sep::None,
-        tight: false,
-        line_start,
-        code,
-        stmt_end: false,
-        literal: false,
-        scanned,
-    };
-    // The label of an earlier placeholder (`[REDACTED: Password #1]`) is not a key.
-    if prefix.ends_with("REDACTED: ") || prefix.ends_with("REDACTED:") {
-        return Some(none(key.end));
-    }
     // A key inside a string literal (`"aws_secret_access_key = "`): the next quote of that
     // kind closes the string, it does not open a value.
     let closing = open_quote(prefix);

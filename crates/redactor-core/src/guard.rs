@@ -38,15 +38,14 @@ const PLACEHOLDER_WORDS: &[&str] = &[
     "test",
 ];
 
-/// True when `value` is a template, a variable reference, filler or an earlier placeholder.
+/// True when `value` is a template, a variable reference or filler. Earlier placeholders are
+/// the engine's to tell (`Engine::is_placeholder`, labels it emits only): it keeps candidates
+/// out of them before the guards run, so text merely framed like one is no exception here.
 pub fn is_placeholder(value: &str) -> bool {
     let v = value
         .trim()
         .trim_matches(|c| c == '"' || c == '\'' || c == '`');
     if v.is_empty() {
-        return true;
-    }
-    if v.starts_with("[REDACTED") {
         return true;
     }
     // The shortcuts below are for plain words. Digits mixed into the letters
@@ -154,7 +153,6 @@ mod tests {
             "****",
             "...",
             "null",
-            "[REDACTED: Password]",
             "%PASSWORD%",
             "${S3_SECRET_V2}",
             "$API_KEY_V2",
@@ -181,6 +179,9 @@ mod tests {
             "config.Zq81mXv0pLr3",
             "%Tgb6yhn7%",
             "${Hunter2Fake9x}",
+            // Earlier placeholders are the engine's to tell (known labels only).
+            "[REDACTED-but-real-Hunter2x",
+            "[REDACTED: Hunter2-Fake-9x]",
         ] {
             assert!(!is_placeholder(v), "{v}");
         }

@@ -538,3 +538,44 @@ fn unknown_escape_does_not_hide_a_later_unicode_escape() {
         out.output
     );
 }
+
+/// The guards take a value for an earlier placeholder only when the engine would (a label it
+/// emits): `[REDACTED` in front of a value, or a made-up label, does not hide it (batch 2
+/// leftover of the 2026-11-10 audit).
+#[test]
+fn guard_takes_only_real_placeholders_as_redacted() {
+    for (text, value) in [
+        ("password=[REDACTED-but-real-Hunter2x\n", "Hunter2x"),
+        ("password=[REDACTED]Hunter2-Fake-9x\n", "Hunter2-Fake-9x"),
+        (
+            "password: \"[REDACTED: Orchid Lantern 42x]\"\n",
+            "Orchid Lantern 42x",
+        ),
+        (
+            "DB_PASSWORD=[REDACTED:Velvet-Harbor-77]\n",
+            "Velvet-Harbor-77",
+        ),
+        // A key and value inside a made-up label.
+        (
+            "note [REDACTED: password=Hunter2-Fake-9x]\n",
+            "Hunter2-Fake-9x",
+        ),
+        (
+            "x [REDACTED: Password: Tulip-Harbor-91x]\n",
+            "Tulip-Harbor-91x",
+        ),
+    ] {
+        let out = engine().scan(text, &ScanRequest::default());
+        assert!(!out.output.contains(value), "{text:?} -> {:?}", out.output);
+    }
+    // Real placeholders, with a number or the encoded prefix, stay as they are.
+    for text in [
+        "password=[REDACTED: Password #1]\n",
+        "token: [REDACTED: Encoded Password #2]\n",
+        "DB_PASSWORD=\"[REDACTED: Password]\"\n",
+        "secret = [REDACTED: Secret] (rotated yesterday)\n",
+    ] {
+        let out = engine().scan(text, &ScanRequest::default());
+        assert_eq!(out.output, text, "{:?}", out.findings);
+    }
+}

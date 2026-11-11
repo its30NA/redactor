@@ -495,10 +495,6 @@ fn never_a_value(v: &str, label: Label) -> bool {
             return true;
         }
     }
-    // Already redacted.
-    if t.contains("[REDACTED") {
-        return true;
-    }
     // Integer constants: `0x08074b50`.
     if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
         if hex.len() <= 16 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
