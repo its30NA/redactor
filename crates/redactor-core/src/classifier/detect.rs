@@ -156,7 +156,12 @@ fn judge(text: &str, s: usize, e: usize) -> Option<Candidate> {
     }
     let n = e - s;
     let tb = tok.as_bytes();
-    if periodic(tb) || alphabet(tb) || is_identifier(tb) {
+    if periodic(tb)
+        || alphabet(tb)
+        || is_identifier(tb)
+        || ssh_public_key(text, s, tb)
+        || pod_name(tb)
+    {
         return None;
     }
     if tb.iter().all(u8::is_ascii_hexdigit) {
@@ -279,6 +284,44 @@ pub(crate) fn is_identifier(t: &[u8]) -> bool {
     let (first, whole) = segs[0];
     let lead = usize::from(!whole && first.len() == 1 && first[0].is_ascii_lowercase());
     long && (short - lead) * 3 <= segs.len() - lead
+}
+
+/// The key of an OpenSSH public key line (`ssh-ed25519 AAAAC3Nza… user@host`): public.
+fn ssh_public_key(text: &str, s: usize, tok: &[u8]) -> bool {
+    if !tok.starts_with(b"AAAA") {
+        return false;
+    }
+    let mut from = s.saturating_sub(64);
+    while !text.is_char_boundary(from) {
+        from += 1;
+    }
+    let before = &text[from..s];
+    let Some(head) = before.strip_suffix(' ') else {
+        return false;
+    };
+    let kind = head.rsplit(char::is_whitespace).next().unwrap_or("");
+    ["ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-"]
+        .iter()
+        .any(|p| kind.starts_with(p))
+}
+
+/// A Kubernetes pod name (`payment-service-7d9f8c6b5d-x2k4q`, after an optional
+/// `pod/`): a lowercase name, the pod-template hash and a five-character suffix, both from
+/// the alphabet Kubernetes generates them with (no vowels, no `0`, `1`, `3`).
+fn pod_name(tok: &[u8]) -> bool {
+    const SAFE: &[u8] = b"bcdfghjklmnpqrstvwxz2456789";
+    let name = tok.rsplit(|&b| b == b'/').next().unwrap_or(tok);
+    let mut parts = name.rsplitn(3, |&b| b == b'-');
+    let (Some(suffix), Some(hash), Some(base)) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    suffix.len() == 5
+        && (6..=10).contains(&hash.len())
+        && suffix.iter().chain(hash).all(|b| SAFE.contains(b))
+        && base.first().is_some_and(u8::is_ascii_lowercase)
+        && base
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
 }
 
 /// Letters that read as a word: vowels in a fair share and no long consonant runs.
@@ -405,5 +448,20 @@ mod tests {
         ] {
             assert!(found(t).is_empty(), "{t}: {:?}", found(t));
         }
+    }
+
+    /// OpenSSH public keys and Kubernetes pod names are not secrets; the same random key
+    /// without the `ssh-` type before it still is.
+    #[test]
+    fn ssh_public_keys_and_pod_names() {
+        let key = "AAAAC3NzaC1lZDI1NTE5AAAAIHcY4Zq81mXv0pLr3TfK9wQe2Lm4xZq81mXv0pLr3TfK";
+        for t in [
+            format!("ssh-ed25519 {key} jdoe@laptop"),
+            "pod/payment-service-7d9f8c6b5d-x2k4q   1/1   Running".to_string(),
+        ] {
+            assert!(found(&t).is_empty(), "{t}: {:?}", found(&t));
+        }
+        let bare = format!("token {key}");
+        assert!(!found(&bare).is_empty(), "{bare}");
     }
 }

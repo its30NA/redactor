@@ -1,0 +1,6 @@
+# public material and generated names: an OpenSSH public key line, Kubernetes pod names
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHcY4Zq81mXv0pLr3TfK9wQe2Lm4xZq81mXv0pLr3TfK jdoe@laptop
+pod/payment-service-7d9f8c6b5d-x2k4q   1/1   Running   0   3d
+NAME                                READY   STATUS    RESTARTS   AGE
+checkout-api-5f6b7c8d9-qwx2z        1/1     Running   0          12h
+pod/search-indexer-6c9d8b7f45-k7m2p 1/1     Running   2          5d

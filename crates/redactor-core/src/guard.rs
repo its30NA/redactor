@@ -49,6 +49,9 @@ pub fn is_placeholder(value: &str) -> bool {
     if v.is_empty() {
         return true;
     }
+    if secret_reference(v) {
+        return true;
+    }
     // The shortcuts below are for plain words. Digits mixed into the letters
     // (`$ummer2024x`, `Tr0ub4dor-here`, `config.Zq81mXv0pLr3`) make a password
     // that merely looks like a variable, a template or a config path.
@@ -121,6 +124,27 @@ pub fn is_placeholder(value: &str) -> bool {
         return true;
     }
     false
+}
+
+/// A pointer into a secret store, not the secret: `vault:secret/data/shop#password`,
+/// `projects/123456/secrets/db-password/versions/latest` (Google Secret Manager),
+/// `arn:aws:secretsmanager:…:secret:…`.
+fn secret_reference(v: &str) -> bool {
+    if v.contains(char::is_whitespace) {
+        return false;
+    }
+    if let Some(path) = v.strip_prefix("vault:") {
+        return path.contains('/') && !path.starts_with('/');
+    }
+    if v.starts_with("arn:aws:secretsmanager:") || v.starts_with("arn:aws:ssm:") {
+        return true;
+    }
+    let parts: Vec<&str> = v.split('/').collect();
+    parts.len() >= 4
+        && parts[0] == "projects"
+        && parts[2] == "secrets"
+        && parts.iter().all(|p| !p.is_empty())
+        && (parts.len() == 4 || parts.len() == 6 && parts[4] == "versions")
 }
 
 /// [`is_placeholder`] for `text[start..end]`, read with the single quotes around it when it
@@ -200,6 +224,9 @@ mod tests {
             "config.get('db.password')",
             "'$DB_PASS'",
             "'$password'",
+            "vault:secret/data/shop#password",
+            "projects/123456/secrets/db-password/versions/latest",
+            "projects/my-proj-2a/secrets/api-key",
         ] {
             assert!(is_placeholder(v), "{v}");
         }
@@ -225,6 +252,8 @@ mod tests {
             "'$ummer2024'",
             "'$ecretPlum'",
             "'$ecret-Plum47'",
+            "vault:Xy7kL9mQ2",
+            "projects/Kx9mQ2",
             "%Tgb6yhn7%",
             "${Hunter2Fake9x}",
             // Earlier placeholders are the engine's to tell (known labels only).
