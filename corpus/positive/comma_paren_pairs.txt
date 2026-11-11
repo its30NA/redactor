@@ -31,3 +31,7 @@ helm install api bitnami/postgresql --set auth.username=app,auth.password=⟦Pas
 //fileserver/share /mnt/share cifs username=svc,password=⟦Password|Tulip-Harbor-91⟧,uid=1000,iocharset=utf8 0 0
 
 mount -t cifs //srv/share /mnt -o username=svc,password=⟦Password|Hunter2-Fake-9x⟧,vers=3.0
+
+The QA account (user: qa1, pw: ⟦Password|Temp1234⟧) is locked.
+
+conn = connect(host="db1", user="app", password=⟦Password|Kiwi2024⟧)

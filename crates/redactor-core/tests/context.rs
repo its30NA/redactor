@@ -1410,3 +1410,24 @@ fn digit_short_and_letterless_passwords() {
         assert_clean(text);
     }
 }
+
+/// After `,` or `(` an identifier-shaped value is code, unless a strong password key holds a
+/// value with digits mixed into its letters (`pw: Temp1234`); `password=pw_value` and
+/// `password=password` stay code.
+#[test]
+fn mixed_case_digit_password_after_comma() {
+    assert_redacted(
+        "The test account (user: qa1, pw: Temp1234) is locked.\n",
+        "Temp1234",
+    );
+    assert_redacted("(user: qa1, pw: Temp1234)\n", "Temp1234");
+    assert_redacted("connect(host=db1, password=Kiwi2024)\n", "Kiwi2024");
+    for text in [
+        "foo(a, b, password=pw_value)\n",
+        "f(password=password)\n",
+        "login(username=user1, password=pass1)\n",
+        "client = Client(user, password=userPassword)\n",
+    ] {
+        assert_clean(text);
+    }
+}

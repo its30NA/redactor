@@ -274,8 +274,11 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         // Outside code, code words (`temp`, `new`, `user`) only make a variable of a value
         // without digits among its words: `password: Temp1234` is a password, and a `.env`
         // line (`SMTP_PASSWORD=new_pass`) holds configuration whatever it looks like.
+        // `(user: qa1, pw: Temp1234)`: after `,` or `(` a strong password key with digits
+        // mixed into the letters holds a password; `password=pw_value` is a variable.
+        let mixed_password = label == Label::Password && strong && mixed_in_digits(v);
         if p.code
-            || p.args
+            || p.args && !mixed_password
             || p.stmt_end
             || key.member
             || is_stopword(&lower)

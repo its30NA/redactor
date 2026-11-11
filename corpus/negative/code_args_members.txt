@@ -40,3 +40,7 @@ Columns: id, email, password_hash, created_at
 Props: {url=jdbc:postgresql://db/shop, username=app, password=${DB_PASSWORD}, maxPoolSize=10}
 User(id=42, email=jdoe@example.com, password=<hidden>, active=true)
 SmtpConfig(host=smtp.example.com, port=587, username=mailer, password=****)
+foo(a, b, password=pw_value)
+f(password=password)
+client = Client(user, password=userPassword)
+session = login(user=args.user, password=cfg.db_password)
