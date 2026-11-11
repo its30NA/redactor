@@ -2,6 +2,8 @@
 registry=https://registry.example.com/
 always-auth=true
 //registry.example.com/:_authToken=⟦gen:npm⟧
+//npm.example.org/repo/:_password=⟦*|VHVsaXAtSGFyYm9yLTkxLXg=⟧
+_auth=⟦*|amRvZTpDZWRhci1RdWlsbC0zNw==⟧
 fund=false
 audit-level=high
 

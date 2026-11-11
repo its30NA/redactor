@@ -786,3 +786,25 @@ fn every_rule_has_cases() {
     let unknown: Vec<&&str> = COVERED.iter().filter(|id| !ids.contains(id)).collect();
     assert!(unknown.is_empty(), "tests for unknown rules: {unknown:?}");
 }
+
+/// The `.npmrc` rule needs the `.npmrc` shape: the setting at a line start or after a
+/// registry scope's `:`. A member named `_password` in code is not one.
+#[test]
+fn npmrc_auth_needs_npmrc_shape() {
+    let token = concat!("Npm", "Fake", "Token", "0123456789abcdef");
+    assert_hit(
+        "npmrc_auth",
+        &format!("//registry.npmjs.org/:_authToken={token}\n"),
+        token,
+    );
+    assert_hit("npmrc_auth", &format!("_auth={token}\n"), token);
+    assert_hit("npmrc_auth", &format!("  _password = {token}\n"), token);
+    assert_hit(
+        "npmrc_auth",
+        &format!("//npm.example.com/repo/:_password={token}\n"),
+        token,
+    );
+    assert_miss("npmrc_auth", "self._password = password_value\n");
+    assert_miss("npmrc_auth", "this._authToken = response.accessToken;\n");
+    assert_miss("npmrc_auth", "    obj._auth = makeAuthHeader(user)\n");
+}

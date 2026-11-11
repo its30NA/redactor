@@ -1,0 +1,13 @@
+class Account:
+    def __init__(self, password_value):
+        self._password = password_value
+        self._auth = build_auth_header(self.user)
+
+class Client {
+  constructor(opts) {
+    this._authToken = opts.accessToken;
+    this._password = opts.password || null;
+  }
+}
+
+    self._password = hashlib.sha256(raw).hexdigest()

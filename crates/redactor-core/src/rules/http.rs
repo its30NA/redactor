@@ -26,6 +26,18 @@ fn described(h: &Hit) -> Verdict {
     }
 }
 
+/// `.npmrc` shape: the setting starts its line or follows a registry scope's `:`
+/// (`//registry.npmjs.org/:_authToken=…`); `self._password = v` is code.
+fn npmrc_line(h: &Hit) -> Verdict {
+    let before = h.before(256);
+    let line = before.rsplit('\n').next().unwrap_or("");
+    if line.trim().is_empty() || line.ends_with(':') {
+        Verdict::Keep
+    } else {
+        Verdict::Reject
+    }
+}
+
 fn cookie_pairs(h: &Hit) -> Verdict {
     let s = h.secret();
     let name = s.split('=').next().unwrap_or("");
@@ -388,6 +400,7 @@ pub(super) fn rules() -> Vec<Rule> {
             0.95,
         )
         .fwd(2048)
-        .bounds(Bound::Word, Bound::None),
+        .bounds(Bound::Word, Bound::None)
+        .check(npmrc_line),
     ]
 }
