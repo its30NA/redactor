@@ -194,40 +194,64 @@ fn is_nfkc_stable(c: char) -> bool {
     matches!(is_nfkc_quick(std::iter::once(c)), IsNormalized::Yes)
 }
 
-/// The class of a character that is hidden, regardless of its neighbours.
+/// The class of a character that is hidden, regardless of its neighbours: Unicode's whole
+/// Default_Ignorable_Code_Point set (Unicode 16, unassigned code points in it included), plus
+/// the interlinear annotation controls U+FFF9..U+FFFB, which render as nothing too.
 pub(crate) fn hidden_class(c: char) -> Option<Hidden> {
     match c {
-        '\u{200B}'..='\u{200F}'
-        | '\u{2060}'..='\u{2064}'
-        | '\u{FEFF}'
-        | '\u{00AD}'
+        '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' => Some(Hidden::Bidi),
+        '\u{E0000}'..='\u{E007F}' => Some(Hidden::Tag),
+        '\u{00AD}'
         | '\u{034F}'
         // Arabic letter mark (a direction mark like U+200E/U+200F).
         | '\u{061C}'
-        // Mongolian free variation selectors and vowel separator.
-        | '\u{180B}'..='\u{180F}'
-        // Variation selectors (U+FE0F, emoji presentation, stays) and their supplement.
-        | '\u{FE00}'..='\u{FE0E}'
-        | '\u{E0100}'..='\u{E01EF}'
         // Hangul fillers: they render as nothing.
         | '\u{115F}'
         | '\u{1160}'
         | '\u{3164}'
-        | '\u{FFA0}' => Some(Hidden::Invisible),
-        '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' => Some(Hidden::Bidi),
-        '\u{E0000}'..='\u{E007F}' => Some(Hidden::Tag),
+        | '\u{FFA0}'
+        // Khmer inherent vowels.
+        | '\u{17B4}'
+        | '\u{17B5}'
+        // Mongolian free variation selectors and vowel separator.
+        | '\u{180B}'..='\u{180F}'
+        | '\u{200B}'..='\u{200F}'
+        // Word joiner, invisible operators, the unassigned U+2065 and the deprecated format
+        // controls U+206A..U+206F.
+        | '\u{2060}'..='\u{2065}'
+        | '\u{206A}'..='\u{206F}'
+        // Variation selectors (U+FE0E/U+FE0F after an emoji stay, see `hidden_at`) and
+        // their supplement.
+        | '\u{FE00}'..='\u{FE0F}'
+        | '\u{E0100}'..='\u{E01EF}'
+        | '\u{FEFF}'
+        // Unassigned specials and the interlinear annotation controls.
+        | '\u{FFF0}'..='\u{FFFB}'
+        // Shorthand format controls.
+        | '\u{1BCA0}'..='\u{1BCA3}'
+        // Musical symbol format controls (begin/end beam, tie, slur, phrase).
+        | '\u{1D173}'..='\u{1D17A}'
+        // Unassigned rest of the tag and variation selector planes.
+        | '\u{E0080}'..='\u{E00FF}'
+        | '\u{E01F0}'..='\u{E0FFF}' => Some(Hidden::Invisible),
         _ => None,
     }
 }
 
 /// Like [`hidden_class`], but keeps a zero-width joiner between two emoji (family, profession
-/// and similar sequences) and the text-presentation selector U+FE0E right after an emoji.
+/// and similar sequences), a variation selector U+FE0E or U+FE0F right after an emoji, and
+/// U+FE0F before the keycap mark U+20E3 (`1️⃣`).
 pub(crate) fn hidden_at(prev: Option<char>, c: char, next: Option<char>) -> Option<Hidden> {
     let class = hidden_class(c)?;
     if c == '\u{200D}' && prev.is_some_and(is_emoji_part) && next.is_some_and(is_emoji_part) {
         return None;
     }
-    if c == '\u{FE0E}' && prev.is_some_and(is_emoji_part) {
+    if matches!(c, '\u{FE0E}' | '\u{FE0F}')
+        && prev.is_some_and(|p| is_emoji_part(p) && !matches!(p, '\u{FE0E}' | '\u{FE0F}'))
+    {
+        return None;
+    }
+    if c == '\u{FE0F}' && next == Some('\u{20E3}') {
         return None;
     }
     Some(class)
@@ -419,6 +443,23 @@ mod tests {
             '\u{1160}',
             '\u{3164}',
             '\u{FFA0}',
+            // The rest of Default_Ignorable_Code_Point, and the annotation controls.
+            '\u{FE0F}',
+            '\u{17B4}',
+            '\u{17B5}',
+            '\u{2065}',
+            '\u{206A}',
+            '\u{206F}',
+            '\u{FFF0}',
+            '\u{FFF9}',
+            '\u{FFFB}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D17A}',
+            '\u{E0080}',
+            '\u{E01F0}',
+            '\u{E0FFF}',
         ] {
             let original = format!("x=ab{ch}cd y");
             let s = Shadow::new(&original);
@@ -435,6 +476,12 @@ mod tests {
             "\u{2764}\u{FE0E} ok"
         );
         assert_eq!(Shadow::new("\u{2764}\u{FE0F} ok").counts.invisible, 0);
+        assert_eq!(Shadow::new("1\u{FE0F}\u{20E3} ok").counts.invisible, 0);
+        // Only one selector stays after an emoji.
+        assert_eq!(
+            Shadow::new("\u{2764}\u{FE0F}\u{FE0F}x").text,
+            "\u{2764}\u{FE0F}x"
+        );
     }
 
     #[test]

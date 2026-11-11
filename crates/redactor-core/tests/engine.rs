@@ -413,3 +413,63 @@ fn matcher_labels_are_known_placeholders() {
     let bare = engine_with_template("<{label}>").scan(&first.output, &ScanRequest::default());
     assert_ne!(bare.output, first.output);
 }
+
+/// Every Default_Ignorable_Code_Point (and the interlinear annotation controls) is removed
+/// before detection: a token split by one is still found, and the placeholder covers the
+/// invisible character too (2026-11-10 audit, finding 5).
+#[test]
+fn default_ignorables_do_not_hide_a_token() {
+    let head = concat!("gl", "pat-Qz7Wm3X");
+    let tail = "k9Pld2VteR5yN";
+    for ch in [
+        '\u{FE0F}',
+        '\u{206A}',
+        '\u{FFF9}',
+        '\u{17B4}',
+        '\u{1D173}',
+        '\u{200B}',
+        '\u{2065}',
+        '\u{1BCA0}',
+        '\u{E0FFF}',
+    ] {
+        let text = format!("see {head}{ch}{tail} here\n");
+        let out =
+            engine_at(redactor_core::Sensitivity::Paranoid).scan(&text, &ScanRequest::default());
+        assert_eq!(
+            out.output, "see [REDACTED: GitLab Token] here\n",
+            "U+{:04X}",
+            ch as u32
+        );
+        let keep = Engine::new(EngineConfig {
+            strip_invisible: false,
+            sensitivity: redactor_core::Sensitivity::Paranoid,
+            ..EngineConfig::default()
+        })
+        .unwrap()
+        .scan(&text, &ScanRequest::default());
+        assert_eq!(
+            keep.output, "see [REDACTED: GitLab Token] here\n",
+            "placeholder covers U+{:04X}",
+            ch as u32
+        );
+    }
+}
+
+/// A copy of a found password split by an invisible character is redacted too.
+#[test]
+fn copy_split_by_default_ignorable_is_redacted() {
+    let text = "password=Hunter2-Fake-9x\nlogin failed for Hunter2\u{206A}-Fake-9x\n";
+    let out = engine().scan(text, &ScanRequest::default());
+    assert!(!out.output.contains("Hunter2"), "{}", out.output);
+    assert!(!out.output.contains("Fake-9x"), "{}", out.output);
+}
+
+/// U+FE0F stays only right after an emoji (or before a keycap mark).
+#[test]
+fn emoji_presentation_selector_kept_after_emoji_only() {
+    for text in ["I \u{2764}\u{FE0F} it", "key 1\u{FE0F}\u{20E3} ok"] {
+        assert_eq!(engine().scan(text, &ScanRequest::default()).output, text);
+    }
+    let out = engine().scan("ab\u{FE0F}cd", &ScanRequest::default());
+    assert_eq!(out.output, "abcd");
+}
