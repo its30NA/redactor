@@ -957,3 +957,39 @@ fn jwe_wrapped_jwt_and_quoted_connection_passwords() {
         "Server=db1;Database=shop;User Id=sa;Password=${DB_PASSWORD};\n",
     );
 }
+
+/// A connection-string password sits in a `key=value;key=value` chain with a connection key;
+/// statements joined by `;` and values that code reads are no chain.
+#[test]
+fn connection_string_password_needs_a_chain() {
+    for (text, secret) in [
+        (
+            "Host=db.internal;Port=5432;Username=app;Password=Quill-Mantis-38;\n",
+            "Quill-Mantis-38",
+        ),
+        (
+            "var cs = \"Server=10.0.4.30;Database=crm;User Id=crm_app;Password=Otter-Plank-64;\";\n",
+            "Otter-Plank-64",
+        ),
+        (
+            "Password=Fennel-Brook-27;Server=10.0.4.31;Database=hr;\n",
+            "Fennel-Brook-27",
+        ),
+        (
+            "jdbc:sqlserver://10.0.4.33:1433;databaseName=pay;user=pay_app;password=Sorrel-Kite-19;\n",
+            "Sorrel-Kite-19",
+        ),
+    ] {
+        assert_hit("connection_string_password", text, secret);
+    }
+    for text in [
+        "const user=req.body.user;const password=req.body.password;\n",
+        "String host=cfg.getHost(); String password=cfg.getPassword();\n",
+        "$user=$_POST['user'];$password=$_POST['password'];\n",
+        "var user=getUser();var pwd=getPwd();\n",
+        "host=args.host;user=args.user;password=args.password\n",
+        "let host = opts.host; let password = opts.password;\n",
+    ] {
+        assert_miss("connection_string_password", text);
+    }
+}

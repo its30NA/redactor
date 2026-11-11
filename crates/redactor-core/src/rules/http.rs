@@ -68,31 +68,124 @@ fn connection_string(h: &Hit) -> Verdict {
     if ["${", "$(", "{{"].iter().any(|t| h.secret().starts_with(t)) {
         return Verdict::Reject;
     }
+    // `req.body.password`, `cfg.getPassword()`, `$_POST['password']`: code reads it.
+    if code_reference(h.secret()) {
+        return Verdict::Reject;
+    }
     let line = h.line();
     if !line.contains(';') {
         return Verdict::Reject;
     }
-    let line = line.to_ascii_lowercase();
-    let keys = [
-        "server=",
-        "data source=",
-        "host=",
-        "uid=",
-        "user id=",
-        "userid=",
-        "database=",
-        "driver=",
-        "initial catalog=",
-        "dsn=",
-        "user=",
-        "username=",
-        "provider=",
-    ];
-    if line.contains(';') && keys.iter().any(|k| line.contains(k)) {
+    // The pairs the password belongs to: `;`-separated `key=value` segments without a gap
+    // (`const user=…;const password=…` are statements, not pairs).
+    let ls = line.as_ptr() as usize - h.text.as_ptr() as usize;
+    let at = h.start - ls;
+    let seg_start = line[..at].rfind(';').map_or(0, |i| i + 1);
+    let lead = line[seg_start..at].trim();
+    let opens = lead.is_empty() || seg_start == 0 && lead.ends_with(['"', '\'', '`']);
+    if !opens {
+        return Verdict::Reject;
+    }
+    let mut keys: Vec<&str> = Vec::new();
+    let mut rest = line[..seg_start].strip_suffix(';').unwrap_or("");
+    while !rest.is_empty() {
+        let (head, seg, first) = match rest.rsplit_once(';') {
+            Some((head, seg)) => (head, seg, false),
+            None => ("", rest, true),
+        };
+        let Some(key) = pair_key(seg, first) else {
+            break;
+        };
+        keys.push(key);
+        rest = head;
+    }
+    let after_value = &line[(h.s_end - ls).min(line.len())..];
+    keys.extend(
+        after_value
+            .split(';')
+            .skip(1)
+            .map_while(|s| pair_key(s, false)),
+    );
+    if keys.iter().any(|k| connection_key(k)) {
         Verdict::Keep
     } else {
         Verdict::Reject
     }
+}
+
+/// The key of a `key=value` segment of a connection string (`User Id`, `Data Source`),
+/// or `None` when the segment is no pair. The first segment of a line may start with code
+/// or a quote before the string (`var cs = "Server=…`): only what follows the last quote counts.
+fn pair_key(seg: &str, first: bool) -> Option<&str> {
+    let mut s = seg;
+    if first {
+        if let Some(i) = s.rfind(['"', '\'', '`']) {
+            s = &s[i + 1..];
+        }
+    }
+    let (key, _) = s.trim_start().split_once('=')?;
+    let key = key.trim_end();
+    let ok = key.bytes().next().is_some_and(|b| b.is_ascii_alphabetic())
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b' ' | b'_' | b'.' | b'-'))
+        && !key.contains("  ");
+    ok.then_some(key)
+}
+
+/// Keys that make a `;` chain a connection string.
+fn connection_key(key: &str) -> bool {
+    let k: String = key
+        .bytes()
+        .filter(|b| !matches!(b, b' ' | b'_' | b'-'))
+        .map(|b| b.to_ascii_lowercase() as char)
+        .collect();
+    matches!(
+        k.as_str(),
+        "server"
+            | "datasource"
+            | "host"
+            | "hostname"
+            | "address"
+            | "addr"
+            | "uid"
+            | "userid"
+            | "database"
+            | "databasename"
+            | "dbname"
+            | "driver"
+            | "initialcatalog"
+            | "dsn"
+            | "user"
+            | "username"
+            | "provider"
+            | "port"
+    )
+}
+
+/// A value that code reads rather than a literal: a `$variable` (`$_POST['password']`), a
+/// member path (`req.body.password`) or a call or index on a name (`cfg.getPassword()`,
+/// `getPwd()`, `opts["pw"]`).
+fn code_reference(v: &str) -> bool {
+    let ident = |s: &str| {
+        s.bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+            && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    };
+    let v = v.trim();
+    if let Some(rest) = v.strip_prefix('$') {
+        return rest
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_');
+    }
+    let (path, call) = match v.find(['(', '[']) {
+        Some(i) => (&v[..i], true),
+        None => (v, false),
+    };
+    let parts = path.split('.').count();
+    !path.is_empty() && path.split('.').all(ident) && (call || parts >= 2)
 }
 
 /// A `.pgpass` host field: a hostname, an address or `*`, never a pure number (times).

@@ -1,0 +1,8 @@
+# connection strings next to code: the k=v;k=v chain holds the password
+Host=db.internal;Port=5432;Username=app;Password=⟦Password|Quill-Mantis-38⟧;
+var cs = "Server=10.0.4.30;Database=crm;User Id=crm_app;Password=⟦Password|Otter-Plank-64⟧;";
+Password=⟦Password|Fennel-Brook-27⟧;Server=10.0.4.31;Database=hr;User Id=hr_app;
+Server=10.0.4.32; Database=ops; User Id=ops; Password=⟦Password|Marble-Wick-53⟧;
+jdbc:sqlserver://10.0.4.33:1433;databaseName=pay;user=pay_app;password=⟦Password|Sorrel-Kite-19⟧;
+$dsn = "host=10.0.4.34;dbname=blog;user=blog;password=⟦Password|Pa$$-Juniper-71⟧";
+Data Source=10.0.4.35;Initial Catalog=Sales;User ID=sales;Password=⟦Password|cfg.Larch-Vole-46⟧;

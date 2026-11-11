@@ -1,0 +1,8 @@
+# statements joined by ; that assign user, host and password variables: code, not a connection string
+const user=req.body.user;const password=req.body.password;
+String host=cfg.getHost(); String password=cfg.getPassword();
+$user=$_POST['user'];$password=$_POST['password'];
+let host = opts.host; let password = opts.password;
+var user=getUser();var pwd=getPwd();
+$host = $config['host']; $password = $config['password'];
+self.user = user; self.password = password_input
