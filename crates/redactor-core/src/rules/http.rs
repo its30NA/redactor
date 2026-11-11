@@ -274,6 +274,62 @@ fn userinfo(text: &str, _start: usize, end: usize) -> Option<(usize, usize, usiz
     Some((ss, ss + at, ss + at + 1))
 }
 
+/// How far back [`in_query`] looks for the start of the URL a parameter belongs to.
+const QUERY_BACK: usize = 4096;
+
+/// A parameter after `;` or `&` belongs to a URL only when its token (the run of text
+/// without blanks or quotes) holds a `?` or a `://` before it, or is a form body of
+/// `key=value&key=value` pairs (`-d 'user=bob&password=…'`). `x=1;token=getToken()` and
+/// `if(a&&pass==b)` are code. A parameter after `?` or `#` is in a URL.
+fn in_query(h: &Hit) -> bool {
+    let before = h.before(QUERY_BACK);
+    let sep = h.text[h.start..].chars().next();
+    if !matches!(sep, Some(';' | '&')) {
+        return true;
+    }
+    let tok = before
+        .rfind(|c: char| c.is_whitespace() || "\"'`<>".contains(c))
+        .map_or(before, |i| &before[i + 1..]);
+    if tok.contains('?') || tok.contains("://") {
+        return true;
+    }
+    let pair = |p: &str| {
+        p.split_once('=').is_some_and(|(k, _)| {
+            k.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
+                && k.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.-[]%".contains(&b))
+        })
+    };
+    sep == Some('&') && tok.split('&').all(pair)
+}
+
+/// [`in_query`], then [`described`].
+fn query_described(h: &Hit) -> Verdict {
+    if in_query(h) {
+        described(h)
+    } else {
+        Verdict::Reject
+    }
+}
+
+/// [`in_query`], then [`check::random`].
+fn query_random(h: &Hit) -> Verdict {
+    if in_query(h) {
+        check::random(h)
+    } else {
+        Verdict::Reject
+    }
+}
+
+/// [`in_query`] alone.
+fn query(h: &Hit) -> Verdict {
+    if in_query(h) {
+        Verdict::Keep
+    } else {
+        Verdict::Reject
+    }
+}
+
 /// Pagination cursors are opaque but not secret: `page_token`, `next_token`.
 fn not_a_cursor(h: &Hit) -> Verdict {
     let name = h.text[h.start + 1..h.s_start - 1].to_ascii_lowercase();
@@ -292,7 +348,7 @@ fn not_a_cursor(h: &Hit) -> Verdict {
     if cursor {
         Verdict::Reject
     } else {
-        described(h)
+        query_described(h)
     }
 }
 
@@ -495,7 +551,7 @@ pub(super) fn rules() -> Vec<Rule> {
         .back(1)
         .fwd(1024)
         .bounds(Bound::None, Bound::None)
-        .check(described),
+        .check(query_described),
         r(
             "url_query_key",
             "API Key",
@@ -508,7 +564,7 @@ pub(super) fn rules() -> Vec<Rule> {
         .back(14)
         .fwd(1024)
         .bounds(Bound::None, Bound::None)
-        .check(check::random),
+        .check(query_random),
         r(
             "url_query_password",
             "Password",
@@ -521,7 +577,7 @@ pub(super) fn rules() -> Vec<Rule> {
         .back(1)
         .fwd(1024)
         .bounds(Bound::None, Bound::None)
-        .check(described),
+        .check(query_described),
         r(
             "url_query_signature",
             "Signature",
@@ -533,7 +589,8 @@ pub(super) fn rules() -> Vec<Rule> {
         .ci()
         .back(1)
         .fwd(2048)
-        .bounds(Bound::None, Bound::None),
+        .bounds(Bound::None, Bound::None)
+        .check(query),
         r(
             "connection_string_password",
             "Password",

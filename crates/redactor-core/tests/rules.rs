@@ -993,3 +993,45 @@ fn connection_string_password_needs_a_chain() {
         assert_miss("connection_string_password", text);
     }
 }
+
+/// `;` and `&` separate query parameters only in a URL (a `?` or `://` earlier in the token)
+/// or a form body of `key=value&key=value` pairs; statements of code are neither.
+#[test]
+fn query_separators_need_a_url_or_form_body() {
+    let mut g = Gen::named("query-sep");
+    let tok = g.alnum(24);
+    assert_hit(
+        "url_query_token",
+        &format!("https://files.example.com/get?id=7;token={tok}\n"),
+        &tok,
+    );
+    assert_hit(
+        "url_query_password",
+        "curl https://auth.example.com/token -d 'grant_type=password&username=svc&password=Thistle-Canoe-58'\n",
+        "Thistle-Canoe-58",
+    );
+    assert_hit(
+        "url_query_client_secret",
+        "client_id=web&client_secret=Vq7Lm2Xr9Kd4Tz8Wn3Hp&grant_type=client_credentials\n",
+        "Vq7Lm2Xr9Kd4Tz8Wn3Hp",
+    );
+    for (id, text) in [
+        (
+            "url_query_token",
+            "var a=1;code=e.keyCode||e.which;if(code===13){submit()}\n",
+        ),
+        ("url_query_token", "x=1;token=this.getToken();fetch(u)\n"),
+        ("url_query_token", "if(ok&&code==200){done()}\n"),
+        ("url_query_password", "if(a&&pass==b){ok()}\n"),
+        (
+            "url_query_password",
+            "var u=1;pwd=document.getElementById(\"pwd\").value;\n",
+        ),
+        (
+            "url_query_client_secret",
+            "n=1;client_secret=read_secret();\n",
+        ),
+    ] {
+        assert_miss(id, text);
+    }
+}

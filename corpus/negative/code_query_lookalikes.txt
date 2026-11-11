@@ -1,0 +1,9 @@
+# statements joined by ; or && that read like query parameters: code, not a URL
+var a=1;code=e.keyCode||e.which;if(code===13){submit()}
+x=1;token=this.getToken();fetch(u)
+if(a&&pass==b){ok()}
+var u=1;pwd=document.getElementById("pwd").value;
+host=args.host;user=args.user;password=args.password
+i=0;key=keys[i];signature=sign(key);
+n=1;client_secret=read_secret();
+if(ok&&code==200){done()}

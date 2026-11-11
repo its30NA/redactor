@@ -1,0 +1,10 @@
+# query parameters after ?, &, ; or # in a URL, and form bodies of key=value&key=value
+curl -X POST https://auth.example.com/token -d 'grant_type=password&username=svc&password=⟦Password|Thistle-Canoe-58⟧'
+grant_type=password&username=batch&password=⟦Password|Ember-Quarry-36⟧&client_id=cli
+client_id=web&client_secret=⟦*|Vq7Lm2Xr9Kd4Tz8Wn3Hp⟧&grant_type=client_credentials
+https://app.example.com/callback#access_token=⟦gen:alnum24#a⟧&state=1
+GET /oauth/callback?state=xyz&code=⟦*|Rk4Wq9Zm2Tn7Lp5Vx8Bc⟧ HTTP/1.1
+wss://rt.example.com/socket?vsn=2.0&token=⟦gen:alnum32#b⟧
+https://files.example.com/get?id=7;token=⟦gen:alnum24#c⟧
+https://maps.example.com/api?q=x&key=⟦gen:alnum32#d⟧
+https://cdn.example.com/img.png?expires=9&signature=⟦gen:alnum32#e⟧
