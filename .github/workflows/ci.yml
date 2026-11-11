@@ -110,8 +110,10 @@ jobs:
         run: npm run lint
       - name: Unit tests
         run: npm test
+      # No `--with-deps`: the ubuntu-24.04 image already carries Chrome's libraries, and the UI
+      # embeds its fonts. Skipping apt keeps a mirror outage from blocking CI (2026-11-11).
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       # The config's CI reporter is `github` only; add the HTML report for the failure artifact.
       - name: Playwright (mocked IPC)
         env:

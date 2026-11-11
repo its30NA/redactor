@@ -184,9 +184,8 @@ jobs:
           set -euo pipefail
           flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
           echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
-      - name: musl tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
+      # No musl-tools: scrub has no C code, and the musl target ships its own C runtime
+      # (static-pie, checked locally 2026-11-11), so the release needs no apt mirror.
       - name: Build
         env:
           TARGET: ${{ matrix.target }}
