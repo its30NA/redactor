@@ -1061,3 +1061,32 @@ fn docker_auth_needs_credentials() {
         assert_miss("docker_config_auth", text);
     }
 }
+
+/// A `.pgpass` line has a host (no file name or path) and a password without blanks and with
+/// at most one unescaped `:`; `grep -n` output, IPv6 addresses and passwd lines are none.
+#[test]
+fn pgpass_lines_are_not_grep_output() {
+    for (text, secret) in [
+        (
+            "db.internal.example:5432:shop:shop_app:Quartz-Lantern-82\n",
+            "Quartz-Lantern-82",
+        ),
+        ("*:*:*:replicator:Nimbus\\:Pike-57\n", "Nimbus\\:Pike-57"),
+        (
+            "pg-primary.svc.cluster.local:5432:*:app:Hollow:Fern-73\n",
+            "Hollow:Fern-73",
+        ),
+    ] {
+        assert_hit("pgpass_line", text, secret);
+    }
+    for text in [
+        "app.log:1532:10:15:30 INFO scheduler started\n",
+        "values.yaml:12:image:nginx:1.25.3\n",
+        "deploy/values.yaml:10:3:image:nginx:1.25.3-alpine\n",
+        "fe80:0:0:0:202:b3ff:fe1e:8329\n",
+        "nobody:*:-2:-2:Unprivileged User:/var/empty:/usr/bin/false\n",
+        "src/main.rs:120:4:error:expected one of `,` or `)`\n",
+    ] {
+        assert_miss("pgpass_line", text);
+    }
+}

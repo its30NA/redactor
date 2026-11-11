@@ -1,0 +1,6 @@
+# .pgpass lines: host:port:database:user:password, a colon in the password escaped or not
+db.internal.example:5432:shop:shop_app:⟦*|Quartz-Lantern-82⟧
+*:*:*:replicator:⟦*|Nimbus\:Pike-57⟧
+10.0.4.40:6432:billing:billing:⟦*|Kx9!mPq2vL#4⟧
+pg-primary.svc.cluster.local:5432:*:app:⟦*|Hollow:Fern-73⟧
+localhost:5432:app:app:⟦*|wombat-saddle-19⟧

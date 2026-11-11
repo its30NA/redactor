@@ -188,12 +188,21 @@ fn code_reference(v: &str) -> bool {
     !path.is_empty() && path.split('.').all(ident) && (call || parts >= 2)
 }
 
-/// A `.pgpass` host field: a hostname, an address or `*`, never a pure number (times).
+/// A `.pgpass` host field: a hostname, an address or `*`, never a pure number (times), a
+/// path or a file name (`app.log:1532:…`, `src/main.rs:120:4:…` are `grep -n` and compiler
+/// output). The password has no blanks and at most one unescaped `:` (`.pgpass` escapes
+/// them as `\:`); IPv6 addresses and `/etc/passwd` lines have more.
 fn pgpass(h: &Hit) -> Verdict {
     let host = h.text[h.start..h.end].split(':').next().unwrap_or("");
     // `/etc/shadow`: `name:hash:19800:0:99999:7:::` ends in day counts and empty fields.
     let pw = &h.text[h.s_start..h.s_end];
     if pw.contains(':') && pw.bytes().all(|b| b.is_ascii_digit() || b == b':') {
+        return Verdict::Reject;
+    }
+    if pw.contains([' ', '\t']) || pw.replace("\\:", "").matches(':').count() > 1 {
+        return Verdict::Reject;
+    }
+    if host.contains(['/', '\\']) || file_name(host) {
         return Verdict::Reject;
     }
     if host
@@ -204,6 +213,59 @@ fn pgpass(h: &Hit) -> Verdict {
     } else {
         Verdict::Reject
     }
+}
+
+/// A name that ends in a common file extension (`values.yaml`, `app.log`, `main.rs`).
+fn file_name(name: &str) -> bool {
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    !stem.is_empty()
+        && matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "log"
+                | "txt"
+                | "md"
+                | "rst"
+                | "yaml"
+                | "yml"
+                | "json"
+                | "toml"
+                | "ini"
+                | "cfg"
+                | "conf"
+                | "xml"
+                | "html"
+                | "csv"
+                | "lock"
+                | "rs"
+                | "py"
+                | "js"
+                | "mjs"
+                | "ts"
+                | "tsx"
+                | "jsx"
+                | "go"
+                | "java"
+                | "kt"
+                | "c"
+                | "h"
+                | "cc"
+                | "cpp"
+                | "hpp"
+                | "cs"
+                | "rb"
+                | "php"
+                | "sh"
+                | "sql"
+                | "swift"
+                | "scala"
+                | "vue"
+                | "svelte"
+                | "gz"
+                | "out"
+                | "err"
+        )
 }
 
 /// Longest password with `/`, `?` or `#` in it that the userinfo scan reads.
