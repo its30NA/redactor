@@ -93,6 +93,17 @@ jobs:
           cache-dependency-path: app/ui/package-lock.json
       - name: Install
         run: npm ci --no-audit --no-fund
+      # The notices list every crate and npm package that ships: they need the cargo sources
+      # (cargo fetch) and node_modules (npm ci above). Fails when the committed file is stale.
+      - name: Toolchain (third-party notices)
+        working-directory: .
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Third-party notices are up to date
+        working-directory: .
+        run: |
+          cargo fetch --locked
+          tools/gen-notices.sh
+          git diff --exit-code THIRD_PARTY_NOTICES.md
       - name: Typecheck
         run: npm run check
       - name: Lint
