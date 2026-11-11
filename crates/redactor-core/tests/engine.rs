@@ -579,3 +579,40 @@ fn guard_takes_only_real_placeholders_as_redacted() {
         assert_eq!(out.output, text, "{:?}", out.findings);
     }
 }
+
+/// Every character of `s` as a JSON `\u00XX` escape.
+fn u_escaped(s: &str) -> String {
+    s.bytes().map(|b| format!("\\u{b:04x}")).collect()
+}
+
+/// An escape JSON does not know is a boundary in the decoded text: a letter it leaves
+/// (`\q` + escaped token -> `\q<token>`) does not glue onto the token after it and hide it
+/// (review of the 2026-11-10 audit fixes: regression from finding 9's fix).
+#[test]
+fn unknown_escape_is_a_boundary_before_an_escaped_token() {
+    let token = format!("{}-Ab1Cd2Ef3Gh4Ij5Kl6Mn", concat!("gl", "pat"));
+    let escaped = u_escaped(&token);
+    for prefix in [
+        r"x=\s",
+        r"x=\q",
+        r"x=\d",
+        r"x=\x",
+        r"x=\a",
+        r"path=C:\dir\s",
+        r#""v": "\a"#,
+        r"x=\n",
+    ] {
+        let text = format!("{prefix}{escaped}\n");
+        let out = engine().scan(&text, &ScanRequest::default());
+        assert!(
+            !out.output.contains(&escaped[12..]),
+            "{prefix}: {}",
+            out.output
+        );
+        assert!(
+            out.findings.iter().any(|f| f.label.contains("GitLab")),
+            "{prefix}: {:?}",
+            out.findings
+        );
+    }
+}

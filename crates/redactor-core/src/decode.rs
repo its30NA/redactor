@@ -7,7 +7,8 @@
 //! - percent-encoded runs with at least one `%XX` (a secret with a single symbol is
 //!   encoded with one escape),
 //! - JSON string runs with at least one `\uXXXX` escape (an escape JSON does not know is
-//!   copied through as it stands).
+//!   copied through as it stands; a run with one is also decoded a second time with each
+//!   such escape read as a space, so the letter it leaves does not glue onto what follows).
 //!
 //! A run becomes a [`Layer`] only when it decodes to valid UTF-8 of which at least 80 % is
 //! printable. A base64 run with `/`, `-`, `_` or `+` that does not may be base64 glued to a
@@ -464,6 +465,32 @@ fn hex4(b: &[u8]) -> Option<u32> {
     )
 }
 
+/// The decoded text of one JSON escape run. A run with an escape JSON does not know is
+/// decoded twice: with the escape copied through as it stands, and with it read as a space
+/// (`bounded`), so the letter it leaves cannot glue onto a token right after it
+/// (`\q` + `\u0067...` would otherwise read `\qg...` and miss the token's boundary).
+struct Decoded {
+    plain: String,
+    bounded: Option<String>,
+}
+
+impl Decoded {
+    fn push(&mut self, c: char) {
+        self.plain.push(c);
+        if let Some(b) = &mut self.bounded {
+            b.push(c);
+        }
+    }
+
+    /// An unknown escape `raw` (the backslash and the character after it, if any).
+    fn unknown(&mut self, raw: &str) {
+        self.bounded
+            .get_or_insert_with(|| self.plain.clone())
+            .push(' ');
+        self.plain.push_str(raw);
+    }
+}
+
 /// Runs of JSON string content (no quote, no line break) holding at least one `\uXXXX`.
 fn json_escapes(text: &str, bytes: &[u8], budget: &mut Budget, out: &mut Vec<Layer>) {
     let mut from = 0;
@@ -482,28 +509,20 @@ fn json_escapes(text: &str, bytes: &[u8], budget: &mut Budget, out: &mut Vec<Lay
         while !text.is_char_boundary(start) {
             start += 1;
         }
-        let mut decoded = String::new();
+        let mut decoded = Decoded {
+            plain: String::new(),
+            bounded: None,
+        };
         let mut k = start;
         let mut escapes = 0;
         let mut pending_high: Option<u32> = None;
         while k < bytes.len() && !matches!(bytes[k], b'"' | b'\n' | b'\r' | b'\'') {
             if bytes[k] == b'\\' {
-                // An escape JSON does not know (`\x`, `\u` without four hex digits, a
-                // backslash at the end) is copied through as it stands; the run goes on.
                 let next = bytes.get(k + 1).copied();
                 let cp = if next == Some(b'u') {
                     hex4(&bytes[k + 2..])
                 } else {
                     None
-                };
-                let simple = match next {
-                    Some(b'n') => Some('\n'),
-                    Some(b't') => Some('\t'),
-                    Some(b'r') => Some('\r'),
-                    Some(b'b') => Some('\u{8}'),
-                    Some(b'f') => Some('\u{c}'),
-                    Some(c @ (b'"' | b'\\' | b'/')) => Some(c as char),
-                    _ => None,
                 };
                 if let Some(cp) = cp {
                     escapes += 1;
@@ -528,14 +547,33 @@ fn json_escapes(text: &str, bytes: &[u8], budget: &mut Budget, out: &mut Vec<Lay
                     }
                     continue;
                 }
+                if pending_high.take().is_some() {
+                    decoded.push('\u{FFFD}');
+                }
+                let simple = match next {
+                    Some(b'n') => Some('\n'),
+                    Some(b't') => Some('\t'),
+                    Some(b'r') => Some('\r'),
+                    Some(b'b') => Some('\u{8}'),
+                    Some(b'f') => Some('\u{c}'),
+                    Some(c @ (b'"' | b'\\' | b'/')) => Some(c as char),
+                    _ => None,
+                };
                 if let Some(c) = simple {
-                    if pending_high.take().is_some() {
-                        decoded.push('\u{FFFD}');
-                    }
                     decoded.push(c);
                     k += 2;
                     continue;
                 }
+                // An escape JSON does not know (`\x`, `\u` without four hex digits, a
+                // backslash at the end) is copied through as it stands (and read as a space
+                // in the bounded copy); the run goes on. Quotes and line breaks still end it.
+                let len = match text[k + 1..].chars().next() {
+                    Some(c) if !matches!(c, '"' | '\n' | '\r' | '\'') => 1 + c.len_utf8(),
+                    _ => 1,
+                };
+                decoded.unknown(&text[k..k + len]);
+                k += len;
+                continue;
             }
             if pending_high.take().is_some() {
                 decoded.push('\u{FFFD}');
@@ -548,7 +586,11 @@ fn json_escapes(text: &str, bytes: &[u8], budget: &mut Budget, out: &mut Vec<Lay
             decoded.push('\u{FFFD}');
         }
         if escapes > 0 {
-            push(out, budget, start..k, decoded.into_bytes());
+            let Decoded { plain, bounded } = decoded;
+            push(out, budget, start..k, plain.into_bytes());
+            if let Some(bounded) = bounded {
+                push(out, budget, start..k, bounded.into_bytes());
+            }
         }
         from = k.max(first + 2);
     }
@@ -614,6 +656,21 @@ mod tests {
         // So does a `\u` without four hex digits, and a backslash at the end.
         let got = layers(r"a\uZZ b\u0041bc\");
         assert!(got.iter().any(|(_, d)| d.ends_with(r"ZZ bAbc\")), "{got:?}");
+    }
+
+    #[test]
+    fn unknown_escape_is_also_read_as_a_boundary() {
+        // Copied through (`\qAB`) and, in a second layer over the same run, read as a space.
+        let got = layers(r"x=\q\u0041\u0042 \d");
+        assert_eq!(
+            got,
+            vec![
+                (r"x=\q\u0041\u0042 \d".into(), r"x=\qAB \d".into()),
+                (r"x=\q\u0041\u0042 \d".into(), "x= AB  ".into()),
+            ]
+        );
+        // A run without unknown escapes gets one layer.
+        assert_eq!(layers(r"\u0041\u0042\u0043\n").len(), 1);
     }
 
     #[test]
