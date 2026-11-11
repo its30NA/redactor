@@ -37,8 +37,8 @@ use lexicon::{
 };
 use prose::{prose_value, ProseHit};
 use syntax::{
-    array_items, ceil, command, floor, for_each_event, line_end, next_line_value, pair, Event, Key,
-    RawPair, Sep,
+    array_items, ceil, command, floor, for_each_event, line_end, next_line_value, pair, Cmd, Event,
+    Key, RawPair, Sep,
 };
 pub(crate) use value::{looks_like_password, value_score};
 
@@ -79,8 +79,20 @@ impl Detector for ContextDetector {
                     return Some(v.end);
                 }
                 let f = judge_command(text, v.start, v.end)?;
-                let e = f.end;
+                let mut e = f.end;
                 found.push(f);
+                // `ssh-keygen -p -P old -N new`: both passphrases.
+                if cmd == Cmd::SshKeygen {
+                    let from = e + usize::from(text[e..].starts_with(['"', '\'']));
+                    if let Some(w) = command(text, start, from, cmd) {
+                        if !metavariable(&text[w.clone()]) {
+                            if let Some(f) = judge_command(text, w.start, w.end) {
+                                e = f.end;
+                                found.push(f);
+                            }
+                        }
+                    }
+                }
                 Some(e)
             }
         });

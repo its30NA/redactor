@@ -1710,3 +1710,15 @@ fn guard_keeps_literal_dollars_and_non_paths() {
         );
     }
 }
+
+/// `ssh-keygen -p -P old -N new` holds two passphrases; both are redacted.
+#[test]
+fn ssh_keygen_old_and_new_passphrases() {
+    for text in [
+        "ssh-keygen -p -P \"Bucket4-Reef-0p\" -N \"Vivid-Meadow-88\" -f ~/.ssh/id_deploy\n",
+        "ssh-keygen -p -P 'Bucket4-Reef-0p' -N Vivid-Meadow-88 -f k\n",
+    ] {
+        assert_redacted(text, "Bucket4-Reef-0p");
+        assert_redacted(text, "Vivid-Meadow-88");
+    }
+}
