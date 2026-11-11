@@ -2385,7 +2385,11 @@ pub(crate) fn command(text: &str, start: usize, end: usize, cmd: Cmd) -> Option<
                     return None;
                 }
                 let r = after_user_opt(text, &toks, &["-p"])?;
-                super::looks_like_password(&text[r.clone()]).then_some(r)
+                // In a string literal of source code the escape, quote and comma after the
+                // word are not part of it (`"mysql -u root -p shop\n",`).
+                let v = text[r.clone()].trim_end_matches([',', ';', '"', '\'', ')']);
+                let v = v.strip_suffix("\\n").unwrap_or(v);
+                super::looks_like_password(v).then_some(r)
             }),
         Cmd::Sshpass => (0..toks.len()).find_map(|i| {
             let tok = t(i);

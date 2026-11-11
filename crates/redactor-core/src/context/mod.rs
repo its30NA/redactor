@@ -1575,6 +1575,18 @@ mod tests {
         }
     }
 
+    /// `mysql -u root -p shop` in a string literal of source code: the escape and quote
+    /// glued to the database name do not make it password-shaped.
+    #[test]
+    fn mysql_database_after_p_in_source() {
+        let text = "    \"mysql -u root -p shop\\n\",\n";
+        assert!(
+            pairs(text).iter().all(|(_, v, _)| !v.contains("shop")),
+            "{:?}",
+            pairs(text)
+        );
+    }
+
     #[test]
     fn expressions_and_types() {
         for v in [
