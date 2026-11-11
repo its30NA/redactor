@@ -6,10 +6,14 @@
 //! - hex runs of 32+ digits,
 //! - percent-encoded runs with at least one `%XX` (a secret with a single symbol is
 //!   encoded with one escape),
-//! - JSON string runs with at least one `\uXXXX` escape.
+//! - JSON string runs with at least one `\uXXXX` escape (an escape JSON does not know is
+//!   copied through as it stands).
 //!
 //! A run becomes a [`Layer`] only when it decodes to valid UTF-8 of which at least 80 % is
-//! printable. The engine scans the layers again (and their layers, up to depth 2) and maps
+//! printable. A base64 run with `/`, `-`, `_` or `+` that does not may be base64 glued to a
+//! path (`/cb/<base64>`): it is decoded at each of the four alignments, in either alphabet,
+//! and every stretch of 12+ bytes of readable text becomes a layer over the characters that
+//! encode it. The engine scans the layers again (and their layers, up to depth 2) and maps
 //! every hit back onto the whole encoded run. All decoded bytes of a scan share one
 //! [`Budget`].
 
