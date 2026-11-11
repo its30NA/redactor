@@ -294,19 +294,14 @@ fn normalize(raw: &str) -> Zeroizing<String> {
         out.push_str(raw);
         return out;
     }
+    // The engine's own definition of hidden (`prev` is the last character kept).
     let mut prev: Option<char> = None;
     let mut chars = raw.chars().peekable();
     while let Some(c) = chars.next() {
-        let before = prev.replace(c);
-        if is_hidden(c) {
-            // Keep a zero-width joiner between two non-ASCII characters (emoji sequences).
-            let joins = c == '\u{200D}'
-                && before.is_some_and(|b| !b.is_ascii())
-                && chars.peek().is_some_and(|n| !n.is_ascii());
-            if !joins {
-                continue;
-            }
+        if redactor_core::is_hidden(prev, c, chars.peek().copied()) {
+            continue;
         }
+        prev = Some(c);
         for n in std::iter::once(c).nfkc() {
             push_zeroizing(&mut out, n);
         }
@@ -332,19 +327,6 @@ fn lowercase_zeroizing(s: &str) -> Zeroizing<String> {
         push_zeroizing(&mut out, c);
     }
     out
-}
-
-fn is_hidden(c: char) -> bool {
-    matches!(c,
-        '\u{200B}'..='\u{200F}'
-        | '\u{2060}'..='\u{2064}'
-        | '\u{FEFF}'
-        | '\u{00AD}'
-        | '\u{180E}'
-        | '\u{034F}'
-        | '\u{202A}'..='\u{202E}'
-        | '\u{2066}'..='\u{2069}'
-        | '\u{E0000}'..='\u{E007F}')
 }
 
 /// UTC now as `YYYY-MM-DDTHH:MM:SSZ`.
@@ -570,6 +552,63 @@ mod tests {
         let out = engine.scan(&text, &ScanRequest::default());
         assert!(!out.output.contains(&secret));
         assert!(!out.output.contains(&secret[4..]));
+    }
+
+    /// The stored form drops exactly what the engine drops before detection (its own
+    /// definition: Default_Ignorable_Code_Point plus U+FFF9..U+FFFB, a joiner kept only
+    /// between emoji, U+FE0F only after an emoji), so a value remembered with any of these
+    /// characters matches the engine's shadow text.
+    #[test]
+    fn hidden_characters_are_the_engines() {
+        for hidden in [
+            '\u{061C}',
+            '\u{115F}',
+            '\u{17B4}',
+            '\u{180B}',
+            '\u{2065}',
+            '\u{206A}',
+            '\u{3164}',
+            '\u{FE00}',
+            '\u{FE0F}',
+            '\u{FFA0}',
+            '\u{FFF9}',
+            '\u{FFFB}',
+            '\u{1BCA0}',
+            '\u{1D173}',
+            '\u{E0100}',
+            '\u{E0FFF}',
+        ] {
+            let raw = format!("Plum{hidden}tree47");
+            assert_eq!(
+                normalize(&raw).as_str(),
+                "Plumtree47",
+                "{:04X}",
+                hidden as u32
+            );
+        }
+        // A joiner between two letters of a script that is not ASCII goes too; between two
+        // emoji, and U+FE0F after one, it stays.
+        assert_eq!(
+            normalize("\u{928}\u{200D}\u{94D}").as_str(),
+            "\u{928}\u{94D}"
+        );
+        assert_eq!(
+            normalize("\u{2764}\u{FE0F}\u{200D}\u{1F525}").as_str(),
+            "\u{2764}\u{FE0F}\u{200D}\u{1F525}"
+        );
+        // Remembered with one of the newer hidden characters, found in text that has another.
+        let store = Arc::new(SessionStore::new());
+        let secret = fake_secret(9);
+        let split = format!("{}\u{FFF9}{}", &secret[..4], &secret[4..]);
+        store
+            .remember(&split, 0, split.encode_utf16().count(), "Split")
+            .unwrap();
+        let engine = Engine::new(EngineConfig::default())
+            .unwrap()
+            .with_matcher(Arc::new(SessionMatcher(store)));
+        let text = format!("token {}\u{3164}{}\n", &secret[..2], &secret[2..]);
+        let out = engine.scan(&text, &ScanRequest::default());
+        assert!(!out.output.contains(&secret[2..]), "{}", out.output);
     }
 
     #[test]

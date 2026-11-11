@@ -33,6 +33,7 @@ pub use finding::{
     Candidate, Finding, MatcherHit, OutputSpan, ScanOutcome, SecretMatcher, Source, Tier, ValueKey,
     Warning, WarningKind,
 };
+pub use normalize::is_hidden;
 pub use utf16::Utf16Map;
 
 /// The engine version (the crate version).

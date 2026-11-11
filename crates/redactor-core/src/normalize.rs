@@ -257,6 +257,16 @@ pub(crate) fn hidden_at(prev: Option<char>, c: char, next: Option<char>) -> Opti
     Some(class)
 }
 
+/// Whether the engine removes `c` from text before detection, given the last character it
+/// kept (`prev`) and the character after `c` (`next`): Unicode's Default_Ignorable_Code_Point
+/// set plus the interlinear annotation controls U+FFF9..U+FFFB, except a zero-width joiner
+/// between two emoji, U+FE0E/U+FE0F right after an emoji and U+FE0F before the keycap mark.
+/// A [`crate::SecretMatcher`] sees the text with these removed, so it should store its
+/// values the same way.
+pub fn is_hidden(prev: Option<char>, c: char, next: Option<char>) -> bool {
+    hidden_at(prev, c, next).is_some()
+}
+
 /// Rough "part of an emoji sequence" test: pictographs, dingbats, symbols, skin tones,
 /// variation selector 16 and the keycap mark.
 fn is_emoji_part(c: char) -> bool {

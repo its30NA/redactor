@@ -72,3 +72,25 @@ fn value_key_hex_roundtrip() {
     assert_eq!(ValueKey::from_hex(&k.to_hex()), Some(k));
     assert_eq!(ValueKey::from_hex("zz"), None);
 }
+
+/// `is_hidden` is the engine's own test for what it removes before detection (the app
+/// stores remembered values with it).
+#[test]
+fn is_hidden_is_what_the_engine_removes() {
+    use redactor_core::is_hidden;
+    for c in [
+        '\u{200B}',
+        '\u{061C}',
+        '\u{3164}',
+        '\u{FFF9}',
+        '\u{E0100}',
+        '\u{202E}',
+    ] {
+        assert!(is_hidden(Some('a'), c, Some('b')), "{:04X}", c as u32);
+    }
+    assert!(!is_hidden(Some('a'), 'b', Some('c')));
+    // Kept: a joiner between emoji, U+FE0F after one.
+    assert!(!is_hidden(Some('\u{1F469}'), '\u{200D}', Some('\u{1F4BB}')));
+    assert!(!is_hidden(Some('\u{2764}'), '\u{FE0F}', None));
+    assert!(is_hidden(Some('a'), '\u{FE0F}', None));
+}
