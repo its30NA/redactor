@@ -14,15 +14,15 @@ The corpus lives in `corpus/`. Positive files mark every secret; vendor-shaped t
 
 | Measure | Value |
 |---|---|
-| Positive files | 62 |
-| Negative files | 31 |
-| Marked secrets (Balanced) | 365 |
-| Marked secrets (Paranoid) | 367 |
-| Balanced recall | 100.0% (365/365) |
-| Paranoid recall | 100.0% (367/367) |
-| Balanced precision on positive files | 100.0% (365/365) |
+| Positive files | 92 |
+| Negative files | 62 |
+| Marked secrets (Balanced) | 811 |
+| Marked secrets (Paranoid) | 813 |
+| Balanced recall | 100.0% (811/811) |
+| Paranoid recall | 100.0% (813/813) |
+| Balanced precision on positive files | 100.0% (811/811) |
 | Balanced findings in negative files | 0 |
-| Paranoid findings in negative files | 20 |
+| Paranoid findings in negative files | 28 |
 
 Precision counts Balanced findings that overlap a marked secret. A finding outside the marks in a positive file lowers it; in a negative file every finding is a false positive.
 
@@ -33,14 +33,24 @@ The detectors are tuned against this corpus, so the numbers show that every know
 | File | Balanced | Recall | Paranoid | Recall | Findings | Precision |
 |---|---:|---:|---:|---:|---:|---:|
 | `ai_keys.txt` | 7/7 | 100.0% | 7/7 | 100.0% | 7 | 100.0% |
+| `arrays_multiline_keyless.txt` | 21/21 | 100.0% | 21/21 | 100.0% | 21 | 100.0% |
+| `base64_in_url_path.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
+| `call_arguments.txt` | 12/12 | 100.0% | 12/12 | 100.0% | 12 | 100.0% |
 | `chat_en.txt` | 4/4 | 100.0% | 5/5 | 100.0% | 4 | 100.0% |
 | `cli_flags.txt` | 9/9 | 100.0% | 9/9 | 100.0% | 9 | 100.0% |
 | `cloud_creds.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
+| `comma_paren_pairs.txt` | 18/18 | 100.0% | 18/18 | 100.0% | 18 | 100.0% |
+| `command_metavariable_neighbours.txt` | 11/11 | 100.0% | 11/11 | 100.0% | 11 | 100.0% |
+| `command_passwords.txt` | 50/50 | 100.0% | 50/50 | 100.0% | 50 | 100.0% |
+| `config_values_with_operators.txt` | 24/24 | 100.0% | 24/24 | 100.0% | 24 | 100.0% |
+| `connection_string_chains.txt` | 7/7 | 100.0% | 7/7 | 100.0% | 7 | 100.0% |
 | `connection_strings.txt` | 9/9 | 100.0% | 9/9 | 100.0% | 9 | 100.0% |
 | `crlf_windows_config.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
 | `crypto_keys.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
 | `csharp_snippet.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
 | `curl_commands.txt` | 8/8 | 100.0% | 8/8 | 100.0% | 8 | 100.0% |
+| `digit_and_short_passwords.txt` | 13/13 | 100.0% | 13/13 | 100.0% | 13 | 100.0% |
+| `docker_auths_compact.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `dockerfile_compose.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `email_en.txt` | 2/2 | 100.0% | 3/3 | 100.0% | 2 | 100.0% |
 | `encoded_secrets.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
@@ -49,6 +59,7 @@ The detectors are tuned against this corpus, so the numbers show that every know
 | `env_values_with_spaces.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
 | `github_actions.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `go_snippet.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
+| `guard_literal_values.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `harsh_01_glued.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `harsh_03_conn_email_password.txt` | 2/2 | 100.0% | 2/2 | 100.0% | 2 | 100.0% |
 | `harsh_04_jwt_bearer.txt` | 2/2 | 100.0% | 2/2 | 100.0% | 2 | 100.0% |
@@ -63,35 +74,54 @@ The detectors are tuned against this corpus, so the numbers show that every know
 | `java_properties.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `js_snippet.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `json_config.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
+| `json_escapes.txt` | 10/10 | 100.0% | 10/10 | 100.0% | 10 | 100.0% |
 | `json_special_chars.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `k8s_secret_manifest.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `kubeconfig.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
+| `lexicon_gaps.txt` | 27/27 | 100.0% | 27/27 | 100.0% | 27 | 100.0% |
 | `log_stacktrace.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `logfmt_lines.txt` | 12/12 | 100.0% | 12/12 | 100.0% | 12 | 100.0% |
+| `long_key_names.txt` | 38/38 | 100.0% | 38/38 | 100.0% | 38 | 100.0% |
+| `markdown_html_tables.txt` | 18/18 | 100.0% | 18/18 | 100.0% | 18 | 100.0% |
+| `name_value_siblings.txt` | 13/13 | 100.0% | 13/13 | 100.0% | 13 | 100.0% |
+| `negative_word_before_head.txt` | 30/30 | 100.0% | 30/30 | 100.0% | 30 | 100.0% |
 | `netrc_pgpass_gitcreds.txt` | 9/9 | 100.0% | 9/9 | 100.0% | 9 | 100.0% |
 | `nginx_apache.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
-| `npmrc_docker_config.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
+| `npmrc_docker_config.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
+| `partial_leaks.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
 | `password_hashes.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
+| `pgpass_lines.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `plain_word_passwords.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
 | `powershell.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
+| `prose_connectors.txt` | 23/23 | 100.0% | 23/23 | 100.0% | 23 | 100.0% |
 | `prose_de.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
 | `prose_es.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `prose_fa.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `prose_fr.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `python_snippet.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
+| `query_params_separators.txt` | 9/9 | 100.0% | 9/9 | 100.0% | 9 | 100.0% |
+| `query_values_opaque.txt` | 8/8 | 100.0% | 8/8 | 100.0% | 8 | 100.0% |
 | `rust_snippet.txt` | 2/2 | 100.0% | 2/2 | 100.0% | 2 | 100.0% |
 | `saas_tokens.txt` | 23/23 | 100.0% | 23/23 | 100.0% | 23 | 100.0% |
+| `secret_store_lookalikes.txt` | 2/2 | 100.0% | 2/2 | 100.0% | 2 | 100.0% |
 | `shell_history.txt` | 9/9 | 100.0% | 9/9 | 100.0% | 9 | 100.0% |
 | `special_char_passwords.txt` | 12/12 | 100.0% | 12/12 | 100.0% | 12 | 100.0% |
 | `sql.txt` | 6/6 | 100.0% | 6/6 | 100.0% | 6 | 100.0% |
 | `terraform.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 | `toml_config.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
 | `unicode_noise.txt` | 8/8 | 100.0% | 8/8 | 100.0% | 8 | 100.0% |
+| `untagged_tokens.txt` | 8/8 | 100.0% | 8/8 | 100.0% | 8 | 100.0% |
+| `url_password_shapes.txt` | 13/13 | 100.0% | 13/13 | 100.0% | 13 | 100.0% |
 | `url_passwords_config.txt` | 9/9 | 100.0% | 9/9 | 100.0% | 9 | 100.0% |
 | `urls_with_credentials.txt` | 11/11 | 100.0% | 11/11 | 100.0% | 11 | 100.0% |
+| `user_slash_pairs.txt` | 10/10 | 100.0% | 10/10 | 100.0% | 10 | 100.0% |
 | `v1_probes.txt` | 23/23 | 100.0% | 23/23 | 100.0% | 23 | 100.0% |
 | `vendor_labels_config.txt` | 14/14 | 100.0% | 14/14 | 100.0% | 14 | 100.0% |
+| `word_like_passwords.txt` | 42/42 | 100.0% | 42/42 | 100.0% | 42 | 100.0% |
+| `wrapped_base64.txt` | 3/3 | 100.0% | 3/3 | 100.0% | 3 | 100.0% |
+| `wrapped_base64_crlf.txt` | 1/1 | 100.0% | 1/1 | 100.0% | 1 | 100.0% |
 | `xml_dotnet_config.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
+| `xml_elements.txt` | 10/10 | 100.0% | 10/10 | 100.0% | 10 | 100.0% |
 | `yaml_app.txt` | 4/4 | 100.0% | 4/4 | 100.0% | 4 | 100.0% |
 | `yaml_special_chars.txt` | 5/5 | 100.0% | 5/5 | 100.0% | 5 | 100.0% |
 
@@ -100,24 +130,49 @@ The detectors are tuned against this corpus, so the numbers show that every know
 | File | Balanced findings | Paranoid findings |
 |---|---:|---:|
 | `app_log_no_secrets.txt` | 0 | 4 |
+| `arrays_lists_plain.txt` | 0 | 0 |
+| `call_arguments_plain.txt` | 0 | 0 |
 | `cargo_lock.txt` | 0 | 0 |
+| `cli_help_plain.txt` | 0 | 0 |
+| `cli_metavariables.txt` | 0 | 0 |
+| `code_args_members.txt` | 0 | 0 |
+| `code_operators_plain.txt` | 0 | 0 |
+| `code_query_lookalikes.txt` | 0 | 0 |
+| `code_semicolon_statements.txt` | 0 | 0 |
+| `code_word_values.txt` | 0 | 0 |
+| `colon_fields_not_pgpass.txt` | 0 | 0 |
 | `css_styles.txt` | 0 | 0 |
 | `csv_data.txt` | 0 | 0 |
 | `docker_compose_env_refs.txt` | 0 | 0 |
 | `git_log.txt` | 0 | 0 |
 | `go_code_hashes.txt` | 0 | 8 |
+| `guard_references_plain.txt` | 0 | 0 |
 | `harsh_02_bait.txt` | 0 | 2 |
 | `harsh_06_decoys.txt` | 0 | 0 |
+| `hashes_ids_plain.txt` | 0 | 3 |
 | `html_base64_images.txt` | 0 | 0 |
 | `i18n_strings.txt` | 0 | 0 |
+| `json_auth_words.txt` | 0 | 0 |
+| `json_escaped_logs.txt` | 0 | 0 |
 | `k8s_deployment_digests.txt` | 0 | 0 |
+| `key_modifiers_plain.txt` | 0 | 0 |
+| `lexicon_gap_words_plain.txt` | 0 | 0 |
+| `long_key_names_plain.txt` | 0 | 2 |
 | `markdown_api_docs.txt` | 0 | 0 |
+| `markdown_password_docs.txt` | 0 | 0 |
 | `minified_js.txt` | 0 | 0 |
+| `name_value_plain.txt` | 0 | 0 |
+| `npmrc_lookalikes.txt` | 0 | 0 |
+| `numbers_near_keys_plain.txt` | 0 | 0 |
 | `openapi_spec.txt` | 0 | 0 |
 | `package_lock.txt` | 0 | 0 |
+| `partial_leaks_plain.txt` | 0 | 0 |
 | `prose_de.txt` | 0 | 0 |
 | `prose_en.txt` | 0 | 0 |
+| `prose_password_talk.txt` | 0 | 3 |
+| `public_keys_pod_names.txt` | 0 | 0 |
 | `python_auth_code.txt` | 0 | 0 |
+| `query_values_readable.txt` | 0 | 0 |
 | `repo_alphabet_consts.txt` | 0 | 0 |
 | `repo_bip39_wordlist.txt` | 0 | 0 |
 | `repo_cargo_features.txt` | 0 | 0 |
@@ -126,7 +181,13 @@ The detectors are tuned against this corpus, so the numbers show that every know
 | `repo_tauri_capabilities.txt` | 0 | 0 |
 | `rust_engine_code.txt` | 0 | 0 |
 | `rust_ffi_identifiers.txt` | 0 | 0 |
+| `secret_store_references.txt` | 0 | 0 |
+| `slash_pairs_plain.txt` | 0 | 0 |
 | `sql_schema.txt` | 0 | 0 |
 | `ts_code_uuids.txt` | 0 | 0 |
+| `url_at_paths_plain.txt` | 0 | 0 |
+| `url_paths_plain.txt` | 0 | 0 |
+| `wrapped_base64_plain.txt` | 0 | 0 |
+| `xml_config_plain.txt` | 0 | 0 |
 | `yarn_lock.txt` | 0 | 0 |
 | `README.md` | 0 | 6 |
