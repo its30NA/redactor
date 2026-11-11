@@ -224,7 +224,7 @@ fn alphabet(t: &[u8]) -> bool {
 /// It splits at `_`, `-` and case changes; every segment is a word or an acronym with at
 /// most four digits after it, and at most a third are one or two letters run into the next. A digit followed
 /// by a lowercase letter (`K9wQe`) is random, not a name.
-fn is_identifier(t: &[u8]) -> bool {
+pub(crate) fn is_identifier(t: &[u8]) -> bool {
     // (segment, whether it is a whole `_`/`-` part)
     let mut segs: Vec<(&[u8], bool)> = Vec::new();
     for part in t.split(|&b| b == b'_' || b == b'-') {

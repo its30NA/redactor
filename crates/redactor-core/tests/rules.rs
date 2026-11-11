@@ -1035,3 +1035,29 @@ fn query_separators_need_a_url_or_form_body() {
         assert_miss(id, text);
     }
 }
+
+/// A Docker `"auth"` is base64 of `user:password` or a random token; a scheme name in an
+/// `"auth"` field of some other JSON is neither.
+#[test]
+fn docker_auth_needs_credentials() {
+    let mut g = Gen::named("docker-auth");
+    let pair = b64_encode(format!("ci-bot:{}", g.alnum(18)).as_bytes());
+    assert_hit(
+        "docker_config_auth",
+        &format!("{{\"auths\":{{\"ghcr.io\":{{\"auth\":\"{pair}\"}}}}}}\n"),
+        &pair,
+    );
+    assert_hit(
+        "docker_config_auth",
+        "{\"auths\": {\"cr.example.com\": {\"auth\": \"Hx4mKq9Zp2Lw7Rt5Vb8N\"}}}\n",
+        "Hx4mKq9Zp2Lw7Rt5Vb8N",
+    );
+    for text in [
+        "{\"endpoint\": \"/v1/items\", \"auth\": \"required\", \"method\": \"GET\"}\n",
+        "{\"name\": \"items\", \"auth\": \"oauth2-proxy\", \"public\": false}\n",
+        "\"auth\": \"basic-auth\",\n",
+        "\"auth\": \"session-cookie\",\n",
+    ] {
+        assert_miss("docker_config_auth", text);
+    }
+}

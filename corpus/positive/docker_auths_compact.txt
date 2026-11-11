@@ -1,0 +1,5 @@
+# Docker config auths: base64 of user:password, compact and pretty, and a raw token
+{"auths":{"ghcr.io":{"auth":"⟦gen:basic_auth#a⟧"}}}
+{"auths": {"registry.example.com": {"auth": "⟦gen:basic_auth#b⟧", "email": "ci@example.com"}}}
+{"auths": {"quay.example.com": {"identitytoken": "⟦gen:alnum40#c⟧"}}}
+{"auths": {"cr.example.com": {"auth": "⟦*|Hx4mKq9Zp2Lw7Rt5Vb8N⟧"}}}

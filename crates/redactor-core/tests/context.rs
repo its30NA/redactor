@@ -1670,3 +1670,21 @@ fn dotenv_passphrases_are_not_shell_lines() {
         "Tulip-Harbor-91",
     );
 }
+
+/// A weak key (`auth`, `key`) with lowercase words joined by `-` or `_` names a scheme or a
+/// thing; a random value there is still redacted.
+#[test]
+fn weak_keys_skip_lowercase_word_names() {
+    for text in [
+        "{\"name\": \"items\", \"auth\": \"oauth2-proxy\", \"public\": false}\n",
+        "auth: proxy-v2\n",
+    ] {
+        let out = scan_at(text, Sensitivity::Balanced);
+        assert!(
+            out.findings.iter().all(|f| f.kept),
+            "{text:?}: {:?}",
+            out.findings
+        );
+    }
+    assert_redacted("auth: Zq81mXv0pLr3TfK9wQe2\n", "Zq81mXv0pLr3TfK9wQe2");
+}

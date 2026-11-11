@@ -432,7 +432,11 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         let echoes = split_key(v)
             .iter()
             .any(|w| w.len() >= 3 && key.words.contains(w));
-        if !random || v.chars().count() < 8 || hash_field || echoes {
+        // `auth: oauth2-proxy`, `key: proxy-v2`: lowercase words joined by `-` or `_` name
+        // a scheme or a thing.
+        let name = !v.bytes().any(|b| b.is_ascii_uppercase())
+            && crate::classifier::is_word_name(v.as_bytes());
+        if !random || v.chars().count() < 8 || hash_field || echoes || name {
             return None;
         }
         return Some(found(0.7, R_WEAK, ident_check));

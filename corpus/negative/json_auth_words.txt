@@ -1,0 +1,8 @@
+{"endpoint": "/v1/items", "auth": "required", "method": "GET"}
+{"name": "items", "auth": "oauth2-proxy", "public": false}
+"auth": "basic-auth",
+{"path": "/admin", "auth": "session-cookie"}
+{"route": "/health", "auth": "anonymous", "cache": "no-store"}
+  "auth": "bearer-token",
+  "auth": "api-key-header",
+{"provider": "github", "auth": "device-flow"}

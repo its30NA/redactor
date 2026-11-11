@@ -274,6 +274,32 @@ fn userinfo(text: &str, _start: usize, end: usize) -> Option<(usize, usize, usiz
     Some((ss, ss + at, ss + at + 1))
 }
 
+/// A Docker `"auth"` is base64 of `user:password`; a raw random token there counts too.
+/// Words (`"auth": "required"`, `"oauth2-proxy"`) name a scheme. An `"identitytoken"` is a
+/// token as it stands.
+fn docker_auth(h: &Hit) -> Verdict {
+    if h.text[h.start..].starts_with("\"identitytoken\"") {
+        return Verdict::Keep;
+    }
+    let s = h.secret();
+    if let Some(b) = validate::b64_decode(s) {
+        if let Ok(pair) = std::str::from_utf8(&b) {
+            if let Some((user, pass)) = pair.split_once(':') {
+                if !user.is_empty() && !pass.is_empty() && !pair.chars().any(char::is_control) {
+                    return Verdict::Keep;
+                }
+            }
+        }
+    }
+    let random =
+        s.len() >= 16 && validate::char_classes(s) >= 3 && crate::context::value_score(s) >= 0.5;
+    if random {
+        Verdict::Conf(0.8, "\"auth\": \"<random token>\" (Docker config)")
+    } else {
+        Verdict::Reject
+    }
+}
+
 /// How far back [`in_query`] looks for the start of the URL a parameter belongs to.
 const QUERY_BACK: usize = 4096;
 
@@ -624,7 +650,8 @@ pub(super) fn rules() -> Vec<Rule> {
             0.95,
         )
         .fwd(8192)
-        .bounds(Bound::None, Bound::Quote),
+        .bounds(Bound::None, Bound::Quote)
+        .check(docker_auth),
         r(
             "npmrc_auth",
             "npm Registry Token",

@@ -11,7 +11,7 @@ mod features;
 #[rustfmt::skip]
 mod model;
 
-pub(crate) use detect::{ClassifierDetector, ID};
+pub(crate) use detect::{is_identifier as is_word_name, ClassifierDetector, ID};
 
 /// int8 log2-probabilities (scaled) of lowercase letter trigrams, 27³ entries.
 static TRIGRAM: &[u8; 27 * 27 * 27] = include_bytes!("trigram.bin");
