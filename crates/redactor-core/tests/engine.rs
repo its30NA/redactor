@@ -616,3 +616,41 @@ fn unknown_escape_is_a_boundary_before_an_escaped_token() {
         );
     }
 }
+
+/// Text glued right after a real placeholder is read as if the placeholder were not there:
+/// on a key line it is the key's value (review of the 2026-11-10 audit fixes, open item).
+/// Placeholders followed by a blank or punctuation, and glued text that is no value, stay.
+#[test]
+fn value_glued_onto_a_placeholder_is_checked() {
+    let e = engine();
+    for (text, value) in [
+        (
+            "secret = [REDACTED: Password #1]Juniper-Coast-55\n",
+            "Juniper-Coast-55",
+        ),
+        (
+            "secret=[REDACTED: Password #1]Juniper-Coast-55\n",
+            "Juniper-Coast-55",
+        ),
+        (
+            "{\"secret\": \"[REDACTED: Password #1]Juniper-Coast-55\"}\n",
+            "Juniper-Coast-55",
+        ),
+        (
+            "password: [REDACTED: Secret]Tr0ub4dor-here\n",
+            "Tr0ub4dor-here",
+        ),
+    ] {
+        let out = e.scan(text, &ScanRequest::default());
+        assert!(!out.output.contains(value), "{text}: {}", out.output);
+        assert!(out.output.contains("[REDACTED: Password #1]") || text.contains("Secret]"));
+        let again = e.scan(&out.output, &ScanRequest::default());
+        assert_eq!(again.output, out.output, "{:?}", again.findings);
+    }
+    let clean = "{\"password\": \"[REDACTED: Password #1]\",\n\
+                 \"url\": \"https://u:[REDACTED: Password #1]@db.example.org/x\"}\n\
+                 see [REDACTED: Password #1]. Old [REDACTED: Password #1]s were rotated\n\
+                 [REDACTED: Password #1][REDACTED: Secret #2]\n";
+    let out = e.scan(clean, &ScanRequest::default());
+    assert_eq!(out.output, clean, "{:?}", out.findings);
+}

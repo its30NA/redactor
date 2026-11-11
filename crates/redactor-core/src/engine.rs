@@ -329,10 +329,12 @@ impl Engine {
             c.end = r.end;
         }
 
-        // Placeholders already in the text are not touched.
+        // Placeholders already in the text are not touched; text glued right after one is
+        // read as if it were not there.
         let protected = self.protected(text, known);
         if !protected.is_empty() {
             protect(text, &mut raw, &protected);
+            raw.extend(self.glued(text, &protected, pii));
         }
 
         // 4.-5. Guards and threshold.
@@ -551,6 +553,68 @@ impl Engine {
         merged
     }
 
+    /// Text glued right after a placeholder (`secret = [REDACTED: Password #1]Juniper-Coast-55`)
+    /// is read as if the placeholder were not there: the placeholder's line without it (at
+    /// most [`GLUE_WINDOW`] bytes on either side, never into another placeholder) goes into
+    /// one buffer that the detectors scan once. A hit that starts where the placeholder was
+    /// becomes a candidate in `text`; the main scan has the hits before it, and hits across
+    /// it are dropped (the placeholder hides what joined them). `protected` is sorted and
+    /// merged. Placeholders not followed by a letter or digit (the usual shape of redacted
+    /// output) cost nothing.
+    fn glued(&self, text: &str, protected: &[(usize, usize)], pii: bool) -> Vec<Candidate> {
+        let mut combined = String::new();
+        // Per placeholder: where its tail starts and ends in `combined`, and the
+        // placeholder's end in `text`.
+        let mut views: Vec<(usize, usize, usize)> = Vec::new();
+        for (i, &(s, e)) in protected.iter().enumerate() {
+            let Some(c) = text[e..].chars().next() else {
+                continue;
+            };
+            // Only a letter or digit glues: after a delimiter (`&x=1`, `@host`, `/path`)
+            // the placeholder ends a value, and the text without it would read the next
+            // field as the key's value.
+            if !c.is_alphanumeric() {
+                continue;
+            }
+            let prev_end = if i > 0 { protected[i - 1].1 } else { 0 };
+            let line_start = text[..s].rfind('\n').map_or(0, |p| p + 1);
+            let mut from = line_start.max(prev_end).max(s.saturating_sub(GLUE_WINDOW));
+            while !text.is_char_boundary(from) {
+                from += 1;
+            }
+            let next_start = protected.get(i + 1).map_or(text.len(), |p| p.0);
+            let line_end = text[e..].find('\n').map_or(text.len(), |p| e + p);
+            let mut to = line_end.min(next_start).min(e + GLUE_WINDOW);
+            while !text.is_char_boundary(to) {
+                to -= 1;
+            }
+            combined.push_str(&text[from..s]);
+            let junction = combined.len();
+            combined.push_str(&text[e..to]);
+            views.push((junction, combined.len(), e));
+            combined.push_str("\n\n");
+        }
+        if views.is_empty() {
+            return Vec::new();
+        }
+        let shadow = Shadow::new(&combined);
+        let mut out = Vec::new();
+        for mut c in self.detect(&shadow.text, pii) {
+            let r = shadow.to_original(c.start..c.end);
+            let i = views.partition_point(|v| v.0 <= r.start);
+            let Some(&(junction, end, at)) = i.checked_sub(1).map(|i| &views[i]) else {
+                continue;
+            };
+            if r.end > end || r.end <= r.start {
+                continue;
+            }
+            c.start = at + (r.start - junction);
+            c.end = at + (r.end - junction);
+            out.push(c);
+        }
+        out
+    }
+
     /// Every detector, the PII detectors when on, and the matcher, over `text` (a shadow
     /// text). Offsets are into `text`.
     fn detect(&self, text: &str, pii: bool) -> Vec<Candidate> {
@@ -704,6 +768,9 @@ impl Engine {
         true
     }
 }
+
+/// How much of a line [`Engine::glued`] reads on either side of a placeholder.
+const GLUE_WINDOW: usize = 256;
 
 /// Layers of layers are decoded; one level more only warns.
 const MAX_DECODE_DEPTH: usize = 2;
