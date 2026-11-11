@@ -577,6 +577,10 @@ pub(crate) struct RawPair {
     pub line_start: bool,
     /// The line is a code statement (declaration keyword, call argument, member, `;` end).
     pub code: bool,
+    /// The key follows a `(`, `,` or `{` and no code keyword (`User(id=42, password=v)`,
+    /// `Username: admin, Password: v`): an argument list or a list in prose. Only an
+    /// identifier-shaped value is code there.
+    pub args: bool,
     /// The statement ends right after the value (`;`, or `,` in an object literal): code,
     /// unless the value is a literal (`Password=x;` in a connection string is fine).
     pub stmt_end: bool,
@@ -601,6 +605,7 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
     let prefix = &text[ls..ts];
     let line_start = is_line_start_prefix(prefix);
     let mut code = is_code_prefix(prefix) || key.member;
+    let mut args = !code && is_args_prefix(prefix);
     // The label of an earlier placeholder (`[REDACTED: Password #1]`, a built-in label) is not
     // a key. A made-up label (`[REDACTED: password=…]`) is read as text.
     const OPEN: &str = "[REDACTED: ";
@@ -616,6 +621,7 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                 tight: false,
                 line_start,
                 code,
+                args: false,
                 stmt_end: false,
                 literal: false,
                 scanned: key.end,
@@ -653,6 +659,7 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
             tight: true,
             line_start,
             code: false,
+            args: false,
             stmt_end: false,
             literal: false,
         });
@@ -680,12 +687,14 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
                     tight: true,
                     line_start,
                     code: false,
+                    args: false,
                     stmt_end: false,
                     literal: false,
                     scanned,
                 });
             }
             code |= is_code_prefix(&text[ls..open]);
+            args = !code && (args || is_args_prefix(&text[ls..open]));
             let mut p = key.end + 1;
             if b.get(p) == Some(&b']') {
                 p += 1;
@@ -696,6 +705,7 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
             rp.syntax = Syntax::QuotedKey;
             rp.sep = sep;
             rp.tight = tight;
+            rp.args = args;
             return Some(rp);
         }
     }
@@ -805,6 +815,7 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         } else if sep == Sep::Equals
             && tight
             && !code
+            && !args
             && !key.member
             && key.dashes == 0
             && logfmt_field(text, prefix, after)
@@ -829,6 +840,14 @@ pub(crate) fn pair(text: &str, key: &Key) -> Option<RawPair> {
         };
         rp.sep = sep;
         rp.tight = tight;
+        rp.args = args;
+        // `auth.password=v` (helm `--set`, properties under an `app.` prefix) reads to the
+        // first blank as code does, but only an identifier, member path or expression is
+        // code there: `self.password = pw` is, `auth.password=Tulip-Harbor-91` is not.
+        if key.member && !is_code_prefix(prefix) {
+            rp.code = false;
+            rp.args = true;
+        }
         return Some(rp);
     }
 
@@ -948,20 +967,30 @@ fn is_line_start_prefix(prefix: &str) -> bool {
     p.is_empty()
 }
 
-/// Declaration keywords at the start of the line, or the key sits inside a call / object
-/// literal (`f(user, password=x)`, `{password: x}`).
-fn is_code_prefix(prefix: &str) -> bool {
-    // Code in a comment or doc comment is still code: `///     let tokens = quote! { … }`.
-    let mut p = prefix.trim();
+/// The prefix without a comment marker: code in a comment or doc comment is still code
+/// (`///     let tokens = quote! { … }`).
+fn uncommented(prefix: &str) -> &str {
+    let p = prefix.trim();
     for c in ["///", "//!", "//", "#", "*", "--", ">"] {
         if let Some(r) = p.strip_prefix(c) {
-            p = r.trim_start();
-            break;
+            return r.trim_start();
         }
     }
-    if p.ends_with('(') || p.ends_with(',') || p.ends_with('{') || p.ends_with("->") {
-        return true;
-    }
+    p
+}
+
+/// The key sits after `(`, `,`, `{` or `->`: a call, an object literal, a struct dump
+/// (`User(id=42, password=v)`) or a list in prose (`user: admin, password: v`). This alone
+/// does not make the value code; see [`RawPair::args`].
+fn is_args_prefix(prefix: &str) -> bool {
+    let p = uncommented(prefix);
+    p.ends_with('(') || p.ends_with(',') || p.ends_with('{') || p.ends_with("->")
+}
+
+/// Declaration keywords at the start of the line (`let`, `const`, `def`, `self.`): a code
+/// statement.
+fn is_code_prefix(prefix: &str) -> bool {
+    let p = uncommented(prefix);
     let first = p.split(|c: char| c.is_whitespace()).next().unwrap_or("");
     matches!(
         first,
@@ -1101,6 +1130,7 @@ fn value_after(text: &str, p: usize, cx: Ctx) -> Option<RawPair> {
         tight: false,
         line_start: cx.line_start,
         code: cx.code,
+        args: false,
         stmt_end: false,
         literal,
         scanned: p,

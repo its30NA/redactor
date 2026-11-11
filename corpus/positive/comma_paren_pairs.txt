@@ -1,0 +1,33 @@
+# a key after a comma or an opening parenthesis, in prose, dumps and option lists
+
+Username: admin, Password: ⟦Password|Tulip-Harbor-91⟧
+
+user: admin, password: ⟦Password|Tulip-Harbor-91⟧
+
+email: jdoe@example.com, password: ⟦Password|Tulip-Harbor-91⟧
+
+Benutzer: admin, Passwort: ⟦Password|Tulip-Harbor-91⟧
+
+Usuario: admin, contraseña: ⟦Password|Tulip-Harbor-91⟧
+
+Identifiant : admin, mot de passe : ⟦Password|Tulip-Harbor-91⟧
+
+Use the admin account (password: ⟦Password|Tulip-Harbor-91⟧) for now.
+
+root@10.0.0.5 (pw: ⟦Password|Tulip-Harbor-91⟧)
+
+ssh root@10.0.0.5 (pw: ⟦Password|Tulip-Harbor-91⟧)
+
+The test account (user: qa1, pw: ⟦Password|Tulip-Harbor-91⟧) is locked.
+
+Datasource props: {url=jdbc:postgresql://db/shop, username=app, password=⟦Password|Tulip-Harbor-91⟧, maxPoolSize=10}
+
+SmtpConfig(host=smtp.example.com, port=587, username=mailer, password=⟦Password|Tulip-Harbor-91⟧)
+
+User(id=42, email=jdoe@example.com, password=⟦Password|Tulip-Harbor-91⟧, active=true)
+
+helm install api bitnami/postgresql --set auth.username=app,auth.password=⟦Password|Tulip-Harbor-91⟧,auth.database=shop
+
+//fileserver/share /mnt/share cifs username=svc,password=⟦Password|Tulip-Harbor-91⟧,uid=1000,iocharset=utf8 0 0
+
+mount -t cifs //srv/share /mnt -o username=svc,password=⟦Password|Hunter2-Fake-9x⟧,vers=3.0

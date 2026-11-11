@@ -1005,3 +1005,28 @@ fn json_escaped_password_is_not_a_path() {
     );
     assert_clean("{\n  \"password_file\": \"C:\\\\Users\\\\bob\\\\secrets\\\\db.txt\"\n}\n");
 }
+
+/// A key after `(`, `,` or `{` is in an argument list, a dump or a list in prose: a literal
+/// value there is redacted, exactly; an identifier, member path or call stays code.
+#[test]
+fn key_after_comma_or_paren_takes_a_literal() {
+    assert_redacted(
+        "Username: admin, Password: Tulip-Harbor-91\n",
+        "Tulip-Harbor-91",
+    );
+    assert_redacted("root@10.0.0.5 (pw: Tulip-Harbor-91)\n", "Tulip-Harbor-91");
+    assert_redacted(
+        "User(id=42, password=Tulip-Harbor-91, active=true)\n",
+        "Tulip-Harbor-91",
+    );
+    assert_redacted(
+        "helm install api ./chart --set auth.username=app,auth.password=Tulip-Harbor-91,auth.database=shop\n",
+        "Tulip-Harbor-91",
+    );
+    assert_redacted("app.password=Tulip-Harbor-91\n", "Tulip-Harbor-91");
+    assert_clean("client = Client(url, username=user, password=pw, timeout=30)\n");
+    assert_clean("createUser({ name: name, password: hashed, role: \"admin\" })\n");
+    assert_clean("    self.password = password\n");
+    assert_clean("config.password = os.environ[\"DB_PASSWORD\"]\n");
+    assert_clean("ctx.secret = ctx.secret || defaultSecret;\n");
+}

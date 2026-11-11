@@ -187,7 +187,7 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
                     .any(|w| key.words.contains(w) || CODE_WORDS.contains(&w.as_str()))
             });
             let root = OBJECT_ROOTS.contains(&segs[0].to_ascii_lowercase().as_str());
-            if root || shares || p.code || key.member {
+            if root || shares || p.code || p.args || key.member {
                 return None;
             }
         }
@@ -201,7 +201,10 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
             let w = lower.trim_end_matches(|c: char| c.is_ascii_digit());
             w.len() < lower.len() && is_lexicon_word(w)
         };
+        // In an argument list (`f(user, password=pw1)`, `{password: secret}`) an identifier
+        // is a variable; other shapes (`Tulip-Harbor-91`) are literals of a dump or a list.
         if p.code
+            || p.args
             || p.stmt_end
             || key.member
             || is_stopword(&lower)

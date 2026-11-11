@@ -1,0 +1,42 @@
+# argument lists, object literals and member assignments that hold no secret
+
+conn = psycopg2.connect(host=db_host, user=db_user, password=db_password, port=5432)
+client = Client(url, username=user, password=pw, timeout=30)
+login(user, password=password_value)
+auth = HTTPBasicAuth(username, password=secret)
+const opts = { user: req.body.user, password: req.body.password, remember: true };
+await signIn({ email, password: form.password, redirect: false });
+createUser({ name: name, password: hashed, role: "admin" })
+const cfg = { host: 'db', port: 5432, password: process.env.DB_PASSWORD };
+fn connect(host: &str, user: &str, password: &str) -> Result<Conn, Error> {
+fn new(token: Token, secret: Option<String>) -> Self {
+def __init__(self, user, password=None, token=None):
+    self.password = password
+    self.token = token or ""
+    self.secret = secret.encode("utf-8")
+    self.api_key = api_key_from_env()
+    self._secret = hashlib.sha256(raw).hexdigest()
+this.password = options.password;
+this.token = token;
+config.password = os.environ["DB_PASSWORD"]
+settings.secret_key = get_random_secret_key()
+app.secret_key = secrets.token_hex(16)
+auth.token = auth.token ?? fetchToken();
+session.token = tok.split('.')[0]
+ctx.secret = ctx.secret || defaultSecret;
+public User(String name, String password, boolean active) {
+User user = new User("jdoe", password, true);
+mailer.send(to, subject, body, password=smtp_pass)
+validate(password, minLength=12, requireDigit=true)
+fetch(url, { method: "POST", headers: { Authorization: authHeader }, body })
+assertEquals(expected, password);
+log.info("login failed for user %s", user, password=None)
+helm install api ./chart --set auth.username=app,auth.database=shop,auth.password=$PG_PASSWORD
+mount -t cifs //srv/share /mnt -o credentials=/etc/smb-creds,vers=3.0,uid=1000
+Enter your username, password and the code from the app, then click Sign in.
+Fields (user: string, password: string) are required.
+Parameters (password: required, token: optional)
+Columns: id, email, password_hash, created_at
+Props: {url=jdbc:postgresql://db/shop, username=app, password=${DB_PASSWORD}, maxPoolSize=10}
+User(id=42, email=jdoe@example.com, password=<hidden>, active=true)
+SmtpConfig(host=smtp.example.com, port=587, username=mailer, password=****)
