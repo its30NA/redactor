@@ -1,48 +1,56 @@
-# Example redactor configuration.
-# Copy to `redactor.toml` (or `.redactor.toml`) anywhere at or above your working
-# directory. Every field is optional — delete what you don't need. The tool works
-# with zero config.
+# Example Redactor configuration for `scrub`.
+#
+# Copy this file to `redactor.toml` or `.redactor.toml`. scrub looks for it in the working
+# directory, then in each parent folder, and stops at the repository root (the first folder with a
+# `.git`) or your home folder. It prints the path of the file it loads. `--config FILE` names one
+# directly. The tool works with no config at all: every setting is optional, and every line
+# below is commented out, so delete the `#` only where you want a change.
+#
+# A config file can lower detection, so scrub treats it with care: on Linux and macOS it
+# refuses a file that every user can write to or that another user owns, and `scrub check`
+# prints every allowlist entry, disabled rule and custom template on each run.
 
-# v2 additions (all optional):
-# sensitivity = "balanced"       # relaxed | balanced | paranoid
-# strip_invisible = true         # remove zero-width, bidi and tag characters from the output
-# terms = ["Contoso"]            # words that are always redacted (whole words, case-insensitive)
-# placeholder = "labeled"        # labeled | generic ("[REDACTED: Secret]" for everything)
-# The v1 spellings below keep working; short forms `disabled`, `enabled`, `pii`, `template`
-# and `custom_rules` are accepted too.
+# How hard to look. "relaxed" reports fewer, "paranoid" more. Default: "balanced".
+# sensitivity = "balanced"
 
-# Turn specific detectors off by their id (`scrub detectors` lists them).
-# disabled_detectors = ["bearer_token"]
+# Also redact personal data: email, phone numbers, IBAN, credit card numbers, IPv4 and IPv6
+# addresses and US social security numbers. Off by default, because such data is often a
+# legitimate part of the text.
+# pii = true
 
-# Turn on detectors that ship disabled by default. (An explicit `disabled_detectors` entry
-# still wins.)
-# enabled_detectors = []
+# Remove zero-width, bidirectional and tag characters from the output. Default: true.
+# strip_invisible = true
 
-# Change how placeholders look. `{label}` is the human name; `{suffix}` is the
-# stable " #N" number (empty when a secret kind appears only once).
-# placeholder_template = "[REDACTED: {label}{suffix}]"
+# Words that are always redacted (whole words, any case): names, host names, project codes.
+# terms = ["Contoso", "build-server-04"]
 
-# Redact personally identifiable information (email, IPv4, phone, SSN, credit card).
-# Off by default because PII is often legitimately part of the text. Default: false.
-# redact_pii = true
+# "labeled" gives [REDACTED: Password]; "generic" gives [REDACTED: Secret] for everything.
+# placeholder = "labeled"
 
-# User-defined detectors. Each rule is an ordinary regex; `group` (optional) selects
-# which capture group is the secret so surrounding context can be preserved.
-# [[rules]]
-# name = "acme_internal_token"
+# Your own placeholder text. {label} is the kind of secret and {suffix} is the number
+# (" #2"), empty when that kind appears only once. Text that looks like your template is not
+# redacted again, so `scrub check` warns when you set one.
+# template = "[REDACTED: {label}{suffix}]"
+
+# Turn rules off by id (`scrub detectors` lists them).
+# disabled = ["us_ssn"]
+
+# Turn on rules that ship switched off. A rule in `disabled` still stays off.
+# enabled = []
+
+# Values that are left alone: regular expressions, tested against each value that was found.
+# Keep them narrow. scrub refuses an entry that would let everything through, such as `.*`,
+# an empty pattern or `^ghp_`.
+# allowlist = [
+#     "^db\\.internal\\.example\\.net$",
+#     "^Tulip-Harbor-91$",   # a made-up value your docs use on purpose
+# ]
+
+# Your own rules. `pattern` is a regular expression; `group` (default 0) picks the capture group
+# that is the secret, so the text around it stays. `confidence` defaults to 0.9.
+# [[custom_rules]]
+# id = "acme_internal_token"
 # label = "ACME Internal Token"
 # pattern = "\\bACME-[A-Z0-9]{20}\\b"
 # confidence = 0.95
 # group = 0
-
-[allowlist]
-# Regex patterns tested against each detected value. Anything that matches is
-# left untouched — use for documentation placeholders and known-safe examples.
-patterns = [
-    "example\\.com",
-    "AKIAIOSFODNN7EXAMPLE",   # AWS's own documentation key
-    "sk-xxxx",                # common placeholder style
-]
-
-# v1 had an optional local-LLM pass in an `[llm]` section. v2 has no network code and no LLM
-# pass: the section is still read, ignored, and scrub prints a one-line notice.
