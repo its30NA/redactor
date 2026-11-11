@@ -1,0 +1,11 @@
+# Base64 glued to a URL path: the run of base64 characters starts at the path, not at the
+# blob, so the decoder tries every alignment and takes the part that decodes to text.
+
+GET https://example.com/cb/⟦Encoded Password|dXNlcj1kZW1vJnBhc3N3b3JkPUh1bnRlcjItRmFrZS05eA==⟧ HTTP/1.1
+Host: example.com
+
+webhook relay (base64url, after a versioned path):
+https://hooks.example.org/v1/relay/⟦Encoded Password|ZGI9c2hvcDtwYXNzd29yZD1TYWZmcm9ufktpdGUtNTg-Pg==⟧
+
+state in the middle of a path, unpadded (the whole path run is a Random String as well):
+POST /api/state/⟦*|Y2xpZW50PWNpJnNlY3JldD1QbHVtLXRyZWU0Ny1PeD8⟧/callback HTTP/1.1

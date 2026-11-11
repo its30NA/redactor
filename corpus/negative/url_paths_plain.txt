@@ -1,0 +1,15 @@
+# URL paths with long plain segments, slugs, hashes and digests: nothing here is encoded.
+
+GET https://example.com/docs/getting-started/installation/configuration-reference HTTP/1.1
+GET https://example.com/api/v2/organizations/engineering-platform/repositories/redactor-desktop/pulls
+https://github.com/rust-lang/rust/blob/master/library/std/src/collections/hash/map.rs
+https://github.com/example-org/infrastructure-modules/commit/9fceb02d0ae598e95dc970b74767f19372d61af8
+https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-6.21.0.tgz
+https://cdn.example.net/assets/images/backgrounds/mountain-landscape-panorama_large.webp
+https://storage.example.com/v1/buckets/analytics-exports/objects/reports/2026/quarterly/summary_final.csv
+/usr/local/lib/python3.12/site-packages/setuptools/_vendor/importlib_metadata/__init__.py
+/home/builder/workspace/projects/redactor/target/release/build/ring-4c8f2a7e1b9d3f60/out
+https://hub.docker.com/layers/library/postgres/16-alpine/images/sha256-3c4b2f1a9e8d7c6b5a49382716f5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d
+https://example.com/blog/2026/11/why-we-moved-our-continuous-integration-to-self-hosted-runners
+https://maps.example.com/tiles/OpenStreetMap/standard/zoomLevel14/tileColumn8529/tileRow5974.png
+https://example.com/downloads/ReleaseNotesForVersionTwoPointOne/FullChangelogWithAllFixes.html

@@ -88,17 +88,22 @@ pub(crate) fn decode_layers(text: &str, budget: &mut Budget) -> Vec<Layer> {
     out
 }
 
-fn push(out: &mut Vec<Layer>, budget: &mut Budget, range: Range<usize>, decoded: Vec<u8>) {
+/// Adds a layer when `decoded` is readable text (within the budget). Returns whether it is
+/// readable text, whether or not the budget had room for it.
+fn push(out: &mut Vec<Layer>, budget: &mut Budget, range: Range<usize>, decoded: Vec<u8>) -> bool {
     let Ok(text) = String::from_utf8(decoded) else {
-        return;
+        return false;
     };
-    if !printable(&text) || !budget.take(text.len()) {
-        return;
+    if !printable(&text) {
+        return false;
     }
-    out.push(Layer {
-        range_in_parent: range,
-        text,
-    });
+    if budget.take(text.len()) {
+        out.push(Layer {
+            range_in_parent: range,
+            text,
+        });
+    }
+    true
 }
 
 /// At least 4 characters, at least 80 % of them printable (tab and line breaks count).
@@ -152,13 +157,101 @@ fn base64_and_hex(bytes: &[u8], budget: &mut Budget, out: &mut Vec<Layer>) {
         }
         let std = body.iter().any(|b| matches!(b, b'+' | b'/'));
         let url = body.iter().any(|b| matches!(b, b'-' | b'_'));
-        if std && url {
+        if !(std && url) && b64_decode(body, url).is_some_and(|d| push(out, budget, start..end, d))
+        {
             continue;
         }
-        if let Some(decoded) = b64_decode(body, url) {
-            push(out, budget, start..end, decoded);
+        // Not text as a whole, but a run with `/`, `-`, `_` or `+` may be a path with base64
+        // glued to it (`/cb/<base64>`, `<base64>/next`).
+        if std || url {
+            glued_base64(bytes, start..body_end, end, budget, out);
         }
     }
+}
+
+/// Fewer decoded bytes are not taken from base64 glued to a path.
+const MIN_GLUED_TEXT: usize = 12;
+
+/// Base64 glued to other characters of its alphabet: the run `body` (its padding ends at
+/// `end`) is decoded at each of the four alignments, in either alphabet, and every stretch
+/// of [`MIN_GLUED_TEXT`] or more bytes of readable text becomes a layer over the characters
+/// that encode it (the run's padding included when the stretch reaches the end).
+fn glued_base64(
+    bytes: &[u8],
+    body: Range<usize>,
+    end: usize,
+    budget: &mut Budget,
+    out: &mut Vec<Layer>,
+) {
+    for shift in 0..4 {
+        let from = body.start + shift;
+        if body.end - from < MIN_B64 {
+            break;
+        }
+        let decoded = b64_decode_any(&bytes[from..body.end]);
+        for seg in text_stretches(&decoded) {
+            let s = from + seg.start / 3 * 4;
+            let e = if seg.end == decoded.len() {
+                end
+            } else {
+                (from + seg.end.div_ceil(3) * 4).min(body.end)
+            };
+            push(out, budget, s..e, decoded[seg].to_vec());
+        }
+    }
+}
+
+/// Decodes base64 in both alphabets at once (`+`/`-` and `/`/`_` alike); a last lone
+/// character is dropped.
+fn b64_decode_any(body: &[u8]) -> Vec<u8> {
+    let val = |c: u8| -> u32 {
+        match c {
+            b'A'..=b'Z' => (c - b'A') as u32,
+            b'a'..=b'z' => (c - b'a' + 26) as u32,
+            b'0'..=b'9' => (c - b'0' + 52) as u32,
+            b'+' | b'-' => 62,
+            _ => 63,
+        }
+    };
+    let mut out = Vec::with_capacity(body.len() * 3 / 4);
+    for chunk in body.chunks(4).filter(|c| c.len() > 1) {
+        let mut n = 0u32;
+        for (k, &c) in chunk.iter().enumerate() {
+            n |= val(c) << (18 - 6 * k);
+        }
+        let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+        out.extend_from_slice(&bytes[..chunk.len() - 1]);
+    }
+    out
+}
+
+/// The stretches of `decoded` that are valid UTF-8 without control characters (tab and line
+/// breaks allowed), [`MIN_GLUED_TEXT`] bytes or longer.
+fn text_stretches(decoded: &[u8]) -> Vec<Range<usize>> {
+    let mut out = Vec::new();
+    let mut run = 0;
+    let mut at = 0;
+    let close = |run: usize, end: usize, out: &mut Vec<Range<usize>>| {
+        if end - run >= MIN_GLUED_TEXT {
+            out.push(run..end);
+        }
+    };
+    for chunk in decoded.utf8_chunks() {
+        for (i, c) in chunk.valid().char_indices() {
+            if c.is_control() && !matches!(c, '\t' | '\n' | '\r') {
+                close(run, at + i, &mut out);
+                run = at + i + 1;
+            }
+        }
+        at += chunk.valid().len();
+        if !chunk.invalid().is_empty() {
+            close(run, at, &mut out);
+            at += chunk.invalid().len();
+            run = at;
+        }
+    }
+    close(run, at, &mut out);
+    out
 }
 
 /// Fewer characters per line are not taken for wrapped base64.
@@ -463,6 +556,44 @@ mod tests {
             .into_iter()
             .map(|l| (text[l.range_in_parent].to_string(), l.text))
             .collect()
+    }
+
+    #[test]
+    fn base64_glued_to_a_path() {
+        // "user=demo&password=Hunter2-Fake-9x", after `com/cb/` (7 characters: misaligned).
+        let blob = "dXNlcj1kZW1vJnBhc3N3b3JkPUh1bnRlcjItRmFrZS05eA==";
+        let got = layers(&format!("GET https://example.com/cb/{blob} HTTP/1.1"));
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(
+            got[0].0.ends_with(blob) && got[0].0.len() <= blob.len() + 3,
+            "{got:?}"
+        );
+        assert!(got[0].1.contains("password=Hunter2-Fake-9x"), "{got:?}");
+        // base64url after a path with `/`, and a blob with more path after it.
+        for (text, want) in [
+            (
+                "https://hooks.example.org/v1/relay/ZGI9c2hvcDtwYXNzd29yZD1TYWZmcm9ufktpdGUtNTg-Pg==",
+                "password=Saffron~Kite-58>>",
+            ),
+            (
+                "POST /api/state/Y2xpZW50PWNpJnNlY3JldD1QbHVtLXRyZWU0Ny1PeD8/callback",
+                "secret=Plum-tree47-Ox?",
+            ),
+        ] {
+            let got = layers(text);
+            assert!(got.iter().any(|(_, d)| d.contains(want)), "{text}: {got:?}");
+        }
+    }
+
+    #[test]
+    fn plain_paths_are_not_decoded() {
+        for text in [
+            "https://example.com/api/v2/organizations/engineering-platform/repositories/x",
+            "https://github.com/rust-lang/rust/blob/master/library/std/src/collections/hash/map.rs",
+            "/usr/local/lib/python3.12/site-packages/setuptools/_vendor/importlib_metadata/x.py",
+        ] {
+            assert_eq!(layers(text), Vec::new(), "{text}");
+        }
     }
 
     #[test]
