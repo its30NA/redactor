@@ -203,3 +203,82 @@ fn wrapped_base64_copy() {
         assert!(again.findings.is_empty(), "rescan: {:?}", again.findings);
     }
 }
+
+/// Always-redact terms seed the encoded-copy search even when the text holds no plain copy:
+/// a term glued to a letter or two inside a short base64 payload (no word boundary, so the
+/// decode layer's term search misses it) is still found (review of the 2026-11-10 audit
+/// fixes, finding 6 incomplete).
+#[test]
+fn terms_seed_the_encoded_copy_search() {
+    let engine = Engine::new(EngineConfig {
+        terms: vec!["correct-horse-battery".into(), "Kx9mPq2vLz-Hunter".into()],
+        ..EngineConfig::default()
+    })
+    .unwrap();
+    for payload in [
+        "xcorrect-horse-battery",
+        "correct-horse-batteryx",
+        "xycorrect-horse-battery",
+        "xCORRECT-HORSE-BATTERY",
+        "xKx9mPq2vLz-Hunter",
+        "xyKx9mPq2vLz-Hunter",
+    ] {
+        for blob in [b64_encode(payload.as_bytes()), hex(payload, false)] {
+            let text = format!("k {blob}\n");
+            let out = engine.scan(&text, &ScanRequest::default());
+            assert!(
+                !out.output.contains(&blob[4..blob.len() - 4]),
+                "{payload} as {blob}: {}",
+                out.output
+            );
+            assert!(
+                out.findings.iter().any(|f| f.label.contains("Custom Term")),
+                "{payload}: {:?}",
+                out.findings
+            );
+        }
+    }
+    // A payload with only part of a term costs no finding.
+    let blob = b64_encode(b"xcorrect-horse-batter!");
+    let out = engine.scan(&format!("k {blob}\n"), &ScanRequest::default());
+    assert!(out.findings.is_empty(), "{:?}", out.findings);
+}
+
+/// Reports every occurrence of one fixed string (stand-in for the app's remembered secrets).
+struct Fixed(&'static str);
+
+impl redactor_core::SecretMatcher for Fixed {
+    fn find(&self, text: &str) -> Vec<redactor_core::MatcherHit> {
+        text.match_indices(self.0)
+            .map(|(i, m)| redactor_core::MatcherHit {
+                start: i,
+                end: i + m.len(),
+                label: "Known Secret".into(),
+            })
+            .collect()
+    }
+}
+
+/// A remembered secret glued to a letter inside a short base64 payload, with no plain copy:
+/// the decode layer's matcher search finds it (the matcher has no word boundary). Not covered
+/// yet: hex shorter than the decode layer's 32 digits, or hex of bytes that are not text,
+/// since the engine cannot seed the encoded-copy search with values it does not hold.
+#[test]
+fn matcher_values_glued_in_short_base64() {
+    for (value, payload) in [
+        ("Kx9mPq2vLz-Hunter", "xKx9mPq2vLz-Hunter"),
+        ("Kx9mPq2vLz-Hunter", "xyKx9mPq2vLz-Hunter"),
+        ("Kx9mPq2vLz-Hunter", "Kx9mPq2vLz-Hunterx"),
+        ("Plum-tree47x", "qPlum-tree47x"),
+        ("Plum-tree47x", "\u{1}\u{2}\u{3}Plum-tree47x\u{4}"),
+    ] {
+        let engine = engine().with_matcher(std::sync::Arc::new(Fixed(value)));
+        let blob = b64_encode(payload.as_bytes());
+        let out = engine.scan(&format!("k {blob}\n"), &ScanRequest::default());
+        assert!(
+            !out.output.contains(&blob[4..blob.len() - 4]),
+            "{payload:?} as {blob}: {}",
+            out.output
+        );
+    }
+}

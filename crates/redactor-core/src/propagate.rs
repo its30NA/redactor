@@ -22,20 +22,41 @@ pub(crate) const MIN_CHARS: usize = 6;
 /// Below this length an occurrence must stand alone (no letter or digit glued to it).
 pub(crate) const BOUNDARY_BELOW: usize = 12;
 
-/// An encoded copy found by [`propagate`]: its candidate's span, and the index of the
-/// candidate whose value it encodes (whose value key it takes).
-pub(crate) type Alias = ((usize, usize), usize);
+/// An encoded copy found by [`propagate`]: its candidate's span, and the value it encodes
+/// (whose value key it takes).
+pub(crate) type Alias = ((usize, usize), Rep);
+
+/// The value an encoded copy encodes: a candidate's (an index into the candidates as they
+/// were passed in), or a seed's (an index into the seeds).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Rep {
+    Cand(usize),
+    Seed(usize),
+}
+
+/// A value known before the scan (a spelling of an always-redact term). It seeds the
+/// encoded-copy search even when no candidate holds it, so a copy with no plain occurrence
+/// (glued to a letter inside base64, where no word boundary lets the term search find it) is
+/// found too. `cand` names its copies; its span is unused. Seeds get only the encoded-copy
+/// search: their plain copies are the detector's.
+#[derive(Clone, Debug)]
+pub(crate) struct Seed {
+    /// Normalized, at least [`MIN_CHARS`] characters.
+    pub value: String,
+    pub cand: Candidate,
+}
 
 /// Appends a `Propagated` candidate for every occurrence of a candidate's value that no
 /// candidate covers yet. `cands` are in ORIGINAL offsets; the search runs on the shadow text
 /// (so a value split by a hidden character elsewhere is still found). Values for which
 /// `skip` is true (kept by the user) are not propagated. Values of the matcher and the term
-/// list get only the encoded-copy search (they find their plain copies themselves). Returns
-/// the encoded copies.
+/// list get only the encoded-copy search (they find their plain copies themselves), and so do
+/// `seeds` that no candidate holds. Returns the encoded copies.
 pub(crate) fn propagate(
     text: &str,
     shadow: &Shadow,
     cands: &mut Vec<Candidate>,
+    seeds: &[Seed],
     skip: impl Fn(&Candidate) -> bool,
 ) -> Vec<Alias> {
     // value -> (pattern index); per pattern the strongest candidate speaks for it.
@@ -68,10 +89,25 @@ pub(crate) fn propagate(
             reps.push(i);
         }
     }
+    // Seeds come last (encoded-only); index `n + j` in `reps` is seed `j`.
+    let n = cands.len();
+    for (j, seed) in seeds.iter().enumerate() {
+        if !index.contains_key(seed.value.as_str()) {
+            index.insert(Cow::Borrowed(seed.value.as_str()), values.len());
+            values.push(Cow::Borrowed(seed.value.as_str()));
+            reps.push(n + j);
+        }
+    }
     if values.is_empty() {
         return Vec::new();
     }
-    let plain = reps.iter().filter(|&&r| !encoded_only(&cands[r])).count();
+    let rep_cand = |r: usize| -> &Candidate {
+        match r.checked_sub(n) {
+            Some(j) => &seeds[j].cand,
+            None => &cands[r],
+        }
+    };
+    let plain = reps.iter().filter(|&&r| !encoded_only(rep_cand(r))).count();
     let bounded: Vec<bool> = values
         .iter()
         .map(|v| v.chars().count() < BOUNDARY_BELOW)
@@ -90,7 +126,7 @@ pub(crate) fn propagate(
             bounded[..plain].to_vec(),
         )
     });
-    let conf: Vec<f32> = reps.iter().map(|&r| cands[r].confidence).collect();
+    let conf: Vec<f32> = reps.iter().map(|&r| rep_cand(r).confidence).collect();
 
     // What is already covered, as sorted, merged intervals.
     let mut covered: Vec<(usize, usize)> = cands.iter().map(|c| (c.start, c.end)).collect();
@@ -172,7 +208,7 @@ pub(crate) fn propagate(
     let mut found: Vec<Candidate> = Vec::new();
     let mut aliases: Vec<Alias> = Vec::new();
     for c in copies.finish() {
-        let rep = &cands[reps[c.value]];
+        let rep = rep_cand(reps[c.value]);
         found.push(Candidate {
             start: c.start,
             end: c.end,
@@ -187,8 +223,12 @@ pub(crate) fn propagate(
             }),
             source: Source::Propagated,
         });
-        if let Some(rep) = c.alias {
-            aliases.push(((c.start, c.end), rep));
+        if let Some(r) = c.alias {
+            let r = match r.checked_sub(n) {
+                Some(j) => Rep::Seed(j),
+                None => Rep::Cand(r),
+            };
+            aliases.push(((c.start, c.end), r));
         }
     }
     cands.extend(found);
@@ -389,7 +429,7 @@ mod tests {
         text.push('\n');
         let shadow = Shadow::new(&text);
         let before = cands.len();
-        propagate(&text, &shadow, &mut cands, |_| false);
+        propagate(&text, &shadow, &mut cands, &[], |_| false);
         let added = &cands[before..];
         assert!(added.len() <= 4, "{} candidates", added.len());
         let mut spans: Vec<(usize, usize)> = added.iter().map(|c| (c.start, c.end)).collect();

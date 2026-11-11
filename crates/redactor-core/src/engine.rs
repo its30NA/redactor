@@ -21,7 +21,7 @@ use crate::guard::is_placeholder;
 use crate::normalize::{normalize_value, HiddenCounts, Shadow};
 use crate::occurrences::Occurrences;
 use crate::placeholder::{PlaceholderPolicy, GENERIC_LABEL};
-use crate::propagate::{propagate, Copies, ValueCopy, BOUNDARY_BELOW, MIN_CHARS};
+use crate::propagate::{propagate, Copies, Rep, Seed, ValueCopy, BOUNDARY_BELOW, MIN_CHARS};
 use crate::redact::{apply, Redaction, Resolved};
 use crate::resolve::{outranks, resolve};
 use crate::rules::catalog;
@@ -90,6 +90,8 @@ pub struct Engine {
     labels: Vec<String>,
     /// Verify rounds before the outcome is `verified = false` (`VERIFY_CAP`).
     verify_cap: usize,
+    /// The term spellings long enough to propagate: they always seed the encoded-copy search.
+    seeds: Vec<Seed>,
 }
 
 impl fmt::Debug for Engine {
@@ -136,9 +138,18 @@ impl Engine {
         for rule in &config.custom_rules {
             detectors.push(Box::new(CustomDetector::new(rule)?));
         }
+        let mut seeds = Vec::new();
         if !config.disabled.iter().any(|d| d == terms::ID) {
             if let Some(t) = TermsDetector::new(&config.terms) {
                 detectors.push(Box::new(t));
+                seeds = terms::spellings(&config.terms)
+                    .into_iter()
+                    .filter(|v| v.chars().count() >= MIN_CHARS)
+                    .map(|value| Seed {
+                        value,
+                        cand: terms::candidate(0, 0),
+                    })
+                    .collect();
             }
         }
         let (pii_detectors, detectors): (Vec<_>, Vec<_>) =
@@ -159,6 +170,7 @@ impl Engine {
             placeholder_res,
             labels,
             verify_cap: VERIFY_CAP,
+            seeds,
         })
     }
 
@@ -345,11 +357,31 @@ impl Engine {
 
         // 6. Propagation: further occurrences of every value found.
         // An encoded copy takes the key of the value it encodes.
-        let aliases: Vec<Alias> = propagate(text, &shadow, &mut raw, |c| {
+        // Kept terms do not seed it.
+        let seed_key = |s: &Seed| self.value_key(&s.value.to_lowercase());
+        let kept_seeds;
+        let seeds: &[Seed] = if keep.is_empty() {
+            &self.seeds
+        } else {
+            kept_seeds = self
+                .seeds
+                .iter()
+                .filter(|s| !keep.contains(&seed_key(s)))
+                .cloned()
+                .collect::<Vec<_>>();
+            &kept_seeds
+        };
+        let aliases: Vec<Alias> = propagate(text, &shadow, &mut raw, seeds, |c| {
             !keep.is_empty() && keep.contains(&self.candidate_key(text, c))
         })
         .into_iter()
-        .map(|(span, rep)| (span, self.candidate_key(text, &raw[rep])))
+        .map(|(span, rep)| {
+            let key = match rep {
+                Rep::Cand(i) => self.candidate_key(text, &raw[i]),
+                Rep::Seed(j) => seed_key(&seeds[j]),
+            };
+            (span, key)
+        })
         .collect();
         if !protected.is_empty() {
             protect(text, &mut raw, &protected);

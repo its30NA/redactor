@@ -27,26 +27,7 @@ pub(crate) struct TermsDetector {
 impl TermsDetector {
     /// `None` when no usable term is left.
     pub fn new(terms: &[String]) -> Option<TermsDetector> {
-        let mut patterns: Vec<String> = Vec::new();
-        for t in terms {
-            // The detectors see the normalized shadow text, so the terms are normalized too.
-            let t = normalize_value(t.trim());
-            if t.chars().count() < MIN_CHARS {
-                continue;
-            }
-            // ASCII letters are folded by the automaton; for other letters the lower, upper
-            // and title-case spellings are added (`müller`, `MÜLLER`, `Müller`).
-            for v in [
-                t.to_string(),
-                t.to_lowercase(),
-                t.to_uppercase(),
-                title_case(&t),
-            ] {
-                if !patterns.contains(&v) {
-                    patterns.push(v);
-                }
-            }
-        }
+        let patterns = spellings(terms);
         if patterns.is_empty() {
             return None;
         }
@@ -56,6 +37,45 @@ impl TermsDetector {
             .build(&patterns)
             .ok()?;
         Some(TermsDetector { ac })
+    }
+}
+
+/// The spellings searched for each usable term (normalized and trimmed, as the detectors see
+/// the normalized shadow text): as written, lower, upper and title case. The automaton folds
+/// ASCII letters itself; the extra spellings cover other letters (`müller`, `MÜLLER`,
+/// `Müller`) and seed the encoded-copy search, which is exact.
+pub(crate) fn spellings(terms: &[String]) -> Vec<String> {
+    let mut patterns: Vec<String> = Vec::new();
+    for t in terms {
+        let t = normalize_value(t.trim());
+        if t.chars().count() < MIN_CHARS {
+            continue;
+        }
+        for v in [
+            t.to_string(),
+            t.to_lowercase(),
+            t.to_uppercase(),
+            title_case(&t),
+        ] {
+            if !patterns.contains(&v) {
+                patterns.push(v);
+            }
+        }
+    }
+    patterns
+}
+
+/// A candidate for a term at `start..end`.
+pub(crate) fn candidate(start: usize, end: usize) -> Candidate {
+    Candidate {
+        start,
+        end,
+        kind: Cow::Borrowed(ID),
+        label: Cow::Borrowed(LABEL),
+        confidence: CONFIDENCE,
+        detector: Cow::Borrowed(ID),
+        reason: Cow::Borrowed("On your always-redact list"),
+        source: Source::Custom,
     }
 }
 
@@ -94,16 +114,7 @@ impl Detector for TermsDetector {
             {
                 continue;
             }
-            out.push(Candidate {
-                start: s,
-                end: e,
-                kind: Cow::Borrowed(ID),
-                label: Cow::Borrowed(LABEL),
-                confidence: CONFIDENCE,
-                detector: Cow::Borrowed(ID),
-                reason: Cow::Borrowed("On your always-redact list"),
-                source: Source::Custom,
-            });
+            out.push(candidate(s, e));
         }
     }
 }
