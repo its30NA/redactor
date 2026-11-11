@@ -143,7 +143,7 @@ fn hardening_flags_are_set() {
     assert!(conf["plugins"].is_null() || conf["plugins"].as_object().unwrap().is_empty());
     assert_eq!(conf["identifier"], "io.github.its30na.redactor");
     assert_eq!(conf["productName"], "Redactor");
-    assert_eq!(conf["version"], "2.0.0");
+    assert_eq!(conf["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(conf["bundle"]["targets"], serde_json::json!(["nsis"]));
     assert_eq!(
         conf["bundle"]["windows"]["nsis"]["installMode"],

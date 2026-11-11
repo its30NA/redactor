@@ -1,7 +1,7 @@
 {
   "name": "redactor-ui",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "description": "Redactor desktop UI (Svelte 5, runs inside the Tauri 2 shell).",
   "license": "MIT",

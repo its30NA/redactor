@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-11
+
 ### Added
 
 - `scrub.exe` carries a Windows version resource: product name, version, description and copyright.
@@ -178,5 +180,6 @@ Rust.
   before it is copied.
 - The engine, the wire crate and `scrub` forbid `unsafe` code.
 
-[Unreleased]: https://github.com/its30NA/redactor/compare/v2.0.0...main
+[Unreleased]: https://github.com/its30NA/redactor/compare/v2.1.0...main
+[2.1.0]: https://github.com/its30NA/redactor/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/its30NA/redactor/releases/tag/v2.0.0
