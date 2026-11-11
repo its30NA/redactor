@@ -151,7 +151,10 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
     if p.quoted {
         // `" secret "` with blanks at an end, or `'openaiKey'` (an identifier naming a
         // secret, as in a fixture table) is not a secret.
-        if v.trim() != v || is_identifier(v) && score < 0.5 && code_words(v) {
+        // `"Temp1234"`, `"KeyWest2024"`: words with digits are a password even when the
+        // words are code words.
+        if v.trim() != v || is_identifier(v) && score < 0.5 && code_words(v) && !digits_in_words(v)
+        {
             return None;
         }
     } else {
@@ -202,18 +205,21 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
             let w = lower.trim_end_matches(|c: char| c.is_ascii_digit());
             w.len() < lower.len() && is_lexicon_word(w)
         };
+        let env_style = key.upper && p.sep == Sep::Equals && p.tight && p.line_start;
         // In an argument list (`f(user, password=pw1)`, `{password: secret}`) an identifier
         // is a variable; other shapes (`Tulip-Harbor-91`) are literals of a dump or a list.
+        // Outside code, code words (`temp`, `new`, `user`) only make a variable of a value
+        // without digits among its words: `password: Temp1234` is a password, and a `.env`
+        // line (`SMTP_PASSWORD=new_pass`) holds configuration whatever it looks like.
         if p.code
             || p.args
             || p.stmt_end
             || key.member
             || is_stopword(&lower)
-            || code_words(v) && !weak_classic
+            || code_words(v) && !weak_classic && !env_style && !digits_in_words(v)
         {
             return None;
         }
-        let env_style = key.upper && p.sep == Sep::Equals && p.tight && p.line_start;
         let ok = if env_style {
             true
         } else if flag || p.syntax == Syntax::Spaced {
@@ -827,6 +833,14 @@ fn is_identifier(v: &str) -> bool {
 }
 
 /// An identifier whose words mark it as code (`password_input`, `userValue`, `pw`).
+/// `Temp1234`, `KeyWest2024`, `user2024`: letters with digits and no `_`, the shape of a
+/// human password; a variable named with code words mostly has an `_` or no digits.
+fn digits_in_words(v: &str) -> bool {
+    v.bytes().any(|b| b.is_ascii_digit())
+        && v.bytes().any(|b| b.is_ascii_alphabetic())
+        && !v.contains('_')
+}
+
 fn code_words(v: &str) -> bool {
     split_key(v)
         .iter()

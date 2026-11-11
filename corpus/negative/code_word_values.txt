@@ -1,0 +1,27 @@
+# identifiers and placeholders named with code words, as values of secret-named keys
+
+def change_password(user, new_password, old_password):
+    password = new_password
+    token = temp_token
+    secret = default_secret
+    password = user.password
+    password = newPassword
+    previous = old_pass
+    return password
+
+const labels = {
+  "password": "newPassword",
+  "confirmPassword": "confirmPassword",
+  "token": "userToken"
+};
+
+fields:
+  password: newPassword
+  secret: user_secret
+
+DB_PASSWORD=your_password_here
+API_KEY=your_api_key
+SECRET_KEY=change_me
+SMTP_PASSWORD=
+{"password": "userPassword", "token": "dataToken"}
+login(username=user1, password=pass1)

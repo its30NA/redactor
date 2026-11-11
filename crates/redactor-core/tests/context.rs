@@ -1113,3 +1113,25 @@ fn long_and_digit_key_names_are_keys() {
     );
     assert_clean("OAUTH2_PROXY_COOKIE_SECRET_LENGTH=32\n");
 }
+
+/// Code words (`temp`, `new`, `user`, `data`) make a variable only in code or without digits
+/// among the words; on a config line or in a JSON string `Temp1234` is a password.
+#[test]
+fn word_like_passwords_outside_code() {
+    for (text, v) in [
+        (
+            "{\"username\": \"jdoe\", \"password\": \"Temp1234\"}\n",
+            "Temp1234",
+        ),
+        ("SMTP_PASSWORD=Temp1234\n", "Temp1234"),
+        ("SMTP_PASSWORD=new_pass\n", "new_pass"),
+        ("  password: user2024\n", "user2024"),
+        ("spring.datasource.password=Temp1234\n", "Temp1234"),
+        ("Login: jdoe / Password: Temp1234\n", "Temp1234"),
+    ] {
+        assert_redacted(text, v);
+    }
+    assert_clean("    password = new_password\n");
+    assert_clean("{\"password\": \"userPassword\"}\n");
+    assert_clean("login(username=user1, password=pass1)\n");
+}
