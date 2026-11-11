@@ -125,6 +125,10 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["shared", "secret"], Secret),
     s(&["consumer", "secret"], Secret),
     s(&["webhook", "secret"], Secret),
+    // A webhook URL is a bearer credential: its random path segment is the secret.
+    s(&["webhook", "url"], Secret),
+    s(&["webhook", "uri"], Secret),
+    s(&["hook", "url"], Secret),
     s(&["signing", "secret"], Secret),
     s(&["otp", "secret"], RecoveryPhrase),
     s(&["totp", "secret"], RecoveryPhrase),

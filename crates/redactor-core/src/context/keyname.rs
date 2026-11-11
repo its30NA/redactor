@@ -66,6 +66,19 @@ const AFTER_HEAD_ONLY: &[&str] = &[
     "helper", "helpers",
 ];
 
+/// Words right before `token` that make it a pagination cursor (`next_page_token`).
+const CURSOR_WORDS: &[&str] = &[
+    "page",
+    "next",
+    "prev",
+    "previous",
+    "continuation",
+    "pagination",
+    "sync",
+    "cursor",
+    "resume",
+];
+
 pub(crate) fn classify(words: &[String]) -> Option<KeyClass> {
     if words.is_empty() || words.len() > 12 {
         return None;
@@ -116,6 +129,19 @@ pub(crate) fn classify(words: &[String]) -> Option<KeyClass> {
         {
             return None;
         }
+    }
+    // `page_token`, `next_token`, `continuation_token`: an opaque pagination cursor.
+    let cursor = matches.last().and_then(|m| {
+        let w = words.get(m.2)?;
+        let prev = m.2.checked_sub(1).and_then(|i| words.get(i))?;
+        Some(
+            matches!(w.as_str(), "token" | "tokens")
+                && !consumed[m.2 - 1]
+                && CURSOR_WORDS.contains(&prev.as_str()),
+        )
+    });
+    if cursor == Some(true) {
+        return None;
     }
     // The head of an English compound is its last word: `private_key_password` is a password.
     let best = matches
@@ -206,6 +232,8 @@ mod tests {
             "key_size",
             "client_id",
             "passwordHint",
+            "next_page_token",
+            "continuationToken",
         ] {
             assert_eq!(classify_key(&words(k)), None, "{k}");
         }

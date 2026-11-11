@@ -113,6 +113,30 @@ const R_COMMAND: &str = "Password argument of a command";
 const R_PROSE: &str = "Secret named in a sentence";
 const R_PIN: &str = "Digits of a PIN field";
 const R_TF_DEFAULT: &str = "Default of a secret-named Terraform variable";
+const R_WEBHOOK: &str = "Random path segment of a webhook URL";
+
+/// The first path or query segment of a URL that reads as a generated secret (16+
+/// characters, letters and digits, random-looking).
+fn webhook_secret(v: &str) -> Option<std::ops::Range<usize>> {
+    let scheme = v.find("://")?;
+    let host_end = scheme + 3 + v[scheme + 3..].find('/')?;
+    let mut i = host_end;
+    for seg in v[host_end..].split(['/', '?', '&', '=', '#']) {
+        let st = i;
+        i += seg.len() + 1;
+        let b = seg.as_bytes();
+        let generated = b.len() >= 16
+            && b.iter()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+            && b.iter().any(u8::is_ascii_digit)
+            && b.iter().any(u8::is_ascii_alphabetic)
+            && value_score(seg) >= 0.5;
+        if generated {
+            return Some(st..st + seg.len());
+        }
+    }
+    None
+}
 
 // ---------------------------------------------------------------------------------------
 // Value judges
@@ -124,6 +148,21 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
     let label = key.class.label;
     let strong = key.class.strength == Strength::Strong;
     let flag = p.syntax == Syntax::Flag;
+    // `WEBHOOK_URL=https://hooks.example.com/in/<secret>`: the URL's random segment.
+    if key.words.len() >= 2
+        && key.words.last().is_some_and(|w| w == "url" || w == "uri")
+        && key.words.iter().any(|w| w == "webhook" || w == "hook")
+    {
+        let seg = webhook_secret(v)?;
+        return Some(Found {
+            start: r.start + seg.start,
+            end: r.start + seg.end,
+            label,
+            confidence: 0.8,
+            reason: R_WEBHOOK,
+            ident_check: false,
+        });
+    }
     if never_a_value(v, label) {
         return None;
     }

@@ -268,6 +268,15 @@ pub(super) fn rules() -> Vec<Rule> {
         .back(8)
         .fwd(200),
         r(
+            "zapier_webhook",
+            "Zapier Webhook",
+            "https://hooks.zapier.com/hooks/catch/<id>/<secret>/",
+            &["hooks.zapier.com/hooks/catch/"],
+            r"hooks\.zapier\.com/hooks/catch/[0-9]{3,12}/(?P<s>[A-Za-z0-9]{6,64})",
+            0.95,
+        )
+        .fwd(100),
+        r(
             "teams_webhook",
             "Microsoft Teams Webhook URL",
             "https://<tenant>.webhook.office.com/webhookb2/…",

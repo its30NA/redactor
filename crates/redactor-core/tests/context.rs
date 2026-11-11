@@ -1269,3 +1269,18 @@ fn tool_password_arguments() {
         assert_clean(text);
     }
 }
+
+/// A webhook URL key: the random path segment is the secret; a plain hook path is not.
+#[test]
+fn webhook_url_keys_take_the_random_segment() {
+    assert_redacted(
+        "WEBHOOK_URL=https://hooks.example.com/in/Zq81mXv0pLr3TfK9wQe2Lm4x\n",
+        "Zq81mXv0pLr3TfK9wQe2Lm4x",
+    );
+    assert_redacted(
+        "alert_webhook_url: https://alerts.example.com/hook/p4Rt9Xw2Zq7Lm3Kv8Bn6?v=2\n",
+        "p4Rt9Xw2Zq7Lm3Kv8Bn6",
+    );
+    assert_clean("WEBHOOK_URL=https://hooks.example.com/in/team-alerts\n");
+    assert_clean("WEBHOOK_URL=https://example.com/webhooks/github\n");
+}

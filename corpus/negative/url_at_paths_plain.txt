@@ -1,0 +1,25 @@
+# URLs with @ in paths, ports before paths, plain userinfo, mailto links and pagination tokens
+
+https://medium.com/@jdoe/how-we-ship-every-day
+https://www.npmjs.com/package/@scope/pkg
+http://localhost:3000/@vite/client
+https://example.com:8443/users/@me
+https://registry.example.com:443/v2/@scope/pkg/manifests/latest
+mailto:jdoe@example.com?subject=Hello
+https://web.archive.org/web/2024/https://example.com/@team
+ssh://git@github.com:22/org/repo.git
+https://jdoe@dev.azure.com/org/proj/_git/repo
+https://contoso-engineering@dev.azure.com/contoso-engineering/project/_git/repo
+https://user@example.com/path
+git clone https://github.com/org/repo.git
+https://app.example.com/items?page_token=CAESBgoECAEQAQ
+https://api.example.com/v1/list?next_page_token=eyJvZmZzZXQiOjEwMH0
+https://example.com/a:b/c@d
+postgres://app@db.internal:5432/prod
+jdbc:oracle:thin:@//ora.internal:1521/ORCLPDB1
+jdbc:oracle:thin:@ora.internal:1521:ORCL
+WEBHOOK_URL=https://hooks.example.com/in/team-alerts
+WEBHOOK_URL=https://example.com/webhooks/github
+WEBHOOK_URL=
+https://hooks.zapier.com/hooks/catch/
+Reset links look like https://app.example.com/reset?reset_token=<token>

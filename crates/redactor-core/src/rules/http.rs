@@ -109,28 +109,91 @@ fn pgpass(h: &Hit) -> Verdict {
     }
 }
 
+/// Longest password with `/`, `?` or `#` in it that the userinfo scan reads.
+const MAX_SPECIAL_PASSWORD: usize = 256;
+
 /// The `user:password@` after `scheme://`, read in code so that neither part has a length
 /// limit. The password is everything up to the last `@` that a host character follows.
-/// Neither scan crosses a `/`, and every `://` holds one, so the work stays linear.
+/// Neither scan crosses a `/`, and every `://` holds one, so the work stays linear. A
+/// password with `/`, `?` or `#` in it (`app:Xy7/kL9@db`) is read past them, at most
+/// [`MAX_SPECIAL_PASSWORD`] bytes, unless what stands before the first of them is a port
+/// (`host:8443/users/@me`). A long random userinfo without a colon is a token
+/// (`https://<token>@git.example.com/…`).
 fn userinfo(text: &str, _start: usize, end: usize) -> Option<(usize, usize, usize)> {
     let rest = &text[end..];
     let user = rest
         .find(|c: char| c.is_whitespace() || ":/?#@\"'<>[]".contains(c))
         .unwrap_or(rest.len());
+    let host = |c: u8| c.is_ascii_alphanumeric() || b".[]_-".contains(&c);
+    if rest[user..].starts_with('@') {
+        let tok = &rest[..user];
+        let token = user >= 20
+            && rest.as_bytes().get(user + 1).is_some_and(|&c| host(c))
+            && tok.bytes().any(|c| c.is_ascii_digit())
+            && tok.bytes().any(|c| c.is_ascii_alphabetic())
+            && crate::context::value_score(tok) >= 0.5;
+        return token.then_some((end, end + user, end + user + 1));
+    }
     if !rest[user..].starts_with(':') {
         return None;
     }
     let ss = end + user + 1;
     let rest = &text[ss..];
+    let b = rest.as_bytes();
     let run = rest
         .find(|c: char| c.is_whitespace() || "/?#\"'<>".contains(c))
         .unwrap_or(rest.len());
-    let b = rest.as_bytes();
-    let host = |c: u8| c.is_ascii_alphanumeric() || b".[]_-".contains(&c);
-    let at = (1..run.saturating_sub(1))
-        .rev()
-        .find(|&i| b[i] == b'@' && host(b[i + 1]))?;
+    let last_at = |run: usize| {
+        (1..run.saturating_sub(1))
+            .rev()
+            .find(|&i| b[i] == b'@' && host(b[i + 1]))
+    };
+    if let Some(at) = last_at(run) {
+        return Some((ss, ss + at, ss + at + 1));
+    }
+    // `app:Xy7/kL9mQ2@db`: the password goes on past `/`, `?`, `#` to an `@` and a host.
+    if run == 0 || b[..run].iter().all(u8::is_ascii_digit) || run == rest.len() {
+        return None;
+    }
+    let hi = (run + MAX_SPECIAL_PASSWORD).min(rest.len());
+    let wide = run
+        + rest[run..hi]
+            .find(|c: char| c.is_whitespace() || "\"'<>".contains(c))
+            .unwrap_or(hi - run);
+    // The first `@` with a host after it; a later one belongs to the path or query.
+    let at = (run..wide.saturating_sub(1)).find(|&i| b[i] == b'@' && host(b[i + 1]))?;
+    if rest[..at].contains("://") {
+        return None;
+    }
+    // The host runs to a port, a path, a query or the end.
+    let he = (at + 1..wide).find(|&i| !host(b[i])).unwrap_or(wide);
+    let after_host = b.get(he).copied();
+    if !(he == wide || matches!(after_host, Some(b':' | b'/' | b'?' | b'#'))) {
+        return None;
+    }
     Some((ss, ss + at, ss + at + 1))
+}
+
+/// Pagination cursors are opaque but not secret: `page_token`, `next_token`.
+fn not_a_cursor(h: &Hit) -> Verdict {
+    let name = h.text[h.start + 1..h.s_start - 1].to_ascii_lowercase();
+    let cursor = [
+        "page",
+        "next",
+        "prev",
+        "continuation",
+        "sync",
+        "cursor",
+        "pagination",
+        "start",
+    ]
+    .iter()
+    .any(|p| name.starts_with(p));
+    if cursor {
+        Verdict::Reject
+    } else {
+        described(h)
+    }
 }
 
 pub(super) fn rules() -> Vec<Rule> {
@@ -298,14 +361,26 @@ pub(super) fn rules() -> Vec<Rule> {
         r(
             "url_query_token",
             "Access Token",
-            "?access_token=|refresh_token=|id_token=|token=|code=… in a URL",
+            "?access_token=|reset_token=|…_token=|token=|code=… in a URL",
             &["token=", "code="],
-            r#"[?&#;](?i:access_token|refresh_token|id_token|auth_token|session_token|csrf_token|xsrf_token|sas_token|token|code)=(?P<s>[^&;\s"'<>#]{8,})"#,
+            r#"[?&#;](?i:(?:[a-z0-9]{1,24}[_-]){0,3}token|code)=(?P<s>[^&;\s"'<>#]{8,})"#,
             0.85,
         )
         .ci()
-        .back(9)
+        .back(80)
         .fwd(8192)
+        .bounds(Bound::None, Bound::None)
+        .check(not_a_cursor),
+        r(
+            "jdbc_oracle_password",
+            "Password",
+            "jdbc:oracle:thin:user/<password>@host",
+            &["jdbc:oracle:"],
+            r#"(?i:jdbc:oracle:(?:thin|oci8?)):[A-Za-z0-9_$#.]{1,128}/(?P<s>[^@\s"'<>]{1,256})@"#,
+            0.9,
+        )
+        .ci()
+        .fwd(512)
         .bounds(Bound::None, Bound::None)
         .check(described),
         r(

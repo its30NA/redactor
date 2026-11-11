@@ -397,6 +397,9 @@ rule_cases! {
             g.alnum(24)
         ));
         "see https://hooks.slack.com/services/ for setup\n".to_string();
+    rule_zapier_webhook_hits rule_zapier_webhook_ignores_lookalike "zapier_webhook"
+        |g| ctx("https://hooks.zapier.com/hooks/catch/1234567/", g.alnum(20), "/\n");
+        "https://hooks.zapier.com/hooks/catch/\n".to_string();
     rule_teams_webhook_hits rule_teams_webhook_ignores_lookalike "teams_webhook"
         |g| env(format!(
             "https://example.webhook.office.com/webhookb2/{}-{}@{}/IncomingWebhook/{}/{}",
@@ -687,6 +690,9 @@ rule_cases! {
     rule_url_userinfo_password_hits rule_url_userinfo_password_ignores_lookalike "url_userinfo_password"
         |g| ctx("postgres://app:", g.alnum(16), "@db.example.com:5432/app\n");
         "postgres://app:${DB_PASSWORD}@db.example.com/app\n".to_string();
+    rule_jdbc_oracle_password_hits rule_jdbc_oracle_password_ignores_lookalike "jdbc_oracle_password"
+        |g| ctx("jdbc:oracle:thin:scott/", g.alnum(16), "@//ora.example.com:1521/ORCL\n");
+        "jdbc:oracle:thin:@//ora.example.com:1521/ORCL\n".to_string();
     rule_url_query_token_hits rule_url_query_token_ignores_lookalike "url_query_token"
         |g| ctx("https://example.com/cb?access_token=", g.alnum(40), "&state=xyz\n");
         "https://example.com/cb?token=abc\n".to_string();
@@ -807,4 +813,57 @@ fn npmrc_auth_needs_npmrc_shape() {
     assert_miss("npmrc_auth", "self._password = password_value\n");
     assert_miss("npmrc_auth", "this._authToken = response.accessToken;\n");
     assert_miss("npmrc_auth", "    obj._auth = makeAuthHeader(user)\n");
+}
+
+/// A URL password may hold `/`, `?` or `#`; a port before a path is no password. A long
+/// random userinfo is a token; an Oracle thin login and a Zapier hook carry secrets too.
+#[test]
+fn url_credentials_beyond_user_colon_password() {
+    for (text, secret) in [
+        (
+            "DATABASE_URL=postgres://app:Xy7#kL9mQ2@db.internal:5432/prod\n",
+            "Xy7#kL9mQ2",
+        ),
+        (
+            "DATABASE_URL=postgres://app:Xy7/kL9mQ2@db.internal:5432/prod\n",
+            "Xy7/kL9mQ2",
+        ),
+        (
+            "REDIS_URL=redis://:Xy7?kL9mQ2@cache.internal:6379/0\n",
+            "Xy7?kL9mQ2",
+        ),
+        (
+            "git remote set-url origin https://Zq81mXv0pLr3TfK9wQe2Lm4x@git.example.com/team/repo.git\n",
+            "Zq81mXv0pLr3TfK9wQe2Lm4x",
+        ),
+    ] {
+        assert_hit("url_userinfo_password", text, secret);
+    }
+    assert_hit(
+        "jdbc_oracle_password",
+        "jdbc:oracle:thin:scott/Hunter2-Fake-9x@//ora.internal:1521/ORCLPDB1\n",
+        "Hunter2-Fake-9x",
+    );
+    assert_hit(
+        "zapier_webhook",
+        "https://hooks.zapier.com/hooks/catch/1234567/k3j9x7q2m5n8p4w1v6b2/\n",
+        "k3j9x7q2m5n8p4w1v6b2",
+    );
+    assert_hit(
+        "url_query_token",
+        "https://app.example.com/reset?reset_token=k3j9x7q2m5n8p4w1\n",
+        "k3j9x7q2m5n8p4w1",
+    );
+    for text in [
+        "https://example.com:8443/users/@me\n",
+        "http://localhost:3000/@vite/client\n",
+        "https://jdoe@dev.azure.com/org/proj/_git/repo\n",
+        "https://medium.com/@jdoe/how-we-ship\n",
+    ] {
+        assert_miss("url_userinfo_password", text);
+    }
+    assert_miss(
+        "url_query_token",
+        "https://app.example.com/items?page_token=CAESBgoECAEQAQ\n",
+    );
 }
