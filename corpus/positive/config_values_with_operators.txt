@@ -1,0 +1,27 @@
+# config values whose characters look like code operators, paths, calls, tags or templates
+
+DB_PASSWORD=⟦Password|kT9#mQ2::xL7pW4z⟧
+DB_PASSWORD=⟦Password|aB3&&dE5fG7hJ9⟧
+DB_PASSWORD=⟦Password|Why??Not123x⟧
+REDIS_PASSWORD=⟦Password|zR4||tY8uI2oP6⟧
+API_SECRET=⟦*|mN5=>bV7cX9zL1⟧
+API_SECRET=⟦*|qW3!(eR5tY7uI9⟧
+API_SECRET=⟦*|hG6).fD4sA2pO8⟧
+DB_PASSWORD=⟦Password|Summer(2024)⟧
+DB_PASSWORD=⟦Password|Hunter[9]Zed[2]⟧
+API_KEY=⟦*|alpha1:bravo2:charlie3⟧
+DB_PASSWORD=⟦Password|lambda2024!x⟧
+DB_PASSWORD=⟦Password|functionKey77!⟧
+DB_PASSWORD=⟦Password|Abc<9xK>⟧
+DB_PASSWORD=⟦Password|blue---sky42⟧
+DB_PASSWORD=⟦Password|Xy***9kLm2⟧
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-⟦Password|hunter2prodX⟧}
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASS:-⟦Password|Sup3rDevPw⟧}
+password: ⟦Password|!Summer2024⟧
+Password: ⟦Password|*Star2024x⟧
+passphrase: "⟦*|my dog Rex 2019⟧"
+password: "⟦Password|Hello World 123!⟧"
+{"password": "⟦Password|hunter2prod⟧ "}
+db.password=⟦Password|Kiwi||2024x⟧
+smtp_password = ⟦Password|Tulip::Harbor91⟧

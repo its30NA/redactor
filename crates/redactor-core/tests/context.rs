@@ -1454,3 +1454,55 @@ fn help_text_metavariables_are_not_values() {
     assert_redacted("7z a -pTulip-Harbor-91 out.7z folder\n", "Tulip-Harbor-91");
     assert_redacted("DB_PASSWORD=[Tulip-Harbor-91]\n", "[Tulip-Harbor-91]");
 }
+
+/// A config value keeps characters that look like code: glued operators, `::`, calls with
+/// a number, YAML tag or alias marks before a password, rules inside one word, the default
+/// of a `${VAR:-v}` reference.
+#[test]
+fn config_values_that_look_like_code() {
+    for (text, secret) in [
+        ("DB_PASSWORD=kT9#mQ2::xL7pW4z\n", "kT9#mQ2::xL7pW4z"),
+        ("DB_PASSWORD=aB3&&dE5fG7hJ9\n", "aB3&&dE5fG7hJ9"),
+        ("DB_PASSWORD=Why??Not123x\n", "Why??Not123x"),
+        ("API_SECRET=mN5=>bV7cX9zL1\n", "mN5=>bV7cX9zL1"),
+        ("API_SECRET=qW3!(eR5tY7uI9\n", "qW3!(eR5tY7uI9"),
+        ("API_SECRET=hG6).fD4sA2pO8\n", "hG6).fD4sA2pO8"),
+        ("DB_PASSWORD=Summer(2024)\n", "Summer(2024)"),
+        ("DB_PASSWORD=Hunter[9]Zed[2]\n", "Hunter[9]Zed[2]"),
+        ("API_KEY=alpha1:bravo2:charlie3\n", "alpha1:bravo2:charlie3"),
+        ("DB_PASSWORD=lambda2024!x\n", "lambda2024!x"),
+        ("DB_PASSWORD=Abc<9xK>\n", "Abc<9xK>"),
+        ("DB_PASSWORD=blue---sky42\n", "blue---sky42"),
+        ("DB_PASSWORD=Xy***9kLm2\n", "Xy***9kLm2"),
+        (
+            "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hunter2prodX}\n",
+            "hunter2prodX",
+        ),
+        (
+            "    environment:\n      POSTGRES_PASSWORD: ${PG_PASS:-Sup3rDevPw}\n",
+            "Sup3rDevPw",
+        ),
+        ("password: !Summer2024\n", "!Summer2024"),
+        ("Password: *Star2024x\n", "*Star2024x"),
+        ("passphrase: \"my dog Rex 2019\"\n", "my dog Rex 2019"),
+        ("password: \"Hello World 123!\"\n", "Hello World 123!"),
+        ("{\"password\": \"hunter2prod \"}\n", "hunter2prod"),
+    ] {
+        assert_redacted(text, secret);
+    }
+    for text in [
+        "  password: process.env.DB_PASSWORD || undefined,\n",
+        "password: this.pw||null\n",
+        "secret: opts.secret??''\n",
+        "password = sys.argv[1]\n",
+        "token = std::env::var(\"TOKEN\")\n",
+        "password: *default_password\n",
+        "token: !Ref ApiToken\n",
+        "DB_PASSWORD=${DB_PASSWORD:-}\n",
+        "token: Option<String>,\n",
+        "passphrase: \"at least four words\"\n",
+        "password: \"Must be at least 8 characters\"\n",
+    ] {
+        assert_clean(text);
+    }
+}

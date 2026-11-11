@@ -148,7 +148,21 @@ fn webhook_secret(v: &str) -> Option<std::ops::Range<usize>> {
 // ---------------------------------------------------------------------------------------
 
 fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
-    let r = p.value.clone()?;
+    let mut r = p.value.clone()?;
+    // `${POSTGRES_PASSWORD:-Sup3rDevPw}`: the default of a shell or Compose reference is the
+    // value; a reference without one is no value.
+    if let Some(d) = expansion_default(&text[r.clone()]) {
+        r = r.start + d.start..r.start + d.end;
+    }
+    // `"hunter2prod "`: a blank pasted at the end of a password with letters and digits.
+    if p.quoted {
+        let v = &text[r.clone()];
+        let t = v.trim();
+        if t != v && !t.is_empty() && letters_and_digits(t) && !t.contains(char::is_whitespace) {
+            let lead = v.len() - v.trim_start().len();
+            r = r.start + lead..r.start + lead + t.len();
+        }
+    }
     let v = &text[r.clone()];
     let label = key.class.label;
     let strong = key.class.strength == Strength::Strong;
@@ -325,10 +339,25 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
     // with spaces`, `'my dog Rex 2019'`), unless they read as a sentence.
     let env_line = key.upper && p.sep == Sep::Equals && p.tight && p.line_start;
     let dotenv = !p.quoted && env_line;
+    // A passphrase is words (`my dog Rex 2019`): function words do not make it a sentence,
+    // a lexicon word or sentence punctuation does.
+    let passphrase = key.words.iter().any(|w| w == "passphrase");
     let prose = if env_line {
         // One word is never a sentence (`'Winter2024!'`).
         let words = v.split_whitespace().count();
-        words > 8 || words > 1 && v.trim_end().ends_with(['.', '?', '!', ':'])
+        words > 8 || words > 1 && sentence_end(v)
+    } else if passphrase {
+        let words: Vec<&str> = v.split_whitespace().collect();
+        let digits = v.bytes().any(|b| b.is_ascii_digit());
+        words.len() > 8
+            || words.len() > 1 && sentence_end(v)
+            || !digits && prose_like(v)
+            || words.iter().any(|w| {
+                let w = w
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase();
+                is_lexicon_word(&w) || lexicon_phrase_word(&w)
+            })
     } else {
         prose_like(v)
     };
@@ -374,6 +403,26 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         return Some(found(0.45, R_STRONG_PLAIN, ident_check));
     }
     Some(found(0.75, R_STRONG_PLAIN, ident_check))
+}
+
+/// The default of `${NAME:-v}`, `${NAME-v}`, `${NAME:=v}` or `${NAME=v}`, as a range of `v`
+/// (a literal default only: no nested `$`, braces or quotes).
+fn expansion_default(v: &str) -> Option<std::ops::Range<usize>> {
+    let inner = v.strip_prefix("${")?.strip_suffix('}')?;
+    let name_end = inner.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))?;
+    if name_end == 0 {
+        return None;
+    }
+    let rest = &inner[name_end..];
+    let op = [":-", ":=", "-", "="]
+        .into_iter()
+        .find(|op| rest.starts_with(op))?;
+    let d = &rest[op.len()..];
+    if d.is_empty() || d.contains(['$', '{', '}', '"', '\'', '`']) {
+        return None;
+    }
+    let start = 2 + name_end + op.len();
+    Some(start..start + d.len())
 }
 
 /// Every character is a digit (ASCII, Persian or Arabic-Indic).
@@ -712,14 +761,13 @@ fn never_a_value(v: &str, label: Label) -> bool {
     if !t.chars().any(char::is_alphanumeric) {
         return true;
     }
-    if t.contains("${")
-        || t.contains("{{")
-        || t.contains("%(")
-        || t.starts_with("$(")
-        || t.contains("---")
-        || t.contains("***")
-        || t.contains("===")
-    {
+    // Rules and masks (`---`, `****1234`); one word with letters and digits around the run
+    // (`blue---sky42`, `Xy***9kLm2`) is a password.
+    let rule = ["---", "***", "==="].iter().any(|r| {
+        t.contains(r)
+            && (t.starts_with(r) || t.contains(char::is_whitespace) || !letters_and_digits(t))
+    });
+    if t.contains("${") || t.contains("{{") || t.contains("%(") || t.starts_with("$(") || rule {
         return true;
     }
     if brace_template(t) {
@@ -827,16 +875,27 @@ fn expression(v: &str, literal: bool, yaml: bool) -> bool {
     for kw in [
         "await ", "new ", "yield ", "typeof ", "keyof ", "lambda", "function", "async ", "not ",
     ] {
-        if lower.starts_with(kw) {
-            return true;
+        // `lambda: x`, `function(cb)`; `lambda2024!x` and `functionKey77!` are words.
+        if let Some(rest) = lower.strip_prefix(kw) {
+            if !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
+                return true;
+            }
         }
     }
-    if [
-        "||", "&&", "??", " + ", " ? ", "=>", " | ", " & ", " * ", " / ", " % ",
-    ]
-    .iter()
-    .any(|op| v.contains(op))
+    if [" + ", " ? ", " | ", " & ", " * ", " / ", " % "]
+        .iter()
+        .any(|op| v.contains(op))
     {
+        return true;
+    }
+    // In a literal an operator glued between characters with digits mixed into letters
+    // (`aB3&&dE5`, `Why??Not1`) is part of the password; code spaces its operators or has a
+    // member, call or string beside them (`this.pw||null`, `opts.secret??''`).
+    let glued_value = literal
+        && !v.contains(char::is_whitespace)
+        && mixed_in_digits(v)
+        && !v.contains(['.', '(', '\'', '"']);
+    if ["||", "&&", "??", "=>"].iter().any(|op| v.contains(op)) && !glued_value {
         return true;
     }
     // A call chain: `process.current_process().authkey`, `a.b(c).d`.
@@ -852,18 +911,33 @@ fn expression(v: &str, literal: bool, yaml: bool) -> bool {
         return true;
     }
     // Paths and macros: `TokenStreamBuilder::new()`, `token::Paren`, `Token![fn]`,
-    // `quote!(#X)`; ABNF: `1*tchar`.
-    if v.contains("::")
-        || v.contains("![")
-        || v.contains("!(")
-        || v.contains("!{")
-        || v.contains(").")
-        || v.ends_with('!') && is_macro_name(&v[..v.len() - 1])
-    {
+    // `quote!(#X)`; ABNF: `1*tchar`. In a literal `::` needs code segments without digits
+    // mixed into letters (`kT9#mQ2::xL7`, `Tulip::Harbor91` are values), a macro call a
+    // macro name before its `!`, and `).` an opening `(` before it.
+    let path = v.contains("::")
+        && (!literal
+            || !mixed_in_digits(v)
+                && v.split("::").all(|seg| {
+                    seg.chars()
+                        .all(|c| c.is_alphanumeric() || "_()<>![]{},.&' \"".contains(c))
+                }));
+    let macro_call = ["![", "!(", "!{"].iter().any(|m| {
+        v.find(m).is_some_and(|i| {
+            !literal || is_macro_name(v[..i].rsplit("::").next().unwrap_or_default())
+        })
+    });
+    let chain = v
+        .find(").")
+        .is_some_and(|i| !literal || v[..i].contains('('));
+    if path || macro_call || chain || v.ends_with('!') && is_macro_name(&v[..v.len() - 1]) {
         return true;
     }
-    // Objective-C selectors: `initWithSpace:credential:count:`.
-    if v.matches(':').count() >= 2 && v.split(':').all(|s| s.is_empty() || is_identifier(s)) {
+    // Objective-C selectors: `initWithSpace:credential:count:`; in a literal only with the
+    // closing `:` (`alpha1:bravo2:charlie3` is a value).
+    if v.matches(':').count() >= 2
+        && v.split(':').all(|s| s.is_empty() || is_identifier(s))
+        && (!literal || v.ends_with(':'))
+    {
         return true;
     }
     // ABNF repetition `1*tchar`; in a literal only with its count (`*Cedar37` is a value).
@@ -872,8 +946,12 @@ fn expression(v: &str, literal: bool, yaml: bool) -> bool {
     if digits_star.starts_with('*') && digits_star.len() > 1 && (counted || !literal) {
         return true;
     }
-    // `&password`, `*ptr`, `!flag`; YAML `*alias`
-    if let Some(rest) = v.strip_prefix(['&', '*', '!']).filter(|_| !literal || yaml) {
+    // `&password`, `*ptr`, `!flag`; YAML `*alias`. Digits mixed into the letters
+    // (`*Star2024x`, `!Summer2024`) make a password, not an anchor name.
+    if let Some(rest) = v
+        .strip_prefix(['&', '*', '!'])
+        .filter(|r| !literal || yaml && !mixed_in_digits(r))
+    {
         if is_identifier(rest) || member_path(rest).is_some() {
             return true;
         }
@@ -891,7 +969,21 @@ fn expression(v: &str, literal: bool, yaml: bool) -> bool {
             .next()
             .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$');
         let open_end = v.ends_with(['(', '[']);
-        if opener && closes && head_ok && !(literal && open_end && !code_name(head)) {
+        // In a literal a call takes code arguments: none, a string, a name or `$x`
+        // (`getpass()`, `ENV['X']`, `os.getenv(KEY)`), or an index after a code name
+        // (`sys.argv[1]`); `Summer(2024)` and `Hunter[9]Zed[2]` are passwords.
+        let after = if opener { &v[i + 1..] } else { "" };
+        let args = after.strip_suffix([')', ']']).unwrap_or(after);
+        let code_args = args.is_empty()
+            || args.contains(['"', '\'', '$'])
+            || is_identifier(args)
+            || member_path(args).is_some()
+            || args.bytes().all(|b| b.is_ascii_digit())
+                && (head.contains(['.', '_'])
+                    || head.starts_with(|c: char| c.is_ascii_lowercase())
+                    || !head.bytes().any(|b| b.is_ascii_lowercase()));
+        let literal_call = if open_end { code_name(head) } else { code_args };
+        if opener && closes && head_ok && (!literal || literal_call) {
             return true;
         }
     }
@@ -989,9 +1081,14 @@ fn is_type_name(v: &str) -> bool {
             && s.chars()
                 .all(|c| c.is_alphanumeric() || matches!(c, '_' | ':' | '.'))
     };
-    // Generics: Option<String>, Vec<u8>, Promise<string>
+    // Generics: Option<String>, Vec<u8>, Promise<string>; `Abc<9xK>` is a password.
     if let Some(open) = t.find('<') {
-        if t.ends_with('>') && ident_head(&t[..open]) {
+        let inner = t[open + 1..].strip_suffix('>').unwrap_or_default();
+        if t.ends_with('>')
+            && ident_head(&t[..open])
+            && !inner.starts_with(|c: char| c.is_ascii_digit())
+            && !mixed_in_digits(inner)
+        {
             return true;
         }
     }
@@ -1056,12 +1153,23 @@ fn prose_like(v: &str) -> bool {
     }
     // Several words: a passphrase (`correct horse battery staple`) has no function words.
     words.len() > 8
-        || v.trim_end().ends_with(['.', '?', '!', ':'])
+        || sentence_end(v)
         || words.iter().any(|w| {
             is_lexicon_word(w)
                 || lexicon::FUNCTION_WORDS.contains(&w.as_str())
                 || lexicon_phrase_word(w)
         })
+}
+
+/// Ends with sentence punctuation; a last word with digits (`Hello World 123!`) ends a
+/// password, not a sentence.
+fn sentence_end(v: &str) -> bool {
+    let t = v.trim_end();
+    t.ends_with(['.', '?', '!', ':'])
+        && !t
+            .split_whitespace()
+            .next_back()
+            .is_some_and(|w| w.bytes().any(|b| b.is_ascii_digit()))
 }
 
 /// Translations of "password" that are phrase parts (`passe`, `عبور`).

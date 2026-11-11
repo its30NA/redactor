@@ -1,0 +1,57 @@
+# code, shell and YAML lines whose values are expressions, aliases, tags or references
+
+const password = process.env.DB_PASSWORD || '';
+const token = options.token ?? defaults.token;
+  password: process.env.DB_PASSWORD || undefined,
+  token: config.token ?? null,
+  secret: req.headers['x-secret'] && req.headers['x-secret'].trim(),
+  apiKey: (key) => key.trim(),
+password = os.environ.get("DB_PASSWORD") or getpass.getpass()
+let password = matches.value_of("password").unwrap_or_default();
+let token = TokenStream::new();
+token: Option<String>,
+password: Option<&'a str>,
+secret: Vec<u8>,
+type Password = Box<dyn Fn() -> String>;
+token = token::Paren(span)
+password = quote!(#ident)
+token = Token![fn]
+[api setPassword:password token:token completion:nil];
+selector = @selector(initWithUser:password:token:)
+test -n "$DB_PASSWORD" && echo "password set" || echo "password missing"
+[ -z "$TOKEN" ] && TOKEN=$(cat /run/secrets/token)
+export DB_PASSWORD=${DB_PASSWORD:-}
+DB_PASSWORD=${DB_PASSWORD:?missing}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${PG_PASS:-changeme}
+      POSTGRES_PASSWORD: ${PG_PASS}
+password: *default_password
+password: &db_password
+token: !Ref ApiToken
+secret: !vault |
+password: !env DB_PASSWORD
+api_key: *api_key_anchor
+password_hash = hashlib.sha256(password.encode()).hexdigest()
+token_count = len(tokens) if tokens else 0
+password = lambda: getpass.getpass("Password: ")
+password = function() { return prompt("Password"); }
+secret = function (cb) { cb(null) }
+password: "Enter your password"
+password: "Must be at least 8 characters"
+password: "Too short!"
+passphrase: "Enter your passphrase"
+passphrase: "Use 4 or more random words."
+password = sys.argv[1]
+token = ARGV[1]
+password: user.password||''
+password: this.pw||null
+secret: opts.secret??''
+token: (t)=>t.trim()
+token: HashMap<String,u32>
+token = std::env::var("TOKEN")
+password = crate::auth::password()
+secret = format!("{}", x)
+token = vec![0u8; 32]
+password = lambda x: x
+passphrase: "at least four words"
+password: "Wrong password, try again!"
