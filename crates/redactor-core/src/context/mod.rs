@@ -604,7 +604,7 @@ fn credential_lines(text: &str, found: &mut Vec<Found>) {
     }
     for (at, line) in lines(text) {
         let t = line.trim();
-        if t.len() > 200 || t.len() < 6 {
+        if t.len() > 200 || t.len() < 6 || !t.contains(':') {
             continue;
         }
         let lead = at + line.len() - line.trim_start().len();
@@ -656,14 +656,34 @@ const LICENSE_WORDS: &[&str] = &[
 /// and a grouped license key (`License: QW3RT-Y7U8I-O9P0A-S1D2F-G3H4J`). Both shapes alone
 /// are common enough in ordinary text; the word on the same line is the signal.
 fn seeds_and_license_keys(text: &str, found: &mut Vec<Found>) {
-    for (at, line) in lines(text) {
-        if line.len() > 512 || line.len() < 16 {
-            continue;
+    static WORDS: std::sync::OnceLock<Option<AhoCorasick>> = std::sync::OnceLock::new();
+    let Some(ac) = WORDS
+        .get_or_init(|| {
+            AhoCorasick::builder()
+                .ascii_case_insensitive(true)
+                .build(TOTP_WORDS.iter().chain(LICENSE_WORDS))
+                .ok()
+        })
+        .as_ref()
+    else {
+        return;
+    };
+    // The lines that hold a word, each once, with the kinds of word.
+    let mut hits: Vec<(usize, bool, bool)> = Vec::new();
+    for m in ac.find_iter(text) {
+        let ls = syntax::line_start(text, m.start());
+        let totp = m.pattern().as_usize() < TOTP_WORDS.len();
+        match hits.last_mut() {
+            Some((s, t, l)) if *s == ls => {
+                *t |= totp;
+                *l |= !totp;
+            }
+            _ => hits.push((ls, totp, !totp)),
         }
-        let lower = line.to_ascii_lowercase();
-        let totp = TOTP_WORDS.iter().any(|w| lower.contains(w));
-        let license = LICENSE_WORDS.iter().any(|w| lower.contains(w));
-        if !totp && !license {
+    }
+    for (at, totp, license) in hits {
+        let line = &text[at..line_end(text, at)];
+        if line.len() > 512 || line.len() < 16 {
             continue;
         }
         let mut i = 0;
