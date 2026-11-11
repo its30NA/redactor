@@ -11,3 +11,10 @@ class Client {
 }
 
     self._password = hashlib.sha256(raw).hexdigest()
+
+# audit 2026-11-10 appendix B: npm setting names on members in code
+        self._password = password_value
+        self._password = generate_password()
+        self._auth = HTTPBasicAuth(username, pw)
+    this._authToken = response.data.token;
+session._auth = credentials_provider
