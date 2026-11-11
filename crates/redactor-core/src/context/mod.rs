@@ -174,13 +174,31 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         reason,
         ident_check,
     };
-    let digits = v.bytes().all(|b| b.is_ascii_digit());
+    let digits = all_digits(v);
+    let n = v.chars().count();
     if label == Label::Pin {
-        return (digits && (4..=12).contains(&v.len())).then(|| found(0.75, R_PIN, false));
+        // A card's CVV has 3 or 4 digits.
+        let card = key
+            .words
+            .iter()
+            .any(|w| matches!(w.as_str(), "cvv" | "cvc" | "cvv2" | "cvc2" | "csc"));
+        let len = if card { 3..=4 } else { 4..=12 };
+        return (digits && len.contains(&n)).then(|| found(0.75, R_PIN, false));
     }
     if digits {
-        // Numbers only count for PIN keys.
-        return None;
+        // Numbers count for PIN keys, for a passcode, and for a password on a config line or
+        // in a JSON string (`DB_PASSWORD=12345678`); elsewhere a number is a number.
+        let passcode = key
+            .words
+            .iter()
+            .any(|w| matches!(w.as_str(), "passcode" | "zugangscode"));
+        let config = !p.code
+            && (p.line_start && (p.literal || p.quoted)
+                || p.quoted && p.syntax == Syntax::QuotedKey);
+        let ok = label == Label::Password
+            && strong
+            && (passcode && (4..=12).contains(&n) || config && (6..=64).contains(&n));
+        return ok.then(|| found(0.75, R_STRONG_PLAIN, false));
     }
     let score = value_score(v);
     let random = score >= 0.5;
@@ -221,12 +239,10 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
                 || v.starts_with('\\')
                 || v.contains('\\') && score < 0.7
         };
-        if p.code
-            || literal_field
-            || is_type_name(v)
-            || code_shape
-            || !v.chars().any(char::is_alphabetic)
-        {
+        // `DB_PASSWORD=1234!5678#`: digits and symbols on a config line are a password.
+        let letterless = !v.chars().any(char::is_alphabetic)
+            && !(p.line_start && p.literal && label == Label::Password && digit_symbols(v));
+        if p.code || literal_field || is_type_name(v) || code_shape || letterless {
             return None;
         }
         // A member path of plain words is code; a segment with digits mixed into its
@@ -272,15 +288,19 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
         } else if flag || p.syntax == Syntax::Spaced {
             v.len() >= 4
         } else if p.line_start && p.sep == Sep::Colon {
-            // YAML: `password: hunter`
-            v.chars().count() >= 6
+            // YAML: `password: hunter`; `password: abc12` with digits among letters.
+            n >= 6 || n >= 4 && letters_and_digits(v)
         } else if p.line_start && p.sep == Sep::Equals && p.tight {
             // properties / INI without spaces: `db.password=hunter`
             v.len() >= 4
         } else if p.line_start && p.sep == Sep::Equals && !v.contains(['_', '.']) {
-            // INI: `db_password = dragonfly`. A variable in code mostly has an `_` or is
-            // used as an identifier elsewhere in the text (`ident_check`).
-            v.chars().count() >= 6
+            // INI: `db_password = dragonfly`, `password = kiwi9`. A variable in code mostly
+            // has an `_` or is used as an identifier elsewhere in the text (`ident_check`).
+            n >= 6 || n >= 4 && letters_and_digits(v)
+        } else if p.syntax == Syntax::Assign && p.literal && p.sep == Sep::Equals && p.tight {
+            // A logfmt field (`user=bob password=sunshine attempt=2`) holds a literal; a
+            // state word (`password=redacted`, `password=present`) is about it.
+            n >= 6 && !LOG_STATES.contains(&lower.as_str())
         } else {
             // `password = hunter2prod`: INI, or Python with a variable; `tokens: GitHub` in
             // prose. Only a value with digits among its letters, and not one the text uses as
@@ -346,6 +366,64 @@ fn judge_pair(text: &str, key: &Key, p: &RawPair) -> Option<Found> {
     }
     Some(found(0.75, R_STRONG_PLAIN, ident_check))
 }
+
+/// Every character is a digit (ASCII, Persian or Arabic-Indic).
+fn all_digits(v: &str) -> bool {
+    !v.is_empty()
+        && v.chars().all(|c| {
+            c.is_ascii_digit()
+                || ('\u{06F0}'..='\u{06F9}').contains(&c)
+                || ('\u{0660}'..='\u{0669}').contains(&c)
+        })
+}
+
+/// ASCII letters and digits both.
+fn letters_and_digits(v: &str) -> bool {
+    v.bytes().any(|b| b.is_ascii_digit()) && v.bytes().any(|b| b.is_ascii_alphabetic())
+}
+
+/// Six or more characters, digits and a symbol a number never holds (`1234!5678#`); dates,
+/// times, versions, amounts and phone numbers use only `.,:-/+` and blanks.
+fn digit_symbols(v: &str) -> bool {
+    v.chars().count() >= 6
+        && !v.contains(char::is_whitespace)
+        && v.bytes().any(|b| b.is_ascii_digit())
+        && v.bytes().any(|b| b"!@#$%^&*?~|;".contains(&b))
+}
+
+/// Words a log line writes in a secret's field to say what happened to it.
+const LOG_STATES: &[&str] = &[
+    "redacted",
+    "masked",
+    "hidden",
+    "present",
+    "missing",
+    "provided",
+    "invalid",
+    "filtered",
+    "removed",
+    "omitted",
+    "supplied",
+    "required",
+    "changed",
+    "updated",
+    "expired",
+    "accepted",
+    "rejected",
+    "correct",
+    "incorrect",
+    "matched",
+    "mismatch",
+    "mismatched",
+    "absent",
+    "unset",
+    "empty",
+    "sanitized",
+    "scrubbed",
+    "censored",
+    "elided",
+    "verified",
+];
 
 /// `8-4-4-4-12` hex groups.
 fn uuid_like(v: &str) -> bool {

@@ -574,10 +574,13 @@ fn prose_plain_word_only_in_paranoid() {
     assert_eq!(out.output, "the password is [REDACTED: Password]");
 }
 
+/// Numbers count for PIN keys; for a password only with 6+ digits on a config line or in a
+/// JSON string (`DB_PASSWORD=12345678`, see `digit_short_and_letterless_passwords`).
 #[test]
 fn numbers_only_for_pins() {
-    assert_clean("timeout: 30\npassword: 12345678\n");
+    assert_clean("timeout: 30\npassword: 2024\n");
     assert_clean("LED_PIN = 13\n");
+    assert_clean("password_hash_rounds: 120000\n");
 }
 
 #[test]
@@ -1363,6 +1366,46 @@ fn lexicon_gap_key_words() {
         "Authorization: required\n",
         "vault auth enable userpass\n",
         "Der Schlüssel liegt im Büro.\n",
+    ] {
+        assert_clean(text);
+    }
+}
+
+/// Digits, short values and letterless values: 6+ digits for a password key on a config line
+/// or in a JSON string, PIN-like codes (passcode, OTP, CVV, Persian digits), five-character
+/// YAML and INI values with digits, symbols with digits, and a word in a logfmt field.
+#[test]
+fn digit_short_and_letterless_passwords() {
+    for (text, v) in [
+        ("DB_PASSWORD=12345678\n", "12345678"),
+        ("POSTGRES_PASSWORD=482917\n", "482917"),
+        ("wifi:\n  password: \"4829175036\"\n", "4829175036"),
+        (
+            "{\"username\": \"admin\", \"password\": \"20240815\"}\n",
+            "20240815",
+        ),
+        ("door passcode: 482917\n", "482917"),
+        ("رمز کارت: ۴۸۲۱\n", "۴۸۲۱"),
+        ("OTP: 482917\n", "482917"),
+        ("cvv: 847\n", "847"),
+        ("db:\n  password: abc12\n", "abc12"),
+        ("[database]\npassword = kiwi9\n", "kiwi9"),
+        ("DB_PASSWORD=1234!5678#\n", "1234!5678#"),
+        (
+            "level=info user=bob password=sunshine attempt=2\n",
+            "sunshine",
+        ),
+    ] {
+        assert_redacted(text, v);
+    }
+    for text in [
+        "PORT=5432\n",
+        "TIMEOUT=30000000\n",
+        "FILE_ID=12345678\n",
+        "password: 2024\n",
+        "otp_length: 6\n",
+        "level=info user=bob password=redacted attempt=2\n",
+        "level=info user=bob password=present attempt=2\n",
     ] {
         assert_clean(text);
     }

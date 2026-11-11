@@ -1,0 +1,30 @@
+# ordinary numbers and short words next to config keys
+
+PORT=5432
+TIMEOUT=30000000
+DB_PORT=3306
+PASSWORD_MIN_LENGTH=12
+PASSWORD_EXPIRY_DAYS=90
+password_timeout: 300000
+TOKEN_TTL=86400
+FILE_ID=12345678
+USER_ID=20240815
+otp_length: 6
+OTP_ISSUER=Example
+cvv_required: true
+pin_attempts: 3
+password: 2024
+version: 20240815
+created_at: "2024-08-15"
+password_hash_rounds: 120000
+level=info user=bob password=redacted attempt=2
+level=info user=bob password=masked attempt=2
+level=info user=bob password=present attempt=2
+level=info user=bob password=missing attempt=2
+level=info user=bob password=provided attempt=2
+level=info user=bob password=hidden attempt=2
+level=warn msg="login failed" password=invalid attempt=3
+level=info user=bob password=set
+{"id": 12345678, "password": null}
+{"pin_length": 123456}
+phone: "+49 30 1234567"

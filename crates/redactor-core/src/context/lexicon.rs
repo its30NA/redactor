@@ -109,6 +109,8 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["كلمة", "السر"], Password),
     s(&["key", "content"], Password),
     s(&["pin", "code"], Pin),
+    // `رمز کارت`: a bank card's PIN.
+    s(&["رمز", "کارت"], Pin),
     s(&["access", "token"], Token),
     s(&["refresh", "token"], Token),
     s(&["auth", "token"], Token),
@@ -232,6 +234,11 @@ pub(crate) const ENTRIES: &[Entry] = &[
     s(&["pincode"], Pin),
     s(&["geheimzahl"], Pin),
     s(&["puk"], Pin),
+    s(&["otp"], Pin),
+    s(&["cvv"], Pin),
+    s(&["cvc"], Pin),
+    s(&["cvv2"], Pin),
+    s(&["cvc2"], Pin),
     // tokens
     s(&["token"], Token),
     s(&["tokens"], Token),
@@ -450,6 +457,21 @@ pub(crate) const NEGATIVE: &[&str] = &[
     "encoding",
     "schema",
     "class",
+    // numbers about a secret: `password_hash_rounds: 120000`, `token_lifetime_days: 30`
+    "rounds",
+    "iterations",
+    "cost",
+    "bits",
+    "days",
+    "seconds",
+    "secs",
+    "minutes",
+    "mins",
+    "hours",
+    "ms",
+    "port",
+    "digits",
+    "history",
 ];
 
 /// Words that connect a key to its value in prose.
