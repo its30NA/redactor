@@ -9,14 +9,14 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_notification::NotificationExt;
 
 use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
-use crate::hotkey::Hotkey;
-use crate::platform::hotkey_plugin::shortcut;
+use crate::hotkey::{self, Hotkey};
+use crate::platform;
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
 use crate::tray;
@@ -30,7 +30,7 @@ pub fn run() {
         .as_ref()
         .map(SettingsFile::load)
         .unwrap_or_default();
-    let shared: Shared = Arc::new(AppState::new(settings, settings_file));
+    let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform::native()));
 
     let app = tauri::Builder::default()
         // Must come first: a second launch focuses this window and exits.
@@ -70,22 +70,25 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            let settings = state::state(&handle).settings();
+            let st = state::state(&handle);
+            let settings = st.settings();
             create_main_window(&handle, &settings)?;
-            tray::build(&handle, settings.content_protection)?;
+            if st.platform.tray {
+                tray::build(&handle, settings.content_protection)?;
+            }
             if let Ok(hk) = Hotkey::parse(&settings.hotkey) {
                 // Another app may hold the key; the app still runs, and Settings can pick
                 // another one.
-                let _ = handle.global_shortcut().register(shortcut(&hk));
+                let _ = st.platform.hotkey.register(&handle, &hk);
             }
             start_idle_timer(handle.clone());
             let lock_handle = handle.clone();
-            crate::platform::windows::lock::spawn(move |reason| {
+            st.platform.lock.spawn(Box::new(move |reason| {
                 let st = state::state(&lock_handle);
                 if st.settings().wipe_on_lock && st.wiper.has_content() {
                     state::wipe(&lock_handle, reason);
                 }
-            });
+            }));
             // Build the engine now, off the UI thread, so the first scan is fast.
             let warm = state::state(&handle);
             std::thread::spawn(move || {
@@ -100,7 +103,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
                 let st = state::state(app);
-                if st.settings().tray_mode {
+                if st.settings().tray_mode && st.platform.tray {
                     api.prevent_close();
                     let _ = window.hide();
                     if !st.tray_notice_shown.swap(true, Ordering::SeqCst) {
@@ -140,7 +143,7 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
         .on_navigation(allowed_origin)
         .on_new_window(|_url, _features| NewWindowResponse::Deny)
         .build()?;
-    crate::platform::windows::webview::harden(&window);
+    state::state(app).platform.webview.harden(&window);
     Ok(window)
 }
 
@@ -183,7 +186,7 @@ pub fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
     let s = st.settings();
     let engine = st.engines.get(s.strip_invisible);
     let r = clipscrub::scrub(
-        &crate::platform::windows::clipboard::WinClipboard,
+        &*st.platform.clipboard,
         &engine,
         s.sensitivity,
         s.pii,
@@ -225,15 +228,14 @@ fn change_settings(
 
     if next.hotkey != prev.hotkey {
         let new_hk = Hotkey::parse(&next.hotkey).map_err(|e| e.to_string())?;
-        let gs = app.global_shortcut();
-        let old = Hotkey::parse(&prev.hotkey).ok().map(|h| shortcut(&h));
-        if let Some(old) = old {
-            let _ = gs.unregister(old);
-        }
-        if gs.register(shortcut(&new_hk)).is_err() {
-            if let Some(old) = old {
-                let _ = gs.register(old);
-            }
+        let old = Hotkey::parse(&prev.hotkey).ok();
+        let swapped = hotkey::replace_registration(
+            old.as_ref(),
+            &new_hk,
+            |h| st.platform.hotkey.register(app, h).is_ok(),
+            |h| st.platform.hotkey.unregister(app, h),
+        );
+        if !swapped {
             return Err(format!(
                 "Another app already uses {}. Kept {}.",
                 next.hotkey, prev.hotkey

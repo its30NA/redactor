@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::engines::{EngineSet, Profile};
+use crate::platform::Platform;
 use crate::session::SessionStore;
 use crate::settings::{Settings, SettingsFile};
 use crate::wipe::{WipeEvent, WipeReason, Wiper};
@@ -22,10 +23,16 @@ pub struct AppState {
     pub scrub_lock: Mutex<()>,
     /// Held across a whole settings change (read, apply, store), so two changes never interleave.
     pub settings_change: Mutex<()>,
+    /// The operating system behind the shell.
+    pub platform: Platform,
 }
 
 impl AppState {
-    pub fn new(settings: Settings, settings_file: Option<SettingsFile>) -> AppState {
+    pub fn new(
+        settings: Settings,
+        settings_file: Option<SettingsFile>,
+        platform: Platform,
+    ) -> AppState {
         let session = Arc::new(SessionStore::new());
         AppState {
             engines: EngineSet::new(session.clone(), Profile::of(&settings)),
@@ -36,6 +43,7 @@ impl AppState {
             tray_notice_shown: AtomicBool::new(false),
             scrub_lock: Mutex::new(()),
             settings_change: Mutex::new(()),
+            platform,
         }
     }
 
