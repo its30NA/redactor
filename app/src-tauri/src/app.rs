@@ -24,8 +24,10 @@ use crate::wipe::WipeReason;
 
 pub const MAIN: &str = "main";
 
-pub fn run() {
-    let platform = platform::native();
+/// Starts the app. Returns only when this desktop is not supported, before any window or
+/// Tauri call; otherwise the process ends inside the event loop.
+pub fn run() -> Result<(), platform::Unavailable> {
+    let platform = platform::native()?;
     let settings_file = SettingsFile::for_os(platform.os);
     let settings = settings_file
         .as_ref()
@@ -127,6 +129,7 @@ pub fn run() {
             state::state(app).wiper.wipe();
         }
     });
+    Ok(())
 }
 
 fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<WebviewWindow> {

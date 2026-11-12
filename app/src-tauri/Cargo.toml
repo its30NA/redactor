@@ -1,6 +1,6 @@
 [package]
 name = "redactor-app"
-description = "Redactor desktop app: the Tauri 2 shell around redactor-core (Windows)."
+description = "Redactor desktop app: the Tauri 2 shell around redactor-core."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,9 +17,9 @@ name = "redactor-app"
 path = "src/main.rs"
 
 # The platform-neutral modules (settings, session secrets, the engine bridge, hotkey rules) need
-# no desktop. The Tauri shell builds on Windows, macOS and Linux (it starts on Windows only for
-# now); on Linux it needs the WebKitGTK development packages. Only the Win32/WinRT bindings
-# are Windows-only dependencies.
+# no desktop. The Tauri shell builds on Windows, macOS and Linux; where `platform::native` finds
+# no supported desktop it exits 2 with a pointer to the `scrub` CLI. On Linux it needs the
+# WebKitGTK development packages. Only the Win32/WinRT bindings are Windows-only dependencies.
 [dependencies]
 redactor-core = { path = "../../crates/redactor-core", features = ["serde"] }
 redactor-wire = { path = "../../crates/redactor-wire" }

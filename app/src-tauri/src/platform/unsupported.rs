@@ -1,14 +1,17 @@
-//! The placeholder platform for macOS and Linux until their own code lands (port phases 1-2).
-//! It lets the shell compile there; `main.rs` still refuses to start outside Windows. The
-//! clipboard only ever fails, so nothing is read or written by accident.
+//! The placeholder platform for macOS until its own code lands (port phase 1-2b). It lets the
+//! shell compile there; [`super::native`] refuses to start with [`UNAVAILABLE`]. The clipboard
+//! only ever fails, so nothing is read or written by accident.
 
 use std::sync::Arc;
 
 use super::hotkey_plugin::PluginHotkey;
-use super::{LockWatcher, Platform, SystemClipboard, WebviewHardening};
+use super::{LockWatcher, Platform, SystemClipboard, Unavailable, WebviewHardening};
 use crate::clipscrub::{ClipError, ClipText, Clipboard};
 use crate::os::Os;
 use crate::wipe::WipeReason;
+
+pub const UNAVAILABLE: Unavailable =
+    Unavailable("The Redactor desktop app does not run on macOS yet. Use the `scrub` CLI.");
 
 pub fn platform() -> Platform {
     Platform {

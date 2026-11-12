@@ -1,7 +1,8 @@
 //! The platform layer: everything the shell needs from the operating system.
 //!
 //! The shell (`app`, `commands`, `state`, `tray`) talks only to [`Platform`], built once at
-//! start-up by [`native`]. Each OS lives in its own submodule; only those may use `unsafe`.
+//! start-up by [`native`], or told by it why this desktop is not supported. Each OS lives in its
+//! own submodule; only those may use `unsafe`.
 
 use std::sync::Arc;
 
@@ -11,7 +12,9 @@ use crate::os::Os;
 use crate::wipe::WipeReason;
 
 pub mod hotkey_plugin;
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub mod linux;
+#[cfg(not(any(windows, target_os = "linux")))]
 pub mod unsupported;
 #[cfg(windows)]
 pub mod windows;
@@ -59,14 +62,24 @@ pub struct Platform {
     pub tray: bool,
 }
 
+/// Why the desktop app cannot start here: one sentence that points to the `scrub` CLI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Unavailable(pub &'static str);
+
 /// The platform this build runs on.
 #[cfg(windows)]
-pub fn native() -> Platform {
-    windows::platform()
+pub fn native() -> Result<Platform, Unavailable> {
+    Ok(windows::platform())
 }
 
-/// The platform this build runs on: a placeholder until macOS and Linux get their own.
-#[cfg(not(windows))]
-pub fn native() -> Platform {
-    unsupported::platform()
+/// The platform this build runs on: the session decides.
+#[cfg(target_os = "linux")]
+pub fn native() -> Result<Platform, Unavailable> {
+    linux::platform()
+}
+
+/// Not yet: macOS gets its own platform in port phase 1-2b.
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn native() -> Result<Platform, Unavailable> {
+    Err(unsupported::UNAVAILABLE)
 }
