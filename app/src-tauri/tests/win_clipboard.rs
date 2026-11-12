@@ -84,10 +84,7 @@ fn protected_marker_respected() {
         let (text, _) = secret_text(&unique());
         testing::write_marked(&text).unwrap();
         assert!(matches!(WinClipboard.read().unwrap(), ClipText::Protected));
-        assert_eq!(
-            redactor_app::platform::windows::clipboard::read_text_for_ui().unwrap(),
-            None
-        );
+        assert_eq!(clipscrub::read_text_for_ui(&WinClipboard).unwrap(), None);
         let seq = WinClipboard.sequence();
         let r = scrub();
         assert_eq!(r.status, ClipStatus::Protected);
@@ -112,10 +109,7 @@ fn empty_and_image_clipboard() {
         assert!(matches!(WinClipboard.read().unwrap(), ClipText::Empty));
         assert_eq!(scrub().status, ClipStatus::Empty);
         assert_eq!(WinClipboard.sequence(), seq, "the image was replaced");
-        assert_eq!(
-            redactor_app::platform::windows::clipboard::read_text_for_ui().unwrap(),
-            None
-        );
+        assert_eq!(clipscrub::read_text_for_ui(&WinClipboard).unwrap(), None);
     });
 }
 
@@ -126,11 +120,9 @@ fn oversized_text_is_refused_without_reaching_the_ui() {
         let big = "a".repeat(redactor_app::bridge::MAX_INPUT_BYTES + 1);
         WinClipboard.write_private(&big).unwrap();
         assert!(matches!(WinClipboard.read().unwrap(), ClipText::TooLarge));
-        assert!(
-            redactor_app::platform::windows::clipboard::read_text_for_ui()
-                .unwrap_err()
-                .contains("20 MiB")
-        );
+        assert!(clipscrub::read_text_for_ui(&WinClipboard)
+            .unwrap_err()
+            .contains("20 MiB"));
         let seq = WinClipboard.sequence();
         assert_eq!(scrub().status, ClipStatus::TooLarge);
         assert_eq!(WinClipboard.sequence(), seq, "the clipboard was rewritten");

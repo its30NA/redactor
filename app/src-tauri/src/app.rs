@@ -9,13 +9,14 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
-use crate::hotkey::{Hotkey, Key};
+use crate::hotkey::Hotkey;
+use crate::platform::hotkey_plugin::shortcut;
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
 use crate::tray;
@@ -201,104 +202,6 @@ fn start_idle_timer(app: AppHandle) {
             state::wipe(&app, WipeReason::Idle);
         }
     });
-}
-
-pub fn shortcut(hk: &Hotkey) -> Shortcut {
-    let mut mods = Modifiers::empty();
-    if hk.ctrl {
-        mods |= Modifiers::CONTROL;
-    }
-    if hk.shift {
-        mods |= Modifiers::SHIFT;
-    }
-    if hk.alt {
-        mods |= Modifiers::ALT;
-    }
-    Shortcut::new(Some(mods), code(hk.key))
-}
-
-fn code(k: Key) -> Code {
-    const LETTERS: [Code; 26] = [
-        Code::KeyA,
-        Code::KeyB,
-        Code::KeyC,
-        Code::KeyD,
-        Code::KeyE,
-        Code::KeyF,
-        Code::KeyG,
-        Code::KeyH,
-        Code::KeyI,
-        Code::KeyJ,
-        Code::KeyK,
-        Code::KeyL,
-        Code::KeyM,
-        Code::KeyN,
-        Code::KeyO,
-        Code::KeyP,
-        Code::KeyQ,
-        Code::KeyR,
-        Code::KeyS,
-        Code::KeyT,
-        Code::KeyU,
-        Code::KeyV,
-        Code::KeyW,
-        Code::KeyX,
-        Code::KeyY,
-        Code::KeyZ,
-    ];
-    const DIGITS: [Code; 10] = [
-        Code::Digit0,
-        Code::Digit1,
-        Code::Digit2,
-        Code::Digit3,
-        Code::Digit4,
-        Code::Digit5,
-        Code::Digit6,
-        Code::Digit7,
-        Code::Digit8,
-        Code::Digit9,
-    ];
-    const FKEYS: [Code; 24] = [
-        Code::F1,
-        Code::F2,
-        Code::F3,
-        Code::F4,
-        Code::F5,
-        Code::F6,
-        Code::F7,
-        Code::F8,
-        Code::F9,
-        Code::F10,
-        Code::F11,
-        Code::F12,
-        Code::F13,
-        Code::F14,
-        Code::F15,
-        Code::F16,
-        Code::F17,
-        Code::F18,
-        Code::F19,
-        Code::F20,
-        Code::F21,
-        Code::F22,
-        Code::F23,
-        Code::F24,
-    ];
-    match k {
-        Key::Letter(c) => LETTERS[(c as u8 - b'A') as usize],
-        Key::Digit(d) => DIGITS[d as usize],
-        Key::F(n) => FKEYS[(n - 1) as usize],
-        Key::Space => Code::Space,
-        Key::Insert => Code::Insert,
-        Key::Delete => Code::Delete,
-        Key::Home => Code::Home,
-        Key::End => Code::End,
-        Key::PageUp => Code::PageUp,
-        Key::PageDown => Code::PageDown,
-        Key::Backspace => Code::Backspace,
-        Key::Enter => Code::Enter,
-        Key::Tab => Code::Tab,
-    }
 }
 
 /// Validates, applies and stores new settings. The hotkey changes first: if another app holds

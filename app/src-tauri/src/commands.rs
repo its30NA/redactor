@@ -9,8 +9,8 @@ use zeroize::Zeroize;
 
 use crate::app;
 use crate::bridge::{self, ScanRequestIn, ScanResponseOut};
-use crate::clipscrub::ClipboardScrub;
-use crate::platform::windows::clipboard::{self, WinClipboard};
+use crate::clipscrub::{self, ClipboardScrub};
+use crate::platform::windows::clipboard::WinClipboard;
 use crate::session::SessionSecret;
 use crate::settings::Settings;
 use crate::state::Shared;
@@ -39,7 +39,7 @@ pub async fn scan(state: State<'_, Shared>, req: ScanRequestIn) -> Res<ScanRespo
 #[tauri::command]
 pub async fn read_clipboard(state: State<'_, Shared>) -> Res<Option<String>> {
     state.wiper.touch(true);
-    blocking(clipboard::read_text_for_ui)
+    blocking(|| clipscrub::read_text_for_ui(&WinClipboard))
         .await?
         .map_err(|e| e.to_string())
 }
