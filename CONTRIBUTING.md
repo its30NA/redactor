@@ -67,6 +67,10 @@ Do not edit generated files by hand.
 - Code that talks to the operating system goes into `app/src-tauri/src/platform/<os>/`, behind the traits in
   `platform/mod.rs`. The shell (`app.rs`, `commands.rs`, `state.rs`, `tray.rs`) never uses `cfg(windows)` or
   an OS API; `tests/platform_boundary.rs` fails if it does.
+- A new clipboard implementation passes the shared contract, `app/src-tauri/tests/support/clipboard_contract.rs`,
+  on its own OS: add a runner like `tests/win_clipboard.rs` that supplies the clipboard and an `OtherApp`.
+- Rules that differ by OS (hotkey names, the settings folder, shortcuts) take an `Os` value instead of
+  `cfg`, so their tests run for every OS on any machine.
 - Detection uses the `regex` crate only (linear time). There is no lookaround; check boundaries in code.
 - Nothing may log, print or store scanned text, and a finding must never carry a secret value.
 - Changes to the IPC contract touch the Rust side (`redactor-wire`, `commands.rs`, `capabilities/main.json`)

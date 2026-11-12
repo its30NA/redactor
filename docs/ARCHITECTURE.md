@@ -109,16 +109,19 @@ for now, elsewhere the binary points to the `scrub` CLI.
 | `bridge.rs` | Re-exports `redactor-wire`'s scan mapping. |
 | `engines.rs` | Keeps one engine per `stripInvisible` value for the current always-redact words and placeholder style, rebuilds in the background when they change, and shares one per-process session key. |
 | `session.rs` | Session secrets: boxed byte values, zeroed on drop, searched with `memchr::memmem` under a lock. There is no prebuilt automaton, whose internal copies of the values could not be wiped. |
-| `settings.rs` | `%APPDATA%\Redactor\settings.json`: validated on the way in, repaired on the way out, written atomically. |
+| `os.rs` | `Os` (`Windows`, `Mac`, `Linux`): a plain value the OS-dependent rules take (hotkey names and lists, the settings folder, the UI's shortcuts), so every OS's rules are tested on any OS. The platform layer says which one is running. |
+| `settings.rs` | `settings.json` in the OS's config folder: `%APPDATA%\Redactor` on Windows, `~/Library/Application Support/Redactor` on macOS, `$XDG_CONFIG_HOME/redactor` (or `~/.config/redactor`) on Linux; an unset, empty or relative variable means defaults, never a file in the working folder. Validated on the way in, repaired on the way out, written atomically. |
 | `wipe.rs` | Tracks whether there is anything worth wiping and when the app was last used. |
 | `clipscrub.rs` | Clipboard scrubbing over a `Clipboard` trait, so the rules are tested without a desktop. |
-| `hotkey.rs` | Parses and validates the global hotkey. |
+| `hotkey.rs` | Parses and validates the global hotkey for an `Os`: `Cmd` on macOS, `Super` on Linux, the Windows key unreadable on Windows. The rules and their messages are pinned by one case table (`tests/fixtures/hotkey_cases.json`) that the Rust tests and the UI's tests both read. |
 | `tray.rs` | The tray icon and menu. |
 | `textfile.rs` | Decodes opened files with `redactor-wire`'s decoder: UTF-8 or UTF-16, binary refused, 20 MiB cap. |
 | `browser_args.rs` | The WebView2 browser switches: wry's defaults, no non-proxied WebRTC UDP, no DNS prefetch, no background networking. |
 | `platform/` | The platform layer: traits `SystemClipboard` (on top of `clipscrub::Clipboard`, which also covers clipboard history), `LockWatcher`, `WebviewHardening` and `GlobalHotkey`, a `tray` flag, and `native()`. `hotkey_plugin.rs` implements the hotkey with Tauri's global-shortcut plugin. |
 | `platform/windows/` | The Windows implementation, and the only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
 | `platform/unsupported.rs` | A placeholder for macOS and Linux until their own code lands: the clipboard only fails, lock and hardening do nothing. |
+
+Every clipboard implementation passes one contract, `tests/support/clipboard_contract.rs` (text round trip, a copy marked private is left alone, an empty clipboard or an image reads as empty, oversized text never reaches the window, a stale sequence blocks the write, scrub in place rewrites only when there are findings). An in-memory fake runs it on every OS (`tests/fake_clipboard_contract.rs`); each real clipboard runs it on its own desktop (`tests/win_clipboard.rs` on Windows, with the clipboard history check on top).
 
 The window is built in code, not from `tauri.conf.json`: frameless with a custom title bar, WebView2 private
 mode, browser extensions off, navigation limited to the app's own origin, new windows denied, developer
