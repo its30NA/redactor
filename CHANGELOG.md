@@ -20,6 +20,13 @@ All notable changes to this project are documented here. The format follows
   the shell included. On Linux this allows the ISC licence and five advisories inside Tauri's GTK3 and D-Bus
   stack, each with its reason in `deny.toml`.
 
+### Fixed
+
+- Detection: a file path with a generated folder name (macOS temp folders under `/var/folders`, Xcode
+  DerivedData, a timestamped release folder) is no longer a Random String in Balanced. A path is judged by
+  the names in it, not as one run with its slashes; a random name inside a path and a secret with slashes
+  in it are found as before, and Paranoid reports what it reported.
+
 ## [2.1.0] - 2026-11-11
 
 ### Added

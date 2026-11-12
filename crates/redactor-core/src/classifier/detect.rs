@@ -3,6 +3,7 @@
 //! Balanced: `p ≥ 0.92`, length ≥ 20, ≥ 3 character classes, not hex-only, not a UUID →
 //! confidence 0.55 ("Possible"). Paranoid (threshold 0.30): `p ≥ 0.75`, length ≥ 16 → 0.45,
 //! and hex runs of 32+ that no hash word explains (`commit`, `sha`, `digest`, …).
+//! A file path is judged by the names in it, not as one run with its slashes.
 
 use std::borrow::Cow;
 
@@ -23,6 +24,8 @@ const HEX_LEN: usize = 32;
 const HEX_P: f32 = 0.5;
 /// Very long runs are scored on their start (the features look at 256 characters anyway).
 const MAX_RUN: usize = 4096;
+/// A longer run is never read as a file path.
+const MAX_PATH: usize = 1024;
 
 /// Words before a hex or base64 run that say it is a digest, not a secret.
 const HASH_WORDS: &[&str] = &[
@@ -96,9 +99,24 @@ impl Detector for ClassifierDetector {
             if e - s < PARANOID_LEN || in_blocks(&public, s) {
                 continue;
             }
-            if let Some(c) = judge(text, s, e) {
-                out.push(c);
+            let Some(mut c) = judge(text, s, e) else {
+                continue;
+            };
+            // A file path is as random as the most random name in it, not as the whole run
+            // with its slashes. The finding stays whole or goes: a narrower one could cut a
+            // secret in two.
+            if let Some(names) = path_names(bytes, s, e) {
+                let alone = names
+                    .iter()
+                    .filter_map(|&(a, b)| judge(text, a, b))
+                    .map(|n| n.confidence)
+                    .reduce(f32::max);
+                match alone {
+                    Some(confidence) => c.confidence = c.confidence.min(confidence),
+                    None => continue,
+                }
             }
+            out.push(c);
         }
     }
 }
@@ -195,6 +213,64 @@ fn judge(text: &str, s: usize, e: usize) -> Option<Candidate> {
     } else {
         None
     }
+}
+
+/// The names to judge on their own when the run `[s, e)` is a file path: one with at least
+/// two folder names made of words (`var/folders/…`, `Users/sam/Library/…`). Those and parts
+/// of one or two characters (`2s`, `T`) separate the rest; parts next to each other stay
+/// together, slashes included, because a secret with slashes in it looks like that. `None`
+/// when the run is not a path.
+fn path_names(bytes: &[u8], s: usize, e: usize) -> Option<Vec<(usize, usize)>> {
+    if e - s > MAX_PATH {
+        return None;
+    }
+    let mut names: Vec<(usize, usize)> = Vec::new();
+    let (mut parts, mut words) = (0, 0);
+    let mut joins = false;
+    let mut at = s;
+    for part in bytes[s..e].split(|&b| b == b'/') {
+        let (a, b) = (at, at + part.len());
+        at = b + 1;
+        parts += 1;
+        let word = folder_name(part);
+        words += usize::from(word);
+        if word || part.len() <= 2 {
+            joins = false;
+        } else if let (true, Some(last)) = (joins, names.last_mut()) {
+            last.1 = b;
+        } else {
+            names.push((a, b));
+            joins = true;
+        }
+    }
+    if parts < 3 || words < 2 {
+        return None;
+    }
+    let sep = |b: u8| matches!(b, b'-' | b'_' | b'+');
+    for (a, b) in &mut names {
+        while a < b && sep(bytes[*a]) {
+            *a += 1;
+        }
+        while b > a && sep(bytes[*b - 1]) {
+            *b -= 1;
+        }
+    }
+    names.retain(|(a, b)| b - a >= PARANOID_LEN);
+    Some(names)
+}
+
+/// A folder or file name made of words: `var`, `tmp`, `Users`, `python3`, `DerivedData`,
+/// `site-packages`.
+fn folder_name(part: &[u8]) -> bool {
+    let n = part.iter().take_while(|b| b.is_ascii_alphabetic()).count();
+    let (w, digits) = part.split_at(n);
+    let lower = |w: &[u8]| w.iter().all(u8::is_ascii_lowercase);
+    let plain = w.len() >= 3
+        && digits.len() <= 4
+        && digits.iter().all(u8::is_ascii_digit)
+        && (lower(&w[1..]) || w.iter().all(u8::is_ascii_uppercase))
+        && (w.len() == 3 && lower(w) || word_like(w));
+    plain || is_identifier(part)
 }
 
 fn candidate(s: usize, e: usize, confidence: f32, reason: &'static str) -> Candidate {
