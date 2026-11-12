@@ -18,6 +18,8 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # The core gates (engine, wire, CLI, corpus, dependency policy) need no apt, so a mirror
+  # outage cannot take them down. The app shell's Linux build is the `app-linux` job.
   linux:
     name: Rust (Linux)
     runs-on: ubuntu-latest
@@ -32,17 +34,85 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --exclude redactor-app --all-targets --locked -- -D warnings
       - name: Test (includes the corpus gates)
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude redactor-app --locked
       - name: Install cargo-deny
         run: cargo install --locked --version 0.20.2 cargo-deny
       - name: Dependency policy (Windows graph, includes the Tauri shell)
         run: cargo deny check
-      - name: Dependency policy (Linux, scrub)
-        run: cargo deny --exclude redactor-app --target x86_64-unknown-linux-gnu check
-      - name: Dependency policy (macOS, scrub)
-        run: cargo deny --exclude redactor-app --target aarch64-apple-darwin check
+      - name: Dependency policy (macOS, includes the Tauri shell)
+        run: |
+          cargo deny --target aarch64-apple-darwin check
+          cargo deny --target x86_64-apple-darwin check
+      - name: Dependency policy (Linux, includes the Tauri shell)
+        run: cargo deny --target x86_64-unknown-linux-gnu check
+
+  app-linux:
+    name: App shell (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-app-linux-${{ steps.image.outputs.version }}-v1
+      - name: WebKitGTK and tray packages
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Clippy
+        run: cargo clippy -p redactor-app --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test -p redactor-app --locked
+
+  app-macos:
+    name: Rust and app shell (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test (includes the corpus gates)
+        run: cargo test --workspace --locked
 
   windows:
     name: Rust (Windows)
