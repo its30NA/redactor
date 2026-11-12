@@ -15,6 +15,7 @@ pub mod clipscrub;
 pub mod engines;
 pub mod hotkey;
 pub mod ipc_names;
+pub mod os;
 pub mod session;
 pub mod settings;
 pub mod textfile;

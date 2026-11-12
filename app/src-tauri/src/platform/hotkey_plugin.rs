@@ -32,6 +32,9 @@ pub fn shortcut(hk: &Hotkey) -> Shortcut {
     if hk.alt {
         mods |= Modifiers::ALT;
     }
+    if hk.meta {
+        mods |= Modifiers::SUPER;
+    }
     Shortcut::new(Some(mods), code(hk.key))
 }
 
@@ -123,16 +126,29 @@ fn code(k: Key) -> Code {
 mod tests {
     use super::*;
     use crate::hotkey::Hotkey;
+    use crate::os::Os;
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
 
     #[test]
+    fn cmd_and_super_map_to_the_super_modifier() {
+        for (combo, os) in [("Shift+Cmd+R", Os::Mac), ("Shift+Super+R", Os::Linux)] {
+            let s = shortcut(&Hotkey::parse(combo, os).unwrap());
+            assert_eq!(
+                s,
+                Shortcut::new(Some(Modifiers::SHIFT | Modifiers::SUPER), Code::KeyR),
+                "{combo}"
+            );
+        }
+    }
+
+    #[test]
     fn modifiers_map_one_to_one() {
-        let s = shortcut(&Hotkey::parse("Ctrl+Alt+R").unwrap());
+        let s = shortcut(&Hotkey::parse("Ctrl+Alt+R", Os::Windows).unwrap());
         assert_eq!(
             s,
             Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyR)
         );
-        let s = shortcut(&Hotkey::parse("Ctrl+Shift+Alt+F9").unwrap());
+        let s = shortcut(&Hotkey::parse("Ctrl+Shift+Alt+F9", Os::Windows).unwrap());
         assert_eq!(
             s,
             Shortcut::new(
@@ -164,7 +180,7 @@ mod tests {
             .map(String::from),
         );
         for name in names {
-            let hk = Hotkey::parse(&format!("Ctrl+Alt+Shift+{name}")).unwrap();
+            let hk = Hotkey::parse(&format!("Ctrl+Alt+Shift+{name}"), Os::Windows).unwrap();
             let want = match name.len() {
                 1 if name.as_bytes()[0].is_ascii_digit() => format!("Digit{name}"),
                 1 => format!("Key{name}"),

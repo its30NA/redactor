@@ -13,12 +13,14 @@ use std::sync::Arc;
 use super::hotkey_plugin::PluginHotkey;
 use super::{LockWatcher, Platform, SystemClipboard, WebviewHardening};
 use crate::clipscrub::ClipError;
+use crate::os::Os;
 use crate::wipe::WipeReason;
 use clipboard::WinClipboard;
 
 /// Windows as the shell sees it.
 pub fn platform() -> Platform {
     Platform {
+        os: Os::Windows,
         name: "windows",
         clipboard: Arc::new(WinClipboard),
         lock: Box::new(WinLock),

@@ -7,11 +7,17 @@ use std::sync::Arc;
 use super::hotkey_plugin::PluginHotkey;
 use super::{LockWatcher, Platform, SystemClipboard, WebviewHardening};
 use crate::clipscrub::{ClipError, ClipText, Clipboard};
+use crate::os::Os;
 use crate::wipe::WipeReason;
 
 pub fn platform() -> Platform {
     Platform {
         name: "unsupported",
+        os: if cfg!(target_os = "macos") {
+            Os::Mac
+        } else {
+            Os::Linux
+        },
         clipboard: Arc::new(NoClipboard),
         lock: Box::new(NoLockWatcher),
         webview: Box::new(NoHardening),

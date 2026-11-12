@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::clipscrub::{ClipError, Clipboard};
 use crate::hotkey::Hotkey;
+use crate::os::Os;
 use crate::wipe::WipeReason;
 
 pub mod hotkey_plugin;
@@ -48,6 +49,8 @@ pub trait GlobalHotkey: Send + Sync {
 pub struct Platform {
     /// `app_info.platform`. "windows" today.
     pub name: &'static str,
+    /// Which OS's rules apply (hotkeys, settings folder, the UI's shortcuts).
+    pub os: Os,
     pub clipboard: Arc<dyn SystemClipboard>,
     pub lock: Box<dyn LockWatcher>,
     pub webview: Box<dyn WebviewHardening>,

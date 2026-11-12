@@ -25,12 +25,13 @@ use crate::wipe::WipeReason;
 pub const MAIN: &str = "main";
 
 pub fn run() {
-    let settings_file = SettingsFile::in_appdata();
+    let platform = platform::native();
+    let settings_file = SettingsFile::in_appdata(platform.os);
     let settings = settings_file
         .as_ref()
         .map(SettingsFile::load)
         .unwrap_or_default();
-    let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform::native()));
+    let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform));
 
     let app = tauri::Builder::default()
         // Must come first: a second launch focuses this window and exits.
@@ -76,7 +77,7 @@ pub fn run() {
             if st.platform.tray {
                 tray::build(&handle, settings.content_protection)?;
             }
-            if let Ok(hk) = Hotkey::parse(&settings.hotkey) {
+            if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
                 // Another app may hold the key; the app still runs, and Settings can pick
                 // another one.
                 let _ = st.platform.hotkey.register(&handle, &hk);
@@ -224,11 +225,12 @@ fn change_settings(
     let st = state::state(app);
     let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
     let prev = st.settings();
-    let next = change(&prev).validated().map_err(|e| e.to_string())?;
+    let os = st.platform.os;
+    let next = change(&prev).validated(os).map_err(|e| e.to_string())?;
 
     if next.hotkey != prev.hotkey {
-        let new_hk = Hotkey::parse(&next.hotkey).map_err(|e| e.to_string())?;
-        let old = Hotkey::parse(&prev.hotkey).ok();
+        let new_hk = Hotkey::parse(&next.hotkey, os).map_err(|e| e.to_string())?;
+        let old = Hotkey::parse(&prev.hotkey, os).ok();
         let swapped = hotkey::replace_registration(
             old.as_ref(),
             &new_hk,

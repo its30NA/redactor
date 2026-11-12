@@ -12,6 +12,7 @@ use redactor_core::{PlaceholderStyle, Sensitivity};
 use serde::{Deserialize, Serialize};
 
 use crate::hotkey::{Hotkey, DEFAULT_HOTKEY};
+use crate::os::Os;
 
 /// Always-redact words: at least 3 characters, at most 500 entries.
 pub const MIN_ALWAYS_REDACT: usize = 3;
@@ -126,9 +127,10 @@ const AUTO_WIPE: [u32; 4] = [0, 5, 10, 30];
 impl Settings {
     /// Checks settings that came over IPC and returns their normalized form: the hotkey in
     /// canonical spelling, always-redact words trimmed and de-duplicated (case-insensitive).
-    pub fn validated(mut self) -> Result<Settings, SettingsError> {
-        let hk = Hotkey::parse(&self.hotkey).map_err(|e| SettingsError::Hotkey(e.to_string()))?;
-        self.hotkey = hk.to_string();
+    pub fn validated(mut self, os: Os) -> Result<Settings, SettingsError> {
+        let hk =
+            Hotkey::parse(&self.hotkey, os).map_err(|e| SettingsError::Hotkey(e.to_string()))?;
+        self.hotkey = hk.name(os);
         if !AUTO_WIPE.contains(&self.auto_wipe_minutes) {
             return Err(SettingsError::AutoWipe);
         }
@@ -163,11 +165,11 @@ impl Settings {
 
     /// Repairs settings read from disk: every invalid field falls back to its default, so one
     /// bad value (an edited file, an older version) never resets the rest.
-    pub fn sanitized(self) -> Settings {
+    pub fn sanitized(self, os: Os) -> Settings {
         let d = Settings::default();
         let mut s = self;
-        s.hotkey = Hotkey::parse(&s.hotkey)
-            .map(|h| h.to_string())
+        s.hotkey = Hotkey::parse(&s.hotkey, os)
+            .map(|h| h.name(os))
             .unwrap_or(d.hotkey);
         if !AUTO_WIPE.contains(&s.auto_wipe_minutes) {
             s.auto_wipe_minutes = d.auto_wipe_minutes;
@@ -200,18 +202,20 @@ impl Settings {
 #[derive(Clone, Debug)]
 pub struct SettingsFile {
     path: PathBuf,
+    os: Os,
 }
 
 impl SettingsFile {
-    pub fn new(path: PathBuf) -> SettingsFile {
-        SettingsFile { path }
+    pub fn new(path: PathBuf, os: Os) -> SettingsFile {
+        SettingsFile { path, os }
     }
 
     /// `%APPDATA%\Redactor\settings.json`, or None when `APPDATA` is not set.
-    pub fn in_appdata() -> Option<SettingsFile> {
+    pub fn in_appdata(os: Os) -> Option<SettingsFile> {
         let base = std::env::var_os("APPDATA")?;
         Some(SettingsFile::new(
             Path::new(&base).join("Redactor").join("settings.json"),
+            os,
         ))
     }
 
@@ -230,7 +234,7 @@ impl SettingsFile {
         std::fs::read(&self.path)
             .ok()
             .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
-            .map(Settings::sanitized)
+            .map(|s| s.sanitized(self.os))
             .unwrap_or_default()
     }
 
@@ -262,7 +266,7 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        SettingsFile::new(dir.join("settings.json"))
+        SettingsFile::new(dir.join("settings.json"), Os::Windows)
     }
 
     fn cleanup(f: &SettingsFile) {
@@ -371,14 +375,14 @@ mod tests {
             ],
             ..Settings::default()
         };
-        let v = s.validated().unwrap();
+        let v = s.validated(Os::Windows).unwrap();
         assert_eq!(v.hotkey, "Ctrl+Alt+K");
         assert_eq!(v.always_redact, ["Müller GmbH & Co. KG"]);
 
         let with = |f: fn(&mut Settings)| {
             let mut s = Settings::default();
             f(&mut s);
-            s.validated()
+            s.validated(Os::Windows)
         };
         assert!(matches!(
             with(|s| s.hotkey = "Ctrl+R".into()),
