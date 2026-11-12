@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format follows
 - A roadmap (`docs/ROADMAP.md`): the macOS and Linux app, fixes for the known misses, and an optional
   local-model judge under research.
 
+### Changed
+
+- The desktop shell reaches the operating system through one platform layer. No change in behaviour.
+- CI builds and tests the app shell on Linux and macOS too, and checks the dependency policy for both with
+  the shell included. On Linux this allows the ISC licence and five advisories inside Tauri's GTK3 and D-Bus
+  stack, each with its reason in `deny.toml`.
+
 ## [2.1.0] - 2026-11-11
 
 ### Added
