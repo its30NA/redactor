@@ -1,9 +1,12 @@
-//! App settings (`Settings`), validated and stored as `%APPDATA%\Redactor\settings.json`.
+//! App settings (`Settings`), validated and stored as `settings.json` in the OS's config folder
+//! (`config_file`): `%APPDATA%\Redactor` on Windows, `~/Library/Application Support/Redactor` on
+//! macOS, `$XDG_CONFIG_HOME/redactor` (or `~/.config/redactor`) on Linux.
 //!
 //! The file holds settings only: never scanned text, never session secrets. The only free text is
 //! `alwaysRedact`, the plain words the user chose to store.
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -198,6 +201,23 @@ impl Settings {
     }
 }
 
+/// Where `os` keeps the settings file, from the environment `var` reads. Empty or relative values
+/// count as unset, so a bad variable never puts the file in the working directory.
+pub fn config_file(os: Os, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    let dir = |name: &str| var(name).map(PathBuf::from).filter(|p| p.is_absolute());
+    let folder = match os {
+        Os::Windows => dir("APPDATA")?.join("Redactor"),
+        Os::Mac => dir("HOME")?
+            .join("Library")
+            .join("Application Support")
+            .join("Redactor"),
+        Os::Linux => dir("XDG_CONFIG_HOME")
+            .or_else(|| dir("HOME").map(|h| h.join(".config")))?
+            .join("redactor"),
+    };
+    Some(folder.join("settings.json"))
+}
+
 /// Where the settings live.
 #[derive(Clone, Debug)]
 pub struct SettingsFile {
@@ -210,13 +230,10 @@ impl SettingsFile {
         SettingsFile { path, os }
     }
 
-    /// `%APPDATA%\Redactor\settings.json`, or None when `APPDATA` is not set.
-    pub fn in_appdata(os: Os) -> Option<SettingsFile> {
-        let base = std::env::var_os("APPDATA")?;
-        Some(SettingsFile::new(
-            Path::new(&base).join("Redactor").join("settings.json"),
-            os,
-        ))
+    /// The settings file in this OS's config folder, or None when the environment names none
+    /// (the app then runs on defaults).
+    pub fn for_os(os: Os) -> Option<SettingsFile> {
+        config_file(os, |k| std::env::var_os(k)).map(|p| SettingsFile::new(p, os))
     }
 
     pub fn path(&self) -> &Path {
@@ -429,5 +446,101 @@ mod tests {
                 .collect()),
             Err(SettingsError::TooManyWords)
         );
+    }
+
+    /// An absolute directory on whichever OS runs the test.
+    fn base(name: &str) -> PathBuf {
+        std::env::temp_dir().join(name)
+    }
+
+    fn env(pairs: &[(&str, PathBuf)]) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+        let pairs: Vec<(String, PathBuf)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone().into_os_string())
+        }
+    }
+
+    #[test]
+    fn config_file_windows_uses_appdata() {
+        let appdata = base("AppData-Roaming");
+        assert_eq!(
+            config_file(
+                Os::Windows,
+                env(&[("APPDATA", appdata.clone()), ("HOME", base("h"))])
+            ),
+            Some(appdata.join("Redactor").join("settings.json"))
+        );
+        assert_eq!(config_file(Os::Windows, env(&[("HOME", base("h"))])), None);
+    }
+
+    #[test]
+    fn config_file_mac_uses_application_support() {
+        let home = base("Users-sam");
+        assert_eq!(
+            config_file(
+                Os::Mac,
+                env(&[("HOME", home.clone()), ("XDG_CONFIG_HOME", base("x"))])
+            ),
+            Some(
+                home.join("Library")
+                    .join("Application Support")
+                    .join("Redactor")
+                    .join("settings.json")
+            )
+        );
+    }
+
+    #[test]
+    fn config_file_linux_prefers_absolute_xdg() {
+        let (home, xdg) = (base("home-sam"), base("xdg-config"));
+        assert_eq!(
+            config_file(
+                Os::Linux,
+                env(&[("HOME", home.clone()), ("XDG_CONFIG_HOME", xdg.clone())])
+            ),
+            Some(xdg.join("redactor").join("settings.json"))
+        );
+        assert_eq!(
+            config_file(Os::Linux, env(&[("HOME", home.clone())])),
+            Some(home.join(".config").join("redactor").join("settings.json"))
+        );
+    }
+
+    #[test]
+    fn config_file_linux_ignores_empty_or_relative_xdg() {
+        let home = base("home-sam");
+        let want = Some(home.join(".config").join("redactor").join("settings.json"));
+        for xdg in ["", "relative/config", "."] {
+            assert_eq!(
+                config_file(
+                    Os::Linux,
+                    env(&[
+                        ("HOME", home.clone()),
+                        ("XDG_CONFIG_HOME", PathBuf::from(xdg))
+                    ])
+                ),
+                want,
+                "{xdg:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn config_file_without_home_is_none() {
+        for os in [Os::Windows, Os::Mac, Os::Linux] {
+            assert_eq!(config_file(os, env(&[])), None, "{os:?}");
+            let bad = env(&[
+                ("APPDATA", PathBuf::new()),
+                ("HOME", PathBuf::from("relative-home")),
+                ("XDG_CONFIG_HOME", PathBuf::new()),
+            ]);
+            assert_eq!(config_file(os, bad), None, "{os:?}");
+        }
     }
 }

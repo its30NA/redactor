@@ -26,7 +26,7 @@ pub const MAIN: &str = "main";
 
 pub fn run() {
     let platform = platform::native();
-    let settings_file = SettingsFile::in_appdata(platform.os);
+    let settings_file = SettingsFile::for_os(platform.os);
     let settings = settings_file
         .as_ref()
         .map(SettingsFile::load)
