@@ -143,6 +143,27 @@ impl Hotkey {
     }
 }
 
+/// Swaps the registered global hotkey from `old` to `new`: unregisters `old` (if any), then
+/// registers `new`. When the OS or another app refuses `new`, `old` is registered again and the
+/// result is false, so the user keeps a working hotkey.
+pub fn replace_registration(
+    old: Option<&Hotkey>,
+    new: &Hotkey,
+    mut register: impl FnMut(&Hotkey) -> bool,
+    mut unregister: impl FnMut(&Hotkey),
+) -> bool {
+    if let Some(old) = old {
+        unregister(old);
+    }
+    if register(new) {
+        return true;
+    }
+    if let Some(old) = old {
+        let _ = register(old);
+    }
+    false
+}
+
 fn canonical_mods(ctrl: bool, shift: bool, alt: bool, key: &str) -> String {
     let mut s = String::new();
     for (on, name) in [(ctrl, "Ctrl+"), (shift, "Shift+"), (alt, "Alt+")] {
@@ -283,5 +304,45 @@ mod tests {
         ] {
             assert_eq!(Hotkey::parse(s), Err(HotkeyError::Unreadable), "{s:?}");
         }
+    }
+    fn hk(s: &str) -> Hotkey {
+        Hotkey::parse(s).unwrap()
+    }
+
+    /// A fake OS: `held` is what we registered, `taken` belongs to another app.
+    fn swap(held: &mut Vec<Hotkey>, taken: &[Hotkey], old: Option<&Hotkey>, new: &Hotkey) -> bool {
+        let held = std::cell::RefCell::new(held);
+        replace_registration(
+            old,
+            new,
+            |h| {
+                if taken.contains(h) {
+                    false
+                } else {
+                    held.borrow_mut().push(*h);
+                    true
+                }
+            },
+            |h| held.borrow_mut().retain(|x| x != h),
+        )
+    }
+
+    #[test]
+    fn replacing_registers_the_new_key_and_drops_the_old() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert!(swap(&mut held, &[], Some(&old), &new));
+        assert_eq!(held, [new]);
+        let mut none = vec![];
+        assert!(swap(&mut none, &[], None, &new));
+        assert_eq!(none, [new]);
+    }
+
+    #[test]
+    fn a_refused_key_keeps_the_old_one_registered() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert!(!swap(&mut held, &[new], Some(&old), &new));
+        assert_eq!(held, [old]);
     }
 }

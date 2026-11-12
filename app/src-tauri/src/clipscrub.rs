@@ -77,6 +77,16 @@ impl std::fmt::Display for ClipError {
 
 impl std::error::Error for ClipError {}
 
+/// `readClipboard` for the UI: the text, or None when empty, not text, or protected. Text over
+/// 20 MiB is an error with a clear message; it never reaches JavaScript.
+pub fn read_text_for_ui(cb: &(impl Clipboard + ?Sized)) -> Result<Option<String>, String> {
+    match cb.read().map_err(|e| e.to_string())? {
+        ClipText::Text(mut t) => Ok(Some(std::mem::take(&mut *t))),
+        ClipText::Empty | ClipText::Protected => Ok(None),
+        ClipText::TooLarge => Err(TOO_LARGE_MESSAGE.to_string()),
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ClipStatus {
@@ -148,7 +158,7 @@ impl ClipboardScrub {
 
 /// Scans the clipboard text and rewrites it when something was redacted.
 pub fn scrub(
-    cb: &impl Clipboard,
+    cb: &(impl Clipboard + ?Sized),
     engine: &Engine,
     sensitivity: Sensitivity,
     pii: bool,
@@ -161,7 +171,7 @@ pub fn scrub(
 
 /// [`scrub`] with the scan passed in, so tests can hand back any engine result.
 fn scrub_with(
-    cb: &impl Clipboard,
+    cb: &(impl Clipboard + ?Sized),
     sensitivity: Sensitivity,
     pii: bool,
     strip_invisible: bool,
@@ -447,5 +457,48 @@ mod tests {
         assert_eq!(v["status"], "cleaned");
         assert_eq!(v["historyCleaned"], false);
         assert!(v["byLabel"].is_array());
+    }
+    #[test]
+    fn read_for_ui_never_hands_out_protected_or_oversized_text() {
+        struct Fixed(fn() -> Result<ClipText, ClipError>);
+        impl Clipboard for Fixed {
+            fn sequence(&self) -> u32 {
+                1
+            }
+            fn read(&self) -> Result<ClipText, ClipError> {
+                (self.0)()
+            }
+            fn write_if_unchanged(&self, _: &str, _: u32) -> Result<bool, ClipError> {
+                panic!("must not write")
+            }
+            fn delete_from_history(&self, _: &str) -> bool {
+                panic!("must not touch the history")
+            }
+        }
+        let text = Fixed(|| Ok(ClipText::Text(Zeroizing::new("abc".to_string()))));
+        assert_eq!(read_text_for_ui(&text), Ok(Some("abc".to_string())));
+        assert_eq!(read_text_for_ui(&Fixed(|| Ok(ClipText::Empty))), Ok(None));
+        assert_eq!(
+            read_text_for_ui(&Fixed(|| Ok(ClipText::Protected))),
+            Ok(None)
+        );
+        assert_eq!(
+            read_text_for_ui(&Fixed(|| Ok(ClipText::TooLarge))),
+            Err(TOO_LARGE_MESSAGE.to_string())
+        );
+        assert_eq!(
+            read_text_for_ui(&Fixed(|| Err(ClipError))),
+            Err(ClipError.to_string())
+        );
+    }
+
+    #[test]
+    fn scrub_accepts_a_trait_object() {
+        let (text, pw) = secret_text();
+        let cb = FakeClipboard::new(Fake::Text(text));
+        let dynamic: &dyn Clipboard = &cb;
+        let r = scrub(dynamic, &engine(), Sensitivity::Balanced, false, true);
+        assert_eq!(r.status, ClipStatus::Cleaned);
+        assert!(!cb.text().unwrap().contains(&pw));
     }
 }
