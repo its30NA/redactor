@@ -30,7 +30,7 @@
   import Workspace from './components/Workspace.svelte';
   import { appInfo, onEvent } from './lib/api';
   import { appearance, applyAppearance } from './lib/appearance.svelte';
-  import { actionFor, keysFor, type Action } from './lib/keys';
+  import { actionFor, keyOsFrom, keysFor, type Action } from './lib/keys';
   import { session } from './lib/session.svelte';
   import { settings } from './lib/settings.svelte';
   import { toasts } from './lib/toast.svelte';
@@ -38,6 +38,8 @@
   import type { AppInfo, Sensitivity, ThemeSetting } from './lib/types';
 
   let info = $state<AppInfo | null>(null);
+  // Windows rules until app_info answers, so nothing changes on Windows.
+  const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
   let settingsOpen = $state(false);
   let rememberedOpen = $state(false);
   let addingSecret = $state(false);
@@ -194,7 +196,7 @@
     const t = e.target instanceof HTMLElement ? e.target : null;
     const inTextField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || !!t.closest('.cm-content'));
     if (e.defaultPrevented) return;
-    const action = actionFor(e, { inTextField, overlayOpen: overlayOpen() });
+    const action = actionFor(e, { inTextField, overlayOpen: overlayOpen(), os: keyOs });
     if (!action || action === 'escape') return;
     e.preventDefault();
     run(action);
@@ -215,16 +217,16 @@
   const setPii = (pii: boolean) => workspace.rescanAfter(settings.update({ pii }));
 
   const commands = $derived<Command[]>([
-    { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste'), hint: 'clipboard', run: () => run('paste') },
-    { id: 'copy', label: 'Copy safe text', icon: Copy, keys: keysFor('copySafe'), disabled: !workspace.ready, run: () => run('copySafe') },
-    { id: 'open', label: 'Open a text file', icon: FolderOpen, keys: keysFor('open'), hint: 'file load', run: () => run('open') },
-    { id: 'save', label: 'Save a safe copy', icon: Save, keys: keysFor('save'), hint: 'file export', disabled: !workspace.ready, run: () => run('save') },
-    { id: 'wipe', label: 'Wipe both panes', icon: Eraser, keys: keysFor('wipe'), hint: 'clear erase', run: () => run('wipe') },
+    { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste', keyOs), hint: 'clipboard', run: () => run('paste') },
+    { id: 'copy', label: 'Copy safe text', icon: Copy, keys: keysFor('copySafe', keyOs), disabled: !workspace.ready, run: () => run('copySafe') },
+    { id: 'open', label: 'Open a text file', icon: FolderOpen, keys: keysFor('open', keyOs), hint: 'file load', run: () => run('open') },
+    { id: 'save', label: 'Save a safe copy', icon: Save, keys: keysFor('save', keyOs), hint: 'file export', disabled: !workspace.ready, run: () => run('save') },
+    { id: 'wipe', label: 'Wipe both panes', icon: Eraser, keys: keysFor('wipe', keyOs), hint: 'clear erase', run: () => run('wipe') },
     ...(['relaxed', 'balanced', 'paranoid'] as const).map((level) => ({
       id: `sens-${level}`,
       label: `Sensitivity: ${level[0]?.toUpperCase()}${level.slice(1)}`,
       icon: Gauge,
-      keys: keysFor(`sensitivity:${level}`),
+      keys: keysFor(`sensitivity:${level}`, keyOs),
       hint: settings.value.sensitivity === level ? 'current' : undefined,
       run: () => setSensitivity(level),
     })),

@@ -8,12 +8,13 @@
   import Segmented, { type SegmentOption } from './Segmented.svelte';
   import Sheet from './Sheet.svelte';
   import Toggle from './Toggle.svelte';
-  import { hotkeyFrom, hotkeyProblem } from '../lib/keys';
+  import { hotkeyFrom, hotkeyProblem, keyOsFrom, modifiersOf } from '../lib/keys';
   import { settings } from '../lib/settings.svelte';
   import { workspace } from '../lib/workspace.svelte';
   import type { AppInfo, MotionSetting, Sensitivity, Settings, ThemeSetting } from '../lib/types';
 
   let { open = $bindable(false), info }: { open: boolean; info: AppInfo | null } = $props();
+  const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
 
   const themeOptions: SegmentOption<ThemeSetting>[] = [
     { value: 'system', label: 'System' },
@@ -67,12 +68,12 @@
       pending = null;
       return;
     }
-    const combo = hotkeyFrom(e);
+    const combo = hotkeyFrom(e, keyOs);
     if (!combo) {
-      pending = [e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean).join('+') || null;
+      pending = modifiersOf(e, keyOs).join('+') || null;
       return;
     }
-    const problem = hotkeyProblem(combo);
+    const problem = hotkeyProblem(combo, keyOs);
     if (problem) {
       hotkeyError = `${combo}: ${problem}`;
       pending = null;
