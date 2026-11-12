@@ -10,11 +10,11 @@ use zeroize::Zeroize;
 use crate::app;
 use crate::bridge::{self, ScanRequestIn, ScanResponseOut};
 use crate::clipscrub::ClipboardScrub;
+use crate::platform::windows::clipboard::{self, WinClipboard};
 use crate::session::SessionSecret;
 use crate::settings::Settings;
 use crate::state::Shared;
 use crate::textfile;
-use crate::win::clipboard::{self, WinClipboard};
 
 type Res<T> = Result<T, String>;
 

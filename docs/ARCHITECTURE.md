@@ -9,8 +9,8 @@ Redactor is one detection engine and two front ends. The engine is a pure librar
  (private,  |                                                  app/src-tauri (Rust)            |
  no network)|   shows text, highlights spans,                   +- session secrets (memory)    |
             |   never receives secret values                    +- settings.json (settings)    |
-            |                                                   +- win/ clipboard, history,    |
-            |                                                      session lock, WebView2 flags|
+            |                                                   +- platform/windows/ clipboard,|
+            |                                                     history, lock, WebView2 flags|
             +--------------------------------------------------------------------------------+
                                   |                                         |
                         crates/redactor-wire  <-------------- crates/scrub (CLI)
@@ -113,12 +113,12 @@ Win32 code are Windows-only, so Linux CI needs no WebKit.
 | `tray.rs` | The tray icon and menu. |
 | `textfile.rs` | Decodes opened files with `redactor-wire`'s decoder: UTF-8 or UTF-16, binary refused, 20 MiB cap. |
 | `browser_args.rs` | The WebView2 browser switches: wry's defaults, no non-proxied WebRTC UDP, no DNS prefetch, no background networking. |
-| `win/` | The only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
+| `platform/windows/` | The only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
 
 The window is built in code, not from `tauri.conf.json`: frameless with a custom title bar, WebView2 private
 mode, browser extensions off, navigation limited to the app's own origin, new windows denied, developer
-tools only in debug builds. `win/webview.rs` switches off autofill, password autosave, browser accelerator
-keys, the default context menu and swipe navigation.
+tools only in debug builds. `platform/windows/webview.rs` switches off autofill, password autosave, browser
+accelerator keys, the default context menu and swipe navigation.
 
 ## The UI (`app/ui`)
 
@@ -159,7 +159,8 @@ strings that never quote text.
 
 - The UI never receives a secret value from Rust, and Rust never logs or stores scanned text.
 - The window can reach only the app's own backend (CSP `connect-src ipc: http://ipc.localhost`).
-- `unsafe` is forbidden in the engine, the wire crate and the CLI, and confined to `app/src-tauri/src/win/`.
+- `unsafe` is forbidden in the engine, the wire crate and the CLI, and confined to
+  `app/src-tauri/src/platform/windows/`.
 - Dependencies are pinned (`=` for Tauri and its plugins, exact versions in `package.json`), lockfiles are
   committed, and CI runs `cargo deny` for licenses and advisories.
 

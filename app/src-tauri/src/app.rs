@@ -19,7 +19,6 @@ use crate::hotkey::{Hotkey, Key};
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
 use crate::tray;
-use crate::win;
 use crate::wipe::WipeReason;
 
 pub const MAIN: &str = "main";
@@ -80,7 +79,7 @@ pub fn run() {
             }
             start_idle_timer(handle.clone());
             let lock_handle = handle.clone();
-            win::lock::spawn(move |reason| {
+            crate::platform::windows::lock::spawn(move |reason| {
                 let st = state::state(&lock_handle);
                 if st.settings().wipe_on_lock && st.wiper.has_content() {
                     state::wipe(&lock_handle, reason);
@@ -140,7 +139,7 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
         .on_navigation(allowed_origin)
         .on_new_window(|_url, _features| NewWindowResponse::Deny)
         .build()?;
-    win::webview::harden(&window);
+    crate::platform::windows::webview::harden(&window);
     Ok(window)
 }
 
@@ -183,7 +182,7 @@ pub fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
     let s = st.settings();
     let engine = st.engines.get(s.strip_invisible);
     let r = clipscrub::scrub(
-        &win::clipboard::WinClipboard,
+        &crate::platform::windows::clipboard::WinClipboard,
         &engine,
         s.sensitivity,
         s.pii,

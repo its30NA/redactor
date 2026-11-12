@@ -2,10 +2,10 @@
 //!
 //! The platform-neutral parts (settings, session secrets, the engine bridge, hotkey and wipe
 //! rules, file decoding) build and test on every platform. The shell itself (`app`, `commands`,
-//! `tray`, `win`) is Windows-only, like the product.
+//! `tray`, `platform`) is Windows-only, like the product.
 //!
 //! Nothing here logs, prints or stores scanned text.
-// `unsafe` is allowed only in `win/`, which opts in with its own `allow`.
+// `unsafe` is allowed only in `platform/windows/`, which opts in with its own `allow`.
 #![deny(unsafe_code)]
 
 pub mod bridge;
@@ -24,11 +24,11 @@ mod app;
 #[cfg(windows)]
 mod commands;
 #[cfg(windows)]
+pub mod platform;
+#[cfg(windows)]
 mod state;
 #[cfg(windows)]
 mod tray;
-#[cfg(windows)]
-pub mod win;
 
 #[cfg(windows)]
 pub use app::run;

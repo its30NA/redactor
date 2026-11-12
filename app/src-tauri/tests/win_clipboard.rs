@@ -11,9 +11,9 @@
 use std::sync::Mutex;
 
 use redactor_app::clipscrub::{self, ClipStatus, ClipText, Clipboard};
-use redactor_app::win::clipboard::testing::{self, Saved};
-use redactor_app::win::clipboard::WinClipboard;
-use redactor_app::win::history;
+use redactor_app::platform::windows::clipboard::testing::{self, Saved};
+use redactor_app::platform::windows::clipboard::WinClipboard;
+use redactor_app::platform::windows::history;
 use redactor_core::{Engine, EngineConfig, Sensitivity};
 
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
@@ -85,7 +85,7 @@ fn protected_marker_respected() {
         testing::write_marked(&text).unwrap();
         assert!(matches!(WinClipboard.read().unwrap(), ClipText::Protected));
         assert_eq!(
-            redactor_app::win::clipboard::read_text_for_ui().unwrap(),
+            redactor_app::platform::windows::clipboard::read_text_for_ui().unwrap(),
             None
         );
         let seq = WinClipboard.sequence();
@@ -113,7 +113,7 @@ fn empty_and_image_clipboard() {
         assert_eq!(scrub().status, ClipStatus::Empty);
         assert_eq!(WinClipboard.sequence(), seq, "the image was replaced");
         assert_eq!(
-            redactor_app::win::clipboard::read_text_for_ui().unwrap(),
+            redactor_app::platform::windows::clipboard::read_text_for_ui().unwrap(),
             None
         );
     });
@@ -126,9 +126,11 @@ fn oversized_text_is_refused_without_reaching_the_ui() {
         let big = "a".repeat(redactor_app::bridge::MAX_INPUT_BYTES + 1);
         WinClipboard.write_private(&big).unwrap();
         assert!(matches!(WinClipboard.read().unwrap(), ClipText::TooLarge));
-        assert!(redactor_app::win::clipboard::read_text_for_ui()
-            .unwrap_err()
-            .contains("20 MiB"));
+        assert!(
+            redactor_app::platform::windows::clipboard::read_text_for_ui()
+                .unwrap_err()
+                .contains("20 MiB")
+        );
         let seq = WinClipboard.sequence();
         assert_eq!(scrub().status, ClipStatus::TooLarge);
         assert_eq!(WinClipboard.sequence(), seq, "the clipboard was rewritten");

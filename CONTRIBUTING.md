@@ -63,7 +63,7 @@ Do not edit generated files by hand.
 - Keep changes small and focused, and add a test with them. A new detector needs a positive test (a
   generated token it must catch) and a negative one (a look-alike it must leave alone).
 - `redactor-core`, `redactor-wire` and `scrub` forbid `unsafe` code. In the app, `unsafe` is allowed only
-  under `app/src-tauri/src/win/`, with a `// SAFETY:` comment on each block.
+  under `app/src-tauri/src/platform/windows/`, with a `// SAFETY:` comment on each block.
 - Detection uses the `regex` crate only (linear time). There is no lookaround; check boundaries in code.
 - Nothing may log, print or store scanned text, and a finding must never carry a secret value.
 - Changes to the IPC contract touch the Rust side (`redactor-wire`, `commands.rs`, `capabilities/main.json`)
