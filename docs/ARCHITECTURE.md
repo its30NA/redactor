@@ -9,8 +9,8 @@ Redactor is one detection engine and two front ends. The engine is a pure librar
  (private,  |                                                  app/src-tauri (Rust)            |
  no network)|   shows text, highlights spans,                   +- session secrets (memory)    |
             |   never receives secret values                    +- settings.json (settings)    |
-            |                                                   +- win/ clipboard, history,    |
-            |                                                      session lock, WebView2 flags|
+            |                                                   +- platform/windows/ clipboard,|
+            |                                                     history, lock, WebView2 flags|
             +--------------------------------------------------------------------------------+
                                   |                                         |
                         crates/redactor-wire  <-------------- crates/scrub (CLI)
@@ -96,8 +96,11 @@ serves `scrub --json`, so the UI's test fixtures are exactly what the app sends.
 ## The app shell (`app/src-tauri`)
 
 The platform-neutral modules (settings, session secrets, the engine bridge, hotkey rules, wipe rules, file
-decoding, clipboard logic over a trait) build and test on every platform. Only the Tauri shell and the
-Win32 code are Windows-only, so Linux CI needs no WebKit.
+decoding, clipboard logic over a trait) need no desktop. The shell (`app.rs`, `commands.rs`, `state.rs`,
+`tray.rs`) never names an operating system: it reaches the OS only through one `Platform` value built at
+start-up (`platform::native()`), and `tests/platform_boundary.rs` keeps it that way. The shell compiles and
+is tested on Windows, macOS and Linux CI (Linux needs the WebKitGTK packages); the app starts on Windows only
+for now, elsewhere the binary points to the `scrub` CLI.
 
 | Module | Role |
 |---|---|
@@ -113,12 +116,14 @@ Win32 code are Windows-only, so Linux CI needs no WebKit.
 | `tray.rs` | The tray icon and menu. |
 | `textfile.rs` | Decodes opened files with `redactor-wire`'s decoder: UTF-8 or UTF-16, binary refused, 20 MiB cap. |
 | `browser_args.rs` | The WebView2 browser switches: wry's defaults, no non-proxied WebRTC UDP, no DNS prefetch, no background networking. |
-| `win/` | The only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
+| `platform/` | The platform layer: traits `SystemClipboard` (on top of `clipscrub::Clipboard`, which also covers clipboard history), `LockWatcher`, `WebviewHardening` and `GlobalHotkey`, a `tray` flag, and `native()`. `hotkey_plugin.rs` implements the hotkey with Tauri's global-shortcut plugin. |
+| `platform/windows/` | The Windows implementation, and the only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
+| `platform/unsupported.rs` | A placeholder for macOS and Linux until their own code lands: the clipboard only fails, lock and hardening do nothing. |
 
 The window is built in code, not from `tauri.conf.json`: frameless with a custom title bar, WebView2 private
 mode, browser extensions off, navigation limited to the app's own origin, new windows denied, developer
-tools only in debug builds. `win/webview.rs` switches off autofill, password autosave, browser accelerator
-keys, the default context menu and swipe navigation.
+tools only in debug builds. `platform/windows/webview.rs` switches off autofill, password autosave, browser
+accelerator keys, the default context menu and swipe navigation.
 
 ## The UI (`app/ui`)
 
@@ -159,7 +164,8 @@ strings that never quote text.
 
 - The UI never receives a secret value from Rust, and Rust never logs or stores scanned text.
 - The window can reach only the app's own backend (CSP `connect-src ipc: http://ipc.localhost`).
-- `unsafe` is forbidden in the engine, the wire crate and the CLI, and confined to `app/src-tauri/src/win/`.
+- `unsafe` is forbidden in the engine, the wire crate and the CLI, and confined to
+  `app/src-tauri/src/platform/windows/`.
 - Dependencies are pinned (`=` for Tauri and its plugins, exact versions in `package.json`), lockfiles are
   committed, and CI runs `cargo deny` for licenses and advisories.
 

@@ -1,9 +1,12 @@
-//! App settings (`Settings`), validated and stored as `%APPDATA%\Redactor\settings.json`.
+//! App settings (`Settings`), validated and stored as `settings.json` in the OS's config folder
+//! (`config_file`): `%APPDATA%\Redactor` on Windows, `~/Library/Application Support/Redactor` on
+//! macOS, `$XDG_CONFIG_HOME/redactor` (or `~/.config/redactor`) on Linux.
 //!
 //! The file holds settings only: never scanned text, never session secrets. The only free text is
 //! `alwaysRedact`, the plain words the user chose to store.
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,6 +15,7 @@ use redactor_core::{PlaceholderStyle, Sensitivity};
 use serde::{Deserialize, Serialize};
 
 use crate::hotkey::{Hotkey, DEFAULT_HOTKEY};
+use crate::os::Os;
 
 /// Always-redact words: at least 3 characters, at most 500 entries.
 pub const MIN_ALWAYS_REDACT: usize = 3;
@@ -126,9 +130,10 @@ const AUTO_WIPE: [u32; 4] = [0, 5, 10, 30];
 impl Settings {
     /// Checks settings that came over IPC and returns their normalized form: the hotkey in
     /// canonical spelling, always-redact words trimmed and de-duplicated (case-insensitive).
-    pub fn validated(mut self) -> Result<Settings, SettingsError> {
-        let hk = Hotkey::parse(&self.hotkey).map_err(|e| SettingsError::Hotkey(e.to_string()))?;
-        self.hotkey = hk.to_string();
+    pub fn validated(mut self, os: Os) -> Result<Settings, SettingsError> {
+        let hk =
+            Hotkey::parse(&self.hotkey, os).map_err(|e| SettingsError::Hotkey(e.to_string()))?;
+        self.hotkey = hk.name(os);
         if !AUTO_WIPE.contains(&self.auto_wipe_minutes) {
             return Err(SettingsError::AutoWipe);
         }
@@ -163,11 +168,11 @@ impl Settings {
 
     /// Repairs settings read from disk: every invalid field falls back to its default, so one
     /// bad value (an edited file, an older version) never resets the rest.
-    pub fn sanitized(self) -> Settings {
+    pub fn sanitized(self, os: Os) -> Settings {
         let d = Settings::default();
         let mut s = self;
-        s.hotkey = Hotkey::parse(&s.hotkey)
-            .map(|h| h.to_string())
+        s.hotkey = Hotkey::parse(&s.hotkey, os)
+            .map(|h| h.name(os))
             .unwrap_or(d.hotkey);
         if !AUTO_WIPE.contains(&s.auto_wipe_minutes) {
             s.auto_wipe_minutes = d.auto_wipe_minutes;
@@ -196,23 +201,39 @@ impl Settings {
     }
 }
 
+/// Where `os` keeps the settings file, from the environment `var` reads. Empty or relative values
+/// count as unset, so a bad variable never puts the file in the working directory.
+pub fn config_file(os: Os, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    let dir = |name: &str| var(name).map(PathBuf::from).filter(|p| p.is_absolute());
+    let folder = match os {
+        Os::Windows => dir("APPDATA")?.join("Redactor"),
+        Os::Mac => dir("HOME")?
+            .join("Library")
+            .join("Application Support")
+            .join("Redactor"),
+        Os::Linux => dir("XDG_CONFIG_HOME")
+            .or_else(|| dir("HOME").map(|h| h.join(".config")))?
+            .join("redactor"),
+    };
+    Some(folder.join("settings.json"))
+}
+
 /// Where the settings live.
 #[derive(Clone, Debug)]
 pub struct SettingsFile {
     path: PathBuf,
+    os: Os,
 }
 
 impl SettingsFile {
-    pub fn new(path: PathBuf) -> SettingsFile {
-        SettingsFile { path }
+    pub fn new(path: PathBuf, os: Os) -> SettingsFile {
+        SettingsFile { path, os }
     }
 
-    /// `%APPDATA%\Redactor\settings.json`, or None when `APPDATA` is not set.
-    pub fn in_appdata() -> Option<SettingsFile> {
-        let base = std::env::var_os("APPDATA")?;
-        Some(SettingsFile::new(
-            Path::new(&base).join("Redactor").join("settings.json"),
-        ))
+    /// The settings file in this OS's config folder, or None when the environment names none
+    /// (the app then runs on defaults).
+    pub fn for_os(os: Os) -> Option<SettingsFile> {
+        config_file(os, |k| std::env::var_os(k)).map(|p| SettingsFile::new(p, os))
     }
 
     pub fn path(&self) -> &Path {
@@ -230,7 +251,7 @@ impl SettingsFile {
         std::fs::read(&self.path)
             .ok()
             .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
-            .map(Settings::sanitized)
+            .map(|s| s.sanitized(self.os))
             .unwrap_or_default()
     }
 
@@ -262,7 +283,7 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        SettingsFile::new(dir.join("settings.json"))
+        SettingsFile::new(dir.join("settings.json"), Os::Windows)
     }
 
     fn cleanup(f: &SettingsFile) {
@@ -371,14 +392,14 @@ mod tests {
             ],
             ..Settings::default()
         };
-        let v = s.validated().unwrap();
+        let v = s.validated(Os::Windows).unwrap();
         assert_eq!(v.hotkey, "Ctrl+Alt+K");
         assert_eq!(v.always_redact, ["Müller GmbH & Co. KG"]);
 
         let with = |f: fn(&mut Settings)| {
             let mut s = Settings::default();
             f(&mut s);
-            s.validated()
+            s.validated(Os::Windows)
         };
         assert!(matches!(
             with(|s| s.hotkey = "Ctrl+R".into()),
@@ -425,5 +446,101 @@ mod tests {
                 .collect()),
             Err(SettingsError::TooManyWords)
         );
+    }
+
+    /// An absolute directory on whichever OS runs the test.
+    fn base(name: &str) -> PathBuf {
+        std::env::temp_dir().join(name)
+    }
+
+    fn env(pairs: &[(&str, PathBuf)]) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+        let pairs: Vec<(String, PathBuf)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone().into_os_string())
+        }
+    }
+
+    #[test]
+    fn config_file_windows_uses_appdata() {
+        let appdata = base("AppData-Roaming");
+        assert_eq!(
+            config_file(
+                Os::Windows,
+                env(&[("APPDATA", appdata.clone()), ("HOME", base("h"))])
+            ),
+            Some(appdata.join("Redactor").join("settings.json"))
+        );
+        assert_eq!(config_file(Os::Windows, env(&[("HOME", base("h"))])), None);
+    }
+
+    #[test]
+    fn config_file_mac_uses_application_support() {
+        let home = base("Users-sam");
+        assert_eq!(
+            config_file(
+                Os::Mac,
+                env(&[("HOME", home.clone()), ("XDG_CONFIG_HOME", base("x"))])
+            ),
+            Some(
+                home.join("Library")
+                    .join("Application Support")
+                    .join("Redactor")
+                    .join("settings.json")
+            )
+        );
+    }
+
+    #[test]
+    fn config_file_linux_prefers_absolute_xdg() {
+        let (home, xdg) = (base("home-sam"), base("xdg-config"));
+        assert_eq!(
+            config_file(
+                Os::Linux,
+                env(&[("HOME", home.clone()), ("XDG_CONFIG_HOME", xdg.clone())])
+            ),
+            Some(xdg.join("redactor").join("settings.json"))
+        );
+        assert_eq!(
+            config_file(Os::Linux, env(&[("HOME", home.clone())])),
+            Some(home.join(".config").join("redactor").join("settings.json"))
+        );
+    }
+
+    #[test]
+    fn config_file_linux_ignores_empty_or_relative_xdg() {
+        let home = base("home-sam");
+        let want = Some(home.join(".config").join("redactor").join("settings.json"));
+        for xdg in ["", "relative/config", "."] {
+            assert_eq!(
+                config_file(
+                    Os::Linux,
+                    env(&[
+                        ("HOME", home.clone()),
+                        ("XDG_CONFIG_HOME", PathBuf::from(xdg))
+                    ])
+                ),
+                want,
+                "{xdg:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn config_file_without_home_is_none() {
+        for os in [Os::Windows, Os::Mac, Os::Linux] {
+            assert_eq!(config_file(os, env(&[])), None, "{os:?}");
+            let bad = env(&[
+                ("APPDATA", PathBuf::new()),
+                ("HOME", PathBuf::from("relative-home")),
+                ("XDG_CONFIG_HOME", PathBuf::new()),
+            ]);
+            assert_eq!(config_file(os, bad), None, "{os:?}");
+        }
     }
 }

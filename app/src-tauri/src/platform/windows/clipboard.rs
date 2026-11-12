@@ -19,7 +19,7 @@ use windows::Win32::System::Memory::{
 use zeroize::Zeroizing;
 
 use crate::bridge::MAX_INPUT_BYTES;
-use crate::clipscrub::{utf16_text_len, ClipError, ClipText, Clipboard, TOO_LARGE_MESSAGE};
+use crate::clipscrub::{utf16_text_len, ClipError, ClipText, Clipboard};
 
 /// `CF_UNICODETEXT`.
 pub const CF_UNICODETEXT: u32 = 13;
@@ -292,15 +292,5 @@ pub mod testing {
             Unicode::Text(t) => Some(t),
             Unicode::None | Unicode::TooLarge => None,
         })
-    }
-}
-
-/// `readClipboard` for the UI: the text, or None when empty, not text, or protected. Text over
-/// 20 MiB is an error with a clear message; it never reaches JavaScript.
-pub fn read_text_for_ui() -> Result<Option<String>, String> {
-    match WinClipboard.read().map_err(|e| e.to_string())? {
-        ClipText::Text(mut t) => Ok(Some(std::mem::take(&mut *t))),
-        ClipText::Empty | ClipText::Protected => Ok(None),
-        ClipText::TooLarge => Err(TOO_LARGE_MESSAGE.to_string()),
     }
 }

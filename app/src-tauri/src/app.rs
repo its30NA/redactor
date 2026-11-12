@@ -9,28 +9,29 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_notification::NotificationExt;
 
 use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
-use crate::hotkey::{Hotkey, Key};
+use crate::hotkey::{self, Hotkey};
+use crate::platform;
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
 use crate::tray;
-use crate::win;
 use crate::wipe::WipeReason;
 
 pub const MAIN: &str = "main";
 
 pub fn run() {
-    let settings_file = SettingsFile::in_appdata();
+    let platform = platform::native();
+    let settings_file = SettingsFile::for_os(platform.os);
     let settings = settings_file
         .as_ref()
         .map(SettingsFile::load)
         .unwrap_or_default();
-    let shared: Shared = Arc::new(AppState::new(settings, settings_file));
+    let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform));
 
     let app = tauri::Builder::default()
         // Must come first: a second launch focuses this window and exits.
@@ -70,22 +71,25 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            let settings = state::state(&handle).settings();
+            let st = state::state(&handle);
+            let settings = st.settings();
             create_main_window(&handle, &settings)?;
-            tray::build(&handle, settings.content_protection)?;
-            if let Ok(hk) = Hotkey::parse(&settings.hotkey) {
+            if st.platform.tray {
+                tray::build(&handle, settings.content_protection)?;
+            }
+            if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
                 // Another app may hold the key; the app still runs, and Settings can pick
                 // another one.
-                let _ = handle.global_shortcut().register(shortcut(&hk));
+                let _ = st.platform.hotkey.register(&handle, &hk);
             }
             start_idle_timer(handle.clone());
             let lock_handle = handle.clone();
-            win::lock::spawn(move |reason| {
+            st.platform.lock.spawn(Box::new(move |reason| {
                 let st = state::state(&lock_handle);
                 if st.settings().wipe_on_lock && st.wiper.has_content() {
                     state::wipe(&lock_handle, reason);
                 }
-            });
+            }));
             // Build the engine now, off the UI thread, so the first scan is fast.
             let warm = state::state(&handle);
             std::thread::spawn(move || {
@@ -100,7 +104,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
                 let st = state::state(app);
-                if st.settings().tray_mode {
+                if st.settings().tray_mode && st.platform.tray {
                     api.prevent_close();
                     let _ = window.hide();
                     if !st.tray_notice_shown.swap(true, Ordering::SeqCst) {
@@ -140,7 +144,7 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
         .on_navigation(allowed_origin)
         .on_new_window(|_url, _features| NewWindowResponse::Deny)
         .build()?;
-    win::webview::harden(&window);
+    state::state(app).platform.webview.harden(&window);
     Ok(window)
 }
 
@@ -183,7 +187,7 @@ pub fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
     let s = st.settings();
     let engine = st.engines.get(s.strip_invisible);
     let r = clipscrub::scrub(
-        &win::clipboard::WinClipboard,
+        &*st.platform.clipboard,
         &engine,
         s.sensitivity,
         s.pii,
@@ -204,104 +208,6 @@ fn start_idle_timer(app: AppHandle) {
     });
 }
 
-pub fn shortcut(hk: &Hotkey) -> Shortcut {
-    let mut mods = Modifiers::empty();
-    if hk.ctrl {
-        mods |= Modifiers::CONTROL;
-    }
-    if hk.shift {
-        mods |= Modifiers::SHIFT;
-    }
-    if hk.alt {
-        mods |= Modifiers::ALT;
-    }
-    Shortcut::new(Some(mods), code(hk.key))
-}
-
-fn code(k: Key) -> Code {
-    const LETTERS: [Code; 26] = [
-        Code::KeyA,
-        Code::KeyB,
-        Code::KeyC,
-        Code::KeyD,
-        Code::KeyE,
-        Code::KeyF,
-        Code::KeyG,
-        Code::KeyH,
-        Code::KeyI,
-        Code::KeyJ,
-        Code::KeyK,
-        Code::KeyL,
-        Code::KeyM,
-        Code::KeyN,
-        Code::KeyO,
-        Code::KeyP,
-        Code::KeyQ,
-        Code::KeyR,
-        Code::KeyS,
-        Code::KeyT,
-        Code::KeyU,
-        Code::KeyV,
-        Code::KeyW,
-        Code::KeyX,
-        Code::KeyY,
-        Code::KeyZ,
-    ];
-    const DIGITS: [Code; 10] = [
-        Code::Digit0,
-        Code::Digit1,
-        Code::Digit2,
-        Code::Digit3,
-        Code::Digit4,
-        Code::Digit5,
-        Code::Digit6,
-        Code::Digit7,
-        Code::Digit8,
-        Code::Digit9,
-    ];
-    const FKEYS: [Code; 24] = [
-        Code::F1,
-        Code::F2,
-        Code::F3,
-        Code::F4,
-        Code::F5,
-        Code::F6,
-        Code::F7,
-        Code::F8,
-        Code::F9,
-        Code::F10,
-        Code::F11,
-        Code::F12,
-        Code::F13,
-        Code::F14,
-        Code::F15,
-        Code::F16,
-        Code::F17,
-        Code::F18,
-        Code::F19,
-        Code::F20,
-        Code::F21,
-        Code::F22,
-        Code::F23,
-        Code::F24,
-    ];
-    match k {
-        Key::Letter(c) => LETTERS[(c as u8 - b'A') as usize],
-        Key::Digit(d) => DIGITS[d as usize],
-        Key::F(n) => FKEYS[(n - 1) as usize],
-        Key::Space => Code::Space,
-        Key::Insert => Code::Insert,
-        Key::Delete => Code::Delete,
-        Key::Home => Code::Home,
-        Key::End => Code::End,
-        Key::PageUp => Code::PageUp,
-        Key::PageDown => Code::PageDown,
-        Key::Backspace => Code::Backspace,
-        Key::Enter => Code::Enter,
-        Key::Tab => Code::Tab,
-    }
-}
-
 /// Validates, applies and stores new settings. The hotkey changes first: if another app holds
 /// the new key, the old one stays registered and nothing else changes.
 pub fn apply_settings(app: &AppHandle, incoming: Settings) -> Result<Settings, String> {
@@ -319,19 +225,19 @@ fn change_settings(
     let st = state::state(app);
     let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
     let prev = st.settings();
-    let next = change(&prev).validated().map_err(|e| e.to_string())?;
+    let os = st.platform.os;
+    let next = change(&prev).validated(os).map_err(|e| e.to_string())?;
 
     if next.hotkey != prev.hotkey {
-        let new_hk = Hotkey::parse(&next.hotkey).map_err(|e| e.to_string())?;
-        let gs = app.global_shortcut();
-        let old = Hotkey::parse(&prev.hotkey).ok().map(|h| shortcut(&h));
-        if let Some(old) = old {
-            let _ = gs.unregister(old);
-        }
-        if gs.register(shortcut(&new_hk)).is_err() {
-            if let Some(old) = old {
-                let _ = gs.register(old);
-            }
+        let new_hk = Hotkey::parse(&next.hotkey, os).map_err(|e| e.to_string())?;
+        let old = Hotkey::parse(&prev.hotkey, os).ok();
+        let swapped = hotkey::replace_registration(
+            old.as_ref(),
+            &new_hk,
+            |h| st.platform.hotkey.register(app, h).is_ok(),
+            |h| st.platform.hotkey.unregister(app, h),
+        );
+        if !swapped {
             return Err(format!(
                 "Another app already uses {}. Kept {}.",
                 next.hotkey, prev.hotkey

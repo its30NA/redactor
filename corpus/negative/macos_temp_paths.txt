@@ -1,0 +1,9 @@
+$ echo $TMPDIR
+/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/
+$ mktemp -d
+/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/tmp.Xq3kVb7Lmn
+CompileSwift normal arm64 (in target 'Demo' from project 'Demo') cd /var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/
+Writing diagnostic log to /private/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/C/com.example.demo/
+Crashed Thread: 0  Dispatch queue: com.apple.main-thread  Path: /var/folders/_k/x2kq9w8d7c6b5n4m3v2l1z000000gp/0/com.example.demo/
+warning: could not remove /var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/build-cache (directory not empty)
+TMPDIR=/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/ npm test

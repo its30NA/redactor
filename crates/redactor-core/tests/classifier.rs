@@ -134,3 +134,79 @@ fn identifiers_and_hashes_stay_clean() {
         assert!(out.findings.is_empty(), "{text}: {:?}", out.findings);
     }
 }
+
+/// A file path is as random as the most random name in it, not as the whole run with its
+/// slashes: a path with generated folder names (macOS temp folders, Xcode DerivedData, a
+/// timestamped release) is clean, because none of these names is a Balanced finding alone.
+#[test]
+fn paths_with_generated_folder_names_stay_clean() {
+    for text in [
+        "/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/\n",
+        "export TMPDIR=\"/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/\"\n",
+        "cd /private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/\n",
+        "/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/.tmpAbC123/out.txt\n",
+        "/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/tmpab12cd_x/out\n",
+        "/Users/sam/Library/Developer/Xcode/DerivedData/App-gqzvnlmrxkdtfwbmhdpzqksyvjcu/Build\n",
+        "/opt/app/releases/20261112T093000Z/bin\n",
+        "ls /usr/lib/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/\n",
+    ] {
+        let out = scan_at(text, Sensitivity::Balanced);
+        assert!(out.findings.is_empty(), "{text}: {:?}", out.findings);
+    }
+}
+
+/// What a generated folder name is alone, its path is too: Paranoid still reports it.
+#[test]
+fn generated_folder_name_is_still_a_paranoid_finding() {
+    let text = "cd /var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/\n";
+    let out = scan_at(text, Sensitivity::Paranoid);
+    assert_eq!(out.findings.len(), 1, "{:?}", out.findings);
+    let f = &out.findings[0];
+    assert!(text[f.start..f.end].contains("h6hvcg6x4mq0tg5m5bkhyzb40000gn"));
+}
+
+/// A random name inside a path is still found in Balanced.
+#[test]
+fn random_name_in_a_path_is_still_found() {
+    let token = "Zq81mXv0pLr3TfK9wQe2Lm4x";
+    for text in [
+        format!("/etc/secrets/{token}\n"),
+        format!("cat /Users/sam/Library/Caches/{token}/key\n"),
+        format!("/var/folders/2s/h6hvcg6x4mq0tg5m5bkhyzb40000gn/T/{token}\n"),
+    ] {
+        let out = scan_at(&text, Sensitivity::Balanced);
+        assert_eq!(out.findings.len(), 1, "{text}: {:?}", out.findings);
+        let f = &out.findings[0];
+        assert!(text[f.start..f.end].contains(token), "{text}: {f:?}");
+    }
+}
+
+/// A secret with slashes in it is not read as folder names, with or without folders in
+/// front: its parts are short enough to pass alone, together they are found whole.
+#[test]
+fn secret_with_slashes_stays_one_finding() {
+    for (text, secret) in [
+        (
+            "Zq81mXv0pLr3/TfK9wQe2Lm4x/Rk7Vt2pQ9Lm4xZw8\n",
+            "Zq81mXv0pLr3/TfK9wQe2Lm4x/Rk7Vt2pQ9Lm4xZw8",
+        ),
+        (
+            "keys/prod/Zq81mXv0pLr3/TfK9wQe2Lm4x/Rk7Vt2pQ9Lm4xZw8\n",
+            "Zq81mXv0pLr3/TfK9wQe2Lm4x/Rk7Vt2pQ9Lm4xZw8",
+        ),
+        (
+            "/etc/keys/Zq81mXv0pLr3TfK9wQe2Lm/4x\n",
+            "Zq81mXv0pLr3TfK9wQe2Lm/4x",
+        ),
+        // No folder names: not a path, so the two-character part does not split it.
+        (
+            "Zq81mXv0pLr3TfK9wQ/e2/Lm4xRk7Vt2pQ9Lm4x\n",
+            "Zq81mXv0pLr3TfK9wQ/e2/Lm4xRk7Vt2pQ9Lm4x",
+        ),
+    ] {
+        let out = scan_at(text, Sensitivity::Balanced);
+        assert_eq!(out.findings.len(), 1, "{text}: {:?}", out.findings);
+        let f = &out.findings[0];
+        assert!(text[f.start..f.end].contains(secret), "{text}: {f:?}");
+    }
+}

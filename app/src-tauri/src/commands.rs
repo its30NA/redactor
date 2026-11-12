@@ -9,12 +9,11 @@ use zeroize::Zeroize;
 
 use crate::app;
 use crate::bridge::{self, ScanRequestIn, ScanResponseOut};
-use crate::clipscrub::ClipboardScrub;
+use crate::clipscrub::{self, ClipboardScrub};
 use crate::session::SessionSecret;
 use crate::settings::Settings;
 use crate::state::Shared;
 use crate::textfile;
-use crate::win::clipboard::{self, WinClipboard};
 
 type Res<T> = Result<T, String>;
 
@@ -39,7 +38,8 @@ pub async fn scan(state: State<'_, Shared>, req: ScanRequestIn) -> Res<ScanRespo
 #[tauri::command]
 pub async fn read_clipboard(state: State<'_, Shared>) -> Res<Option<String>> {
     state.wiper.touch(true);
-    blocking(clipboard::read_text_for_ui)
+    let st = state.inner().clone();
+    blocking(move || clipscrub::read_text_for_ui(&*st.platform.clipboard))
         .await?
         .map_err(|e| e.to_string())
 }
@@ -47,8 +47,9 @@ pub async fn read_clipboard(state: State<'_, Shared>) -> Res<Option<String>> {
 #[tauri::command]
 pub async fn copy_text(state: State<'_, Shared>, mut text: String) -> Res<()> {
     state.wiper.touch(false);
+    let st = state.inner().clone();
     let r = blocking(move || {
-        let r = WinClipboard.write_text(&text);
+        let r = st.platform.clipboard.write_text(&text);
         text.zeroize();
         r
     })
@@ -244,7 +245,7 @@ pub async fn app_info(state: State<'_, Shared>) -> Res<AppInfo> {
         version: env!("CARGO_PKG_VERSION"),
         engine_version: redactor_core::ENGINE_VERSION,
         rule_count: st.engines.rule_count(),
-        platform: "windows",
+        platform: st.platform.name,
     })
     .await
 }
