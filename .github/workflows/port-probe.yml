@@ -1,0 +1,104 @@
+# Port probes (plan 1-2a, Task 7): questions about runners and desktops that decide how the
+# macOS, X11 and Wayland code gets built and tested. A probe, not CI: every job may fail
+# without failing the run, each probe prints `PROBE <id> PASS|FAIL <detail>` into the job
+# summary, and this file is removed before PR #2 leaves draft.
+name: Port probes
+
+on:
+  pull_request:
+    paths:
+      - "tools/probe/**"
+      - ".github/workflows/port-probe.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: port-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  images:
+    name: P1 image (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash tools/probe/images.sh ${{ matrix.runner }}
+
+  x11:
+    name: P2 X11
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash tools/probe/x11.sh
+
+  logind:
+    name: P3 logind mock
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash tools/probe/logind.sh
+
+  wayland:
+    name: P4 Wayland (weston, sway, KWin 5.27)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash tools/probe/wayland.sh
+
+  desktop:
+    name: P5 ${{ matrix.desktop }} (fedora:42)
+    strategy:
+      fail-fast: false
+      matrix:
+        desktop: [gnome, kde]
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash tools/probe/desktop-container.sh ${{ matrix.desktop }}
+
+  macos:
+    name: P6 macOS desktop
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash tools/probe/macos.sh
+
+  webdriver:
+    name: P7 WebDriver
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash tools/probe/webdriver.sh
