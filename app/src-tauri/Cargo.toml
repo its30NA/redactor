@@ -16,9 +16,10 @@ path = "src/lib.rs"
 name = "redactor-app"
 path = "src/main.rs"
 
-# The platform-neutral part (settings, session secrets, the engine bridge, hotkey rules) builds
-# and tests everywhere. The Tauri shell itself is Windows-only, so Tauri, its plugins
-# and the Win32/WinRT bindings are Windows-only dependencies: Linux CI needs no WebKitGTK.
+# The platform-neutral modules (settings, session secrets, the engine bridge, hotkey rules) need
+# no desktop. The Tauri shell builds on Windows, macOS and Linux (it starts on Windows only for
+# now); on Linux it needs the WebKitGTK development packages. Only the Win32/WinRT bindings
+# are Windows-only dependencies.
 [dependencies]
 redactor-core = { path = "../../crates/redactor-core", features = ["serde"] }
 redactor-wire = { path = "../../crates/redactor-wire" }
@@ -27,13 +28,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 unicode-normalization = "0.1"
 zeroize = "1.8"
-
-[target.'cfg(windows)'.dependencies]
 tauri = { version = "=2.12.5", features = ["isolation", "tray-icon"] }
 tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-global-shortcut = "=2.4.1"
 tauri-plugin-notification = "=2.8.0"
 tauri-plugin-single-instance = "=2.5.5"
+
+[target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
 windows = { version = "0.62", features = [
     "ApplicationModel_DataTransfer",
@@ -51,5 +52,5 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-[target.'cfg(windows)'.build-dependencies]
+[build-dependencies]
 tauri-build = { version = "=2.7.4", features = ["isolation"] }

@@ -10,6 +10,8 @@ use crate::hotkey::Hotkey;
 use crate::wipe::WipeReason;
 
 pub mod hotkey_plugin;
+#[cfg(not(windows))]
+pub mod unsupported;
 #[cfg(windows)]
 pub mod windows;
 
@@ -58,4 +60,10 @@ pub struct Platform {
 #[cfg(windows)]
 pub fn native() -> Platform {
     windows::platform()
+}
+
+/// The platform this build runs on: a placeholder until macOS and Linux get their own.
+#[cfg(not(windows))]
+pub fn native() -> Platform {
+    unsupported::platform()
 }
