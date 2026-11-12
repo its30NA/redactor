@@ -24,7 +24,8 @@ id="P5-$desktop"
 host() {
   local out
   out=$(mktemp)
-  docker run --rm --shm-size=1g -v "$here:/probe:ro" fedora:42 \
+  # SYS_NICE: kwin_wayland carries that file capability, and exec fails outside the bounding set.
+  docker run --rm --shm-size=1g --cap-add=SYS_NICE -v "$here:/probe:ro" fedora:42 \
     bash /probe/desktop-container.sh inner "$desktop" 2>&1 | tee "$out"
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     grep '^PROBE ' "$out" | sed 's/.*/- `&`/' >>"$GITHUB_STEP_SUMMARY"
@@ -40,7 +41,7 @@ host() {
 
 inner() {
   local common=(xdg-desktop-portal xorg-x11-server-Xwayland mesa-dri-drivers wayland-utils wl-clipboard xclip
-    python3-gobject dbus-daemon dbus-tools shadow-utils util-linux findutils)
+    python3-gobject python3-dbusmock dbus-daemon dbus-tools shadow-utils util-linux findutils)
   local extra
   case "$desktop" in
     gnome) extra=(gnome-shell xdg-desktop-portal-gnome) ;;
@@ -63,13 +64,39 @@ inner() {
   useradd -m -u 1000 probe
   mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
   install -d -m 700 -o probe -g probe /tmp/xdg-probe
+  # The portal's host registry only takes an app id that has a desktop file.
+  install -d -o probe -g probe /home/probe/.local/share/applications
+  printf '[Desktop Entry]\nType=Application\nName=Redactor probe\nExec=true\n' \
+    >/home/probe/.local/share/applications/io.github.redactor.Probe.desktop
   runuser -u probe -- env XDG_RUNTIME_DIR=/tmp/xdg-probe HOME=/home/probe \
     dbus-run-session -- bash /probe/desktop-container.sh session "$desktop"
 }
 
 session() {
-  local work pid
+  local work
   work=$(mktemp -d)
+  pids=() # global: the EXIT trap runs after this function has returned
+  # shellcheck disable=SC2317
+  stop_all() { kill "${pids[@]}" 2>/dev/null; }
+  trap stop_all EXIT
+
+  # GNOME Shell needs logind on the system bus; the container has none. A logind mock on a
+  # private bus stands in (the same as probe P3).
+  dbus-daemon --session --nofork --print-address=3 3>"$work/sysbus" >/dev/null 2>&1 &
+  pids+=($!)
+  wait_for 10 test -s "$work/sysbus"
+  export DBUS_SYSTEM_BUS_ADDRESS
+  DBUS_SYSTEM_BUS_ADDRESS=$(head -n 1 "$work/sysbus")
+  python3 -m dbusmock --system --template logind >"$work/logind.log" 2>&1 &
+  pids+=($!)
+  if ! wait_for 15 gdbus introspect --system --dest org.freedesktop.login1 --object-path /org/freedesktop/login1; then
+    show_log logind "$work/logind.log"
+    probe_broke "$id" "logind mock did not start"
+    return
+  fi
+  gdbus call --system --dest org.freedesktop.login1 --object-path /org/freedesktop/login1 \
+    --method org.freedesktop.DBus.Mock.AddSession c1 seat0 1000 probe true >/dev/null 2>&1
+
   export XDG_SESSION_TYPE=wayland
   case "$desktop" in
     gnome)
@@ -81,9 +108,7 @@ session() {
       kwin_wayland --virtual --xwayland --width 1280 --height 800 >"$work/desktop.log" 2>&1 &
       ;;
   esac
-  pid=$!
-  # shellcheck disable=SC2064
-  trap "kill $pid 2>/dev/null" EXIT
+  pids+=($!)
 
   local started=$SECONDS
   wait_for 60 has_socket "$XDG_RUNTIME_DIR" 'wayland-*'
@@ -101,12 +126,20 @@ session() {
   # XWayland: GNOME starts it on demand, KWin with --xwayland; both make the socket first.
   local xsock=
   wait_for 20 has_socket /tmp/.X11-unix 'X*'
-  xsock=$(find /tmp/.X11-unix -maxdepth 1 -name 'X*' -type s -print -quit)
+  # The lowest display is the public one (mutter keeps :1 for its own services).
+  xsock=$(find /tmp/.X11-unix -maxdepth 1 -name 'X*' -type s | sort | head -n 1)
   if [ -n "$xsock" ]; then
     export DISPLAY=":${xsock##*/X}"
   fi
   dbus-update-activation-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_RUNTIME_DIR \
-    2>/dev/null
+    DBUS_SYSTEM_BUS_ADDRESS 2>/dev/null
+  # Give the shell and its portal backend a moment after the socket appears.
+  sleep 5
+  if ! kill -0 "${pids[-1]}" 2>/dev/null; then
+    show_log "$desktop" "$work/desktop.log"
+    probe_result "$id" FAIL "the desktop exited within 5 s of starting"
+    return
+  fi
 
   # Data-control globals (GNOME is expected to have none).
   local globals control
