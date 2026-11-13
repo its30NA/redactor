@@ -23,6 +23,11 @@ pub mod windows;
 pub trait SystemClipboard: Clipboard + Send + Sync {
     /// Copy safe text: ordinary text, it may enter the clipboard history.
     fn write_text(&self, text: &str) -> Result<(), ClipError>;
+
+    /// Called on the way out, before the wipe. Where copied text lives in the app that copied
+    /// it and dies with it (X11), this hands it to the desktop so it can still be pasted.
+    /// Elsewhere the text stays anyway and there is nothing to do.
+    fn keep_after_exit(&self) {}
 }
 
 /// Session lock and sleep notifications.

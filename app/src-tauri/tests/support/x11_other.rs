@@ -38,6 +38,9 @@ x11rb::atom_manager! {
         INCR,
         UTF8_STRING,
         HINT: b"x-kde-passwordManagerHint",
+        CLIPBOARD_MANAGER,
+        SAVE_TARGETS,
+        FETCHED: b"_X11_OTHER_FETCHED",
     }
 }
 
@@ -268,6 +271,8 @@ struct Helper {
     text: Vec<u8>,
     conn: RustConnection,
     atoms: Atoms,
+    /// The window that owns the selection (0 in mode `clear`).
+    window: Window,
     sending: Option<Sending>,
 }
 
@@ -282,17 +287,23 @@ impl Helper {
         } else {
             plain_window(&conn, screen)
         };
-        conn.set_selection_owner(owner, atoms.CLIPBOARD, x11rb::CURRENT_TIME)
+        // A clipboard manager owns its own selection and takes the clipboard only when asked.
+        let selection = if mode == "manager" {
+            atoms.CLIPBOARD_MANAGER
+        } else {
+            atoms.CLIPBOARD
+        };
+        conn.set_selection_owner(owner, selection, x11rb::CURRENT_TIME)
             .unwrap()
             .check()
             .unwrap();
         let now = conn
-            .get_selection_owner(atoms.CLIPBOARD)
+            .get_selection_owner(selection)
             .unwrap()
             .reply()
             .unwrap()
             .owner;
-        assert_eq!(now, owner, "the helper could not set the clipboard owner");
+        assert_eq!(now, owner, "the helper could not set the selection owner");
         // The test harness may have printed on this line already.
         println!("\nready");
         std::io::stdout().flush().unwrap();
@@ -301,6 +312,7 @@ impl Helper {
             text,
             conn,
             atoms,
+            window: owner,
             sending: None,
         }
     }
@@ -338,7 +350,9 @@ impl Helper {
         } else {
             a.UTF8_STRING
         };
-        let done = if req.target == a.TARGETS {
+        let done = if req.selection == a.CLIPBOARD_MANAGER {
+            req.target == a.SAVE_TARGETS && self.take_over()
+        } else if req.target == a.TARGETS {
             let mut targets = vec![a.TARGETS, text_target];
             if hinted {
                 targets.push(a.HINT);
@@ -382,6 +396,47 @@ impl Helper {
         let _ = self
             .conn
             .send_event(false, req.requestor, EventMask::NO_EVENT, event);
+    }
+
+    /// What a clipboard manager does when an app says it is about to exit (`SAVE_TARGETS`):
+    /// fetches the text from the app that owns the clipboard and becomes the owner itself.
+    /// Small texts only (no transfer in pieces).
+    fn take_over(&mut self) -> bool {
+        let a = self.atoms;
+        let _ = self.conn.convert_selection(
+            self.window,
+            a.CLIPBOARD,
+            a.UTF8_STRING,
+            a.FETCHED,
+            x11rb::CURRENT_TIME,
+        );
+        let _ = self.conn.flush();
+        loop {
+            match self.conn.wait_for_event().expect("the X connection broke") {
+                Event::SelectionNotify(e) if e.requestor == self.window => {
+                    if e.property == x11rb::NONE {
+                        return false;
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let fetched = self
+            .conn
+            .get_property(true, self.window, a.FETCHED, a.UTF8_STRING, 0, u32::MAX / 4)
+            .unwrap()
+            .reply()
+            .unwrap();
+        if fetched.type_ != a.UTF8_STRING || fetched.format != 8 {
+            return false;
+        }
+        self.text = fetched.value;
+        self.conn
+            .set_selection_owner(self.window, a.CLIPBOARD, x11rb::CURRENT_TIME)
+            .unwrap()
+            .check()
+            .is_ok()
     }
 
     fn put(&self, window: Window, property: Atom, kind: Atom, format: u8, data: &[u8]) -> bool {

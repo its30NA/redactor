@@ -125,8 +125,11 @@ pub fn run() -> Result<(), platform::Unavailable> {
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
+            let st = state::state(app);
+            // Text the user copied from us stays pasteable after we are gone.
+            st.platform.clipboard.keep_after_exit();
             // Zeroize the session secrets on the way out.
-            state::state(app).wiper.wipe();
+            st.wiper.wipe();
         }
     });
     Ok(())
@@ -170,7 +173,9 @@ pub fn show_main(app: &AppHandle) {
 }
 
 pub fn quit(app: &AppHandle) {
-    state::state(app).wiper.wipe();
+    let st = state::state(app);
+    st.platform.clipboard.keep_after_exit();
+    st.wiper.wipe();
     app.exit(0);
 }
 

@@ -32,6 +32,7 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 use zeroize::Zeroizing;
 
 use crate::clipscrub::{ClipError, ClipText, Clipboard};
@@ -42,6 +43,8 @@ use serve::Serving;
 const STEP_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a whole read may take.
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long the clipboard manager gets to take our text over when we exit.
+const HANDOVER_TIMEOUT: Duration = Duration::from_secs(1);
 
 x11rb::atom_manager! {
     Atoms: AtomsCookie {
@@ -56,6 +59,10 @@ x11rb::atom_manager! {
         // Where a selection owner puts its answer on a read's window.
         TRANSFER: b"_REDACTOR_TRANSFER",
         TIMESTAMP,
+        // The desktop's clipboard manager, and the request "save what I hold, I am leaving".
+        CLIPBOARD_MANAGER,
+        SAVE_TARGETS,
+        SAVE: b"_REDACTOR_SAVE",
     }
 }
 
@@ -94,6 +101,8 @@ struct Shared {
     owned_at: AtomicU32,
     /// The largest piece of text sent in one request.
     chunk: usize,
+    /// The clipboard manager has been asked to keep our text (on exit).
+    handed_over: AtomicBool,
     stop: AtomicBool,
 }
 
@@ -167,6 +176,7 @@ impl X11Clipboard {
             text: Mutex::new(None),
             owned_at: AtomicU32::new(x11rb::CURRENT_TIME),
             chunk,
+            handed_over: AtomicBool::new(false),
             stop: AtomicBool::new(false),
         });
         let (tx, replies) = mpsc::channel();
@@ -328,7 +338,11 @@ fn worker(shared: &Shared, tx: &Sender<Reply>) {
             Event::PropertyNotify(e) if e.window == shared.listening.load(Ordering::SeqCst) => {
                 Reply::Property(e)
             }
-            Event::SelectionNotify(e) if e.requestor == shared.listening.load(Ordering::SeqCst) => {
+            // To a read's window, or to our own (the clipboard manager's answer on exit).
+            Event::SelectionNotify(e)
+                if e.requestor == shared.listening.load(Ordering::SeqCst)
+                    || e.requestor == shared.window =>
+            {
                 Reply::Selection(e)
             }
             Event::SelectionRequest(e) => {
@@ -405,5 +419,69 @@ impl SystemClipboard for X11Clipboard {
         let mut op = self.begin();
         let (_, time) = self.ping(&mut op).ok_or(ClipError)?;
         self.own(text, time)
+    }
+
+    /// On X11 the clipboard is empty once its owner exits, unless a clipboard manager took the
+    /// text over (GNOME, KDE and Xfce run one). If we own the clipboard and there is a manager,
+    /// it is asked to save our text, and we keep serving until it says it is done or
+    /// [`HANDOVER_TIMEOUT`] has passed. Without a manager this returns at once.
+    fn keep_after_exit(&self) {
+        let mut op = self.begin();
+        let s = &self.shared;
+        let a = &s.atoms;
+        // Asked once: the shell calls this on every way out, and a manager that did not
+        // answer the first time is not waited for again.
+        if s.handed_over.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let manager = s
+            .conn
+            .get_selection_owner(a.CLIPBOARD_MANAGER)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .map_or(x11rb::NONE, |reply| reply.owner);
+        if manager == x11rb::NONE || s.owned_text().is_none() || s.owner() != Ok(s.window) {
+            return;
+        }
+        let Some((_, time)) = self.ping(&mut op) else {
+            return;
+        };
+        // The targets worth saving, then the request itself.
+        let asked = s
+            .conn
+            .change_property32(
+                PropMode::REPLACE,
+                s.window,
+                a.SAVE,
+                AtomEnum::ATOM,
+                &[a.UTF8_STRING, a.TEXT_PLAIN_UTF8],
+            )
+            .and_then(|_| {
+                s.conn.convert_selection(
+                    s.window,
+                    a.CLIPBOARD_MANAGER,
+                    a.SAVE_TARGETS,
+                    a.SAVE,
+                    time,
+                )
+            })
+            .and_then(|_| s.conn.flush());
+        if asked.is_err() {
+            return;
+        }
+        // The worker answers the manager's requests for the text meanwhile.
+        let deadline = Instant::now() + HANDOVER_TIMEOUT;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match op.replies.recv_timeout(left) {
+                Ok(Reply::Selection(e))
+                    if e.requestor == s.window && e.selection == a.CLIPBOARD_MANAGER =>
+                {
+                    return;
+                }
+                Ok(_) => {}
+                Err(_) => return,
+            }
+        }
     }
 }

@@ -70,8 +70,9 @@ xvfb=
 xvfb_settled() { test -s "$work/display" || ! kill -0 "$xvfb" 2>/dev/null; }
 for n in $(seq 99 119); do
   if [ -e "/tmp/.X$n-lock" ] || [ -e "/tmp/.X11-unix/X$n" ]; then continue; fi
-  # Xvfb writes the number to fd 3 once it accepts clients.
-  Xvfb ":$n" -displayfd 3 -screen 0 1280x800x24 -nolisten tcp "${listen[@]}" \
+  # Xvfb writes the number to fd 3 once it accepts clients. -noreset: an X server starts over
+  # when its last client leaves, and resets connections made in that moment (between two tests).
+  Xvfb ":$n" -displayfd 3 -screen 0 1280x800x24 -noreset -nolisten tcp "${listen[@]}" \
     3>"$work/display" >"$work/xvfb.log" 2>&1 &
   xvfb=$!
   wait_for 15 xvfb_settled || true

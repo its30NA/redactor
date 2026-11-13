@@ -305,3 +305,31 @@ fn a_copy_during_the_write_is_never_overwritten() {
     });
     assert_eq!(failure, None, "the newer copy was overwritten");
 }
+
+/// On X11 the clipboard is empty once its owner exits, unless a clipboard manager took the
+/// text over. We ask it to before we go.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn the_manager_keeps_our_text() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    other.helper("manager", "");
+    let text = format!("still here after the exit {}", unique());
+    cb.write_text(&text).unwrap();
+    cb.keep_after_exit();
+    drop(cb);
+    assert_eq!(other.paste(), Some(text));
+}
+
+/// A desktop without a clipboard manager does not hold the exit up.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn without_a_manager_nothing_waits() {
+    let display = display();
+    let (cb, _other) = desktop(&display);
+    cb.write_text(&format!("nobody keeps this {}", unique()))
+        .unwrap();
+    let started = Instant::now();
+    cb.keep_after_exit();
+    assert!(started.elapsed() < Duration::from_millis(100));
+}
