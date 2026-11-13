@@ -364,3 +364,21 @@ fn without_a_manager_nothing_waits() {
     cb.keep_after_exit();
     assert!(started.elapsed() < Duration::from_millis(100));
 }
+
+/// A clipboard manager that never answers holds the exit up for one second, not longer.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn a_silent_manager_costs_one_second() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    other.helper("manager-silent", "");
+    cb.write_text(&format!("nobody saves this {}", unique()))
+        .unwrap();
+    let started = Instant::now();
+    cb.keep_after_exit();
+    let took = started.elapsed();
+    assert!(
+        took >= Duration::from_millis(900) && took < Duration::from_secs(2),
+        "the hand-over took {took:?}"
+    );
+}

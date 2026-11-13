@@ -335,7 +335,7 @@ impl Helper {
             plain_window(&conn, screen)
         };
         // A clipboard manager owns its own selection and takes the clipboard only when asked.
-        let selection = if mode == "manager" {
+        let selection = if mode.starts_with("manager") {
             atoms.CLIPBOARD_MANAGER
         } else {
             atoms.CLIPBOARD
@@ -372,7 +372,10 @@ impl Helper {
         loop {
             match self.conn.wait_for_event().expect("the X connection broke") {
                 Event::SelectionClear(_) => return,
-                Event::SelectionRequest(req) if self.mode != "silent" => self.answer(&req),
+                // `silent` and `manager-silent` own their selection and never answer.
+                Event::SelectionRequest(req) if !self.mode.ends_with("silent") => {
+                    self.answer(&req);
+                }
                 Event::PropertyNotify(e) if e.state == Property::DELETE => {
                     self.send_next(e.window, e.atom);
                 }
