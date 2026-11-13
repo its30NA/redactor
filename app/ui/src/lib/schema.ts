@@ -188,6 +188,8 @@ export const appInfo = object<AppInfo>({
   engineVersion: str,
   ruleCount: uint,
   platform: str,
+  tray: bool,
+  shield: bool,
 });
 
 /** Throws with every problem listed when `value` does not match `check`. */

@@ -31,6 +31,7 @@
   import { appInfo, onEvent } from './lib/api';
   import { appearance, applyAppearance } from './lib/appearance.svelte';
   import { actionFor, keyOsFrom, keysFor, type Action } from './lib/keys';
+  import { shieldNote } from './lib/platform';
   import { session } from './lib/session.svelte';
   import { settings } from './lib/settings.svelte';
   import { toasts } from './lib/toast.svelte';
@@ -68,7 +69,7 @@
         // Like Ctrl+Shift+X: a sheet or dialog may hold a typed secret.
         closeOverlays();
         session.set([]);
-        workspace.wipe(reason);
+        workspace.wipe(reason, keyOs);
       }),
       onEvent('session-changed', (items) => session.set(items)),
       onEvent('settings-changed', (s) => (settings.value = s)),
@@ -122,10 +123,14 @@
   const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en')} ${n === 1 ? one : many}`;
 
   const pill = $derived.by<{ tone: 'ok' | 'busy' | 'warn' | 'alert'; segments: PillSegment[]; announce?: string }>(() => {
-    const shield: PillSegment = settings.value.contentProtection
-      ? { text: 'Shield on', icon: ShieldCheck }
-      : { text: 'Shield off', icon: ShieldOff };
-    const off = !settings.value.contentProtection;
+    // No shield segment (and no warning about it) where the desktop cannot hide the window.
+    const noShield = shieldNote(info) !== null;
+    const shield: PillSegment[] = noShield
+      ? []
+      : settings.value.contentProtection
+        ? [{ text: 'Shield on', icon: ShieldCheck }]
+        : [{ text: 'Shield off', icon: ShieldOff }];
+    const off = !noShield && !settings.value.contentProtection;
     const res = workspace.response;
     if (workspace.tooLarge) return { tone: 'warn', segments: [{ text: 'Offline' }, { text: 'Too large to scan' }] };
     if (workspace.hasText && (workspace.busy || workspace.stale || !res))
@@ -141,7 +146,7 @@
         announce: `Offline. ${n ? `${plural(n, 'secret')} neutralized` : 'Nothing sensitive'}, ${verified}.${off ? ' Shield off.' : ''}`,
       };
     }
-    return { tone: off ? 'warn' : 'ok', segments: [{ text: 'Offline' }, shield] };
+    return { tone: off ? 'warn' : 'ok', segments: [{ text: 'Offline' }, ...shield] };
   });
 
   // ── Keyboard ──────────────────────────────────────────────────────
@@ -322,7 +327,7 @@
 <Toast />
 
 <SettingsSheet bind:open={settingsOpen} {info} />
-<RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} />
+<RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
 <FirstRun bind:open={firstRunOpen} />
 

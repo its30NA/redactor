@@ -27,6 +27,8 @@ import { addRange, mapRanges, minimalChange, removeOverlapping, selectionToManua
 import { inputExtensions, outputExtensions } from './editor/setup';
 import { EMPTY_GROUPS, freshKeys, groupFindings, type FindingGroup } from './findings';
 import { buildScanRequest, definitelyTooLarge } from './scan-request';
+import type { KeyOs } from './keys';
+import { wipeNotice } from './platform';
 import { createScheduler } from './scheduler';
 import { session } from './session.svelte';
 import { settings } from './settings.svelte';
@@ -423,7 +425,8 @@ class Workspace {
     }
   }
 
-  wipe(reason?: WipeReason): void {
+  /** `os` words the lock and sleep notices (Windows until app_info answers). */
+  wipe(reason?: WipeReason, os: KeyOs = 'windows'): void {
     const input = this.#input;
     const output = this.#output;
     const had = this.hasText;
@@ -454,11 +457,9 @@ class Workspace {
     const detail =
       reason === 'idle'
         ? `After ${settings.value.autoWipeMinutes} idle minutes. Both panes are empty.`
-        : reason === 'lock'
-          ? 'Windows was locked. Both panes are empty.'
-          : reason === 'sleep'
-            ? 'Windows went to sleep. Both panes are empty.'
-            : reason === 'tray'
+        : reason === 'lock' || reason === 'sleep'
+          ? wipeNotice(reason, os)
+          : reason === 'tray'
               ? 'From the tray. Both panes are empty.'
               : 'Both panes are empty. Undo cannot bring it back.';
     if (had || reason) toasts.show({ tone: 'success', title: 'Wiped', detail });

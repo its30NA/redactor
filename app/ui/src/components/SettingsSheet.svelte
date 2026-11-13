@@ -9,12 +9,15 @@
   import Sheet from './Sheet.svelte';
   import Toggle from './Toggle.svelte';
   import { hotkeyFrom, hotkeyProblem, keyOsFrom, modifiersOf } from '../lib/keys';
+  import { lockDesc, lockTitle, shieldNote, themeDesc, trayNote } from '../lib/platform';
   import { settings } from '../lib/settings.svelte';
   import { workspace } from '../lib/workspace.svelte';
   import type { AppInfo, MotionSetting, Sensitivity, Settings, ThemeSetting } from '../lib/types';
 
   let { open = $bindable(false), info }: { open: boolean; info: AppInfo | null } = $props();
   const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
+  const noShield = $derived(shieldNote(info));
+  const noTray = $derived(trayNote(info));
 
   const themeOptions: SegmentOption<ThemeSetting>[] = [
     { value: 'system', label: 'System' },
@@ -145,12 +148,13 @@
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Screen-capture shield</p>
-        <p class="row-desc">Screenshots and screen sharing see a blank window.</p>
+        <p class="row-desc">{noShield ?? 'Screenshots and screen sharing see a blank window.'}</p>
       </div>
       <Toggle
         quiet
         label="Screen-capture shield"
-        checked={settings.value.contentProtection}
+        disabled={noShield !== null}
+        checked={noShield === null && settings.value.contentProtection}
         onchange={(contentProtection) => update({ contentProtection })}
       />
     </div>
@@ -169,12 +173,12 @@
     </div>
     <div class="row">
       <div class="row-copy">
-        <p class="row-title">Wipe when Windows locks</p>
-        <p class="row-desc">Win+L or the screen saver lock.</p>
+        <p class="row-title">{lockTitle(keyOs)}</p>
+        <p class="row-desc">{lockDesc(keyOs)}</p>
       </div>
       <Toggle
         quiet
-        label="Wipe when Windows locks"
+        label={lockTitle(keyOs)}
         checked={settings.value.wipeOnLock}
         onchange={(wipeOnLock) => update({ wipeOnLock })}
       />
@@ -210,9 +214,15 @@
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Keep running in the tray</p>
-        <p class="row-desc">Closing the window keeps the hotkey working.</p>
+        <p class="row-desc">{noTray ?? 'Closing the window keeps the hotkey working.'}</p>
       </div>
-      <Toggle quiet label="Keep running in the tray" checked={settings.value.trayMode} onchange={(trayMode) => update({ trayMode })} />
+      <Toggle
+        quiet
+        label="Keep running in the tray"
+        disabled={noTray !== null}
+        checked={noTray === null && settings.value.trayMode}
+        onchange={(trayMode) => update({ trayMode })}
+      />
     </div>
   </section>
 
@@ -221,7 +231,7 @@
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Theme</p>
-        <p class="row-desc">Follows Windows by default.</p>
+        <p class="row-desc">{themeDesc(keyOs)}</p>
       </div>
       <Segmented size="sm" label="Theme" options={themeOptions} value={settings.value.theme} onchange={(theme) => update({ theme })} />
     </div>

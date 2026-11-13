@@ -142,6 +142,10 @@ export interface AppInfo {
   engineVersion: string;
   ruleCount: number;
   platform: string;
+  /** The desktop shows a tray (status notifier) icon, so closing can keep Redactor running. */
+  tray: boolean;
+  /** The window can be hidden from screenshots and screen sharing. */
+  shield: boolean;
 }
 
 export interface OpenedFile {

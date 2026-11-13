@@ -5,6 +5,7 @@
     label,
     hint,
     quiet = false,
+    disabled = false,
     onchange,
   }: {
     checked: boolean;
@@ -13,6 +14,8 @@
     quiet?: boolean;
     /** Tooltip explaining what the switch does. */
     hint?: string;
+    /** The platform cannot do this: the switch stays as it is. */
+    disabled?: boolean;
     onchange?: (checked: boolean) => void;
   } = $props();
 
@@ -22,7 +25,7 @@
   }
 </script>
 
-<button type="button" class="toggle" role="switch" aria-checked={checked} title={hint} onclick={toggle}>
+<button type="button" class="toggle" role="switch" aria-checked={checked} title={hint} {disabled} onclick={toggle}>
   <span class="label" class:sr-only={quiet}>{label}</span>
   <span class="track" aria-hidden="true">
     <span class="fill"></span>
@@ -46,6 +49,10 @@
   .toggle:hover {
     background: var(--glass-hover);
     color: var(--text);
+  }
+  .toggle:disabled {
+    opacity: 0.45;
+    pointer-events: none;
   }
 
   .track {

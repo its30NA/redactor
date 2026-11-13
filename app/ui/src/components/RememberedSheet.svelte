@@ -14,13 +14,19 @@
   import Button from './Button.svelte';
   import Sheet from './Sheet.svelte';
   import { checkWord } from '../lib/always-redact';
+  import type { KeyOs } from '../lib/keys';
+  import { lockShort } from '../lib/platform';
   import { addToList, keepForSession } from '../lib/remembered.svelte';
   import { session } from '../lib/session.svelte';
   import { settings } from '../lib/settings.svelte';
   import { MAX_ALWAYS_REDACT } from '../lib/types';
   import { workspace } from '../lib/workspace.svelte';
 
-  let { open = $bindable(false), adding = $bindable(false) }: { open: boolean; adding?: boolean } = $props();
+  let {
+    open = $bindable(false),
+    adding = $bindable(false),
+    os = 'windows',
+  }: { open: boolean; adding?: boolean; os?: KeyOs } = $props();
 
   let word = $state('');
   let wordError = $state<string | null>(null);
@@ -47,7 +53,7 @@
   const forgetNote = $derived(
     [
       'when you quit',
-      settings.value.wipeOnLock ? 'when Windows locks' : null,
+      settings.value.wipeOnLock ? lockShort(os) : null,
       idle ? `after ${idle} idle minutes` : null,
     ]
       .filter(Boolean)
