@@ -1,5 +1,6 @@
 <!--
-  First-run card: the offline promise, the global hotkey and the screen-capture shield.
+  First-run card: the offline promise, the global hotkey and, where the desktop has one, the
+  screen-capture shield.
   Shown once; "Get started" sets `firstRunDone`.
 -->
 <script lang="ts">
@@ -12,7 +13,8 @@
   import Mark from './Mark.svelte';
   import { settings } from '../lib/settings.svelte';
 
-  let { open = $bindable(false) }: { open: boolean } = $props();
+  // `shield`: false where the desktop cannot hide a window from screenshots (Linux).
+  let { open = $bindable(false), shield = true }: { open: boolean; shield?: boolean } = $props();
 
   const seen = () => void settings.update({ firstRunDone: true });
 
@@ -45,13 +47,15 @@
           <p class="desc">Cleans the clipboard in place, without opening this window.</p>
         </div>
       </li>
-      <li>
-        <span class="icon violet" aria-hidden="true"><ShieldCheck size={16} strokeWidth={1.9} /></span>
-        <div>
-          <p class="title">Shielded from screen capture</p>
-          <p class="desc">Screenshots and screen sharing see a blank window. You can turn it off in Settings.</p>
-        </div>
-      </li>
+      {#if shield}
+        <li>
+          <span class="icon violet" aria-hidden="true"><ShieldCheck size={16} strokeWidth={1.9} /></span>
+          <div>
+            <p class="title">Shielded from screen capture</p>
+            <p class="desc">Screenshots and screen sharing see a blank window. You can turn it off in Settings.</p>
+          </div>
+        </li>
+      {/if}
     </ul>
 
     <Button variant="primary" size="lg" onclick={done} data-autofocus class="start">Get started</Button>

@@ -329,7 +329,7 @@
 <SettingsSheet bind:open={settingsOpen} {info} />
 <RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
-<FirstRun bind:open={firstRunOpen} />
+<FirstRun bind:open={firstRunOpen} shield={shieldNote(info) === null} />
 
 <style>
   .app {
