@@ -27,15 +27,12 @@ const HINT_BYTES: u32 = 64;
 /// What the clipboard holds. `time` is a recent server time (from a ping).
 pub(super) fn read(shared: &Shared, op: &Op, time: Timestamp) -> Result<ClipText, ClipError> {
     let a = &shared.atoms;
-    let owner = shared
-        .conn
-        .get_selection_owner(a.CLIPBOARD)
-        .map_err(lost)?
-        .reply()
-        .map_err(lost)?
-        .owner;
+    let owner = shared.owner()?;
     if owner == x11rb::NONE {
         return Ok(ClipText::Empty);
+    }
+    if owner == shared.window {
+        return Ok(own_text(shared));
     }
     let reading = Reading::start(shared, op, time)?;
 
@@ -69,6 +66,21 @@ pub(super) fn read(shared: &Shared, op: &Op, time: Timestamp) -> Result<ClipText
         Some(bytes) => decode(bytes, target == string),
         None => ClipText::TooLarge,
     })
+}
+
+/// Our own text, read as another app would get it: up to the first NUL, within the limit.
+fn own_text(shared: &Shared) -> ClipText {
+    let Some(text) = shared.owned_text() else {
+        return ClipText::Empty;
+    };
+    let end = memchr::memchr(0, text.as_bytes()).unwrap_or(text.len());
+    if end == 0 {
+        ClipText::Empty
+    } else if end > MAX_INPUT_BYTES {
+        ClipText::TooLarge
+    } else {
+        ClipText::Text(Zeroizing::new(text[..end].to_owned()))
+    }
 }
 
 /// One read: its own unmapped window, and the deadline for the whole of it.

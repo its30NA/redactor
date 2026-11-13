@@ -7,8 +7,6 @@
 //! it, on its own Xvfb, and runs them one at a time.
 #![cfg(target_os = "linux")]
 
-// Contract points 5 and 6 (writing) are not called yet.
-#[allow(dead_code)]
 #[path = "support/clipboard_contract.rs"]
 mod contract;
 #[path = "support/x11_other.rs"]
@@ -20,6 +18,7 @@ use contract::{unique, OtherApp};
 use redactor_app::bridge::MAX_INPUT_BYTES;
 use redactor_app::clipscrub::{ClipText, Clipboard};
 use redactor_app::platform::linux::x11::X11Clipboard;
+use redactor_app::platform::SystemClipboard;
 use x11_other::{display, X11Other};
 
 /// The app's clipboard and another app, both on the test display.
@@ -55,6 +54,8 @@ contract_tests!(
     protected_copy_is_left_alone,
     empty_and_image_read_as_empty,
     oversized_text_never_reaches_the_ui,
+    stale_sequence_blocks_the_write,
+    scrub_rewrites_only_when_findings,
 );
 
 /// Only the value `secret` marks a password-manager copy.
@@ -144,4 +145,163 @@ fn sequence_moves_once_per_copy() {
     let two = cb.sequence();
     assert_eq!(two, one.wrapping_add(1));
     assert_eq!(cb.sequence(), two);
+}
+
+/// Made-up text of at least `bytes` bytes that differs from line to line.
+fn varied_text(bytes: usize) -> String {
+    let mut text = String::with_capacity(bytes + 64);
+    let mut line = 0u32;
+    while text.len() < bytes {
+        text.push_str(&format!("line {line} of the test text, äöü € 😀\n"));
+        line += 1;
+    }
+    text
+}
+
+/// Text larger than one X request reaches another app whole (we serve it in pieces).
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn large_text_reaches_xclip() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    let text = varied_text(2 * 1024 * 1024);
+    cb.write_text(&text).unwrap();
+    let pasted = other.paste().expect("xclip got nothing");
+    assert_eq!(pasted.len(), text.len());
+    assert!(pasted == text, "the pasted text differs");
+}
+
+/// The clipboard can change without a new owner: the owner exits or clears it. The sequence
+/// moves, nothing is read, and a write based on the old state does nothing.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn owner_exit_moves_the_sequence_and_reads_empty() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    other.copy_text(&format!("about to vanish {}", unique()));
+    let old = cb.sequence();
+    other.clear();
+    assert_ne!(cb.sequence(), old);
+    assert!(matches!(cb.read().unwrap(), ClipText::Empty));
+    assert!(!cb.write_if_unchanged("stale", old).unwrap());
+    assert_eq!(other.paste(), None);
+}
+
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn our_own_text_reads_back_and_bumps_the_sequence() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    other.clear();
+    let before = cb.sequence();
+    let text = format!("our own text {}\r\n", unique());
+    cb.write_text(&text).unwrap();
+    assert_eq!(cb.sequence(), before.wrapping_add(1));
+    assert_eq!(read_text(&cb), Some(text));
+    assert_eq!(cb.sequence(), before.wrapping_add(1));
+
+    // The limit holds for our own text too.
+    cb.write_text(&"c".repeat(MAX_INPUT_BYTES + 1)).unwrap();
+    assert!(matches!(cb.read().unwrap(), ClipText::TooLarge));
+}
+
+/// When another app copies, we stop being the source: its text is what everybody gets.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn losing_ownership_forgets_the_text() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    cb.write_text(&format!("ours {}", unique())).unwrap();
+    let theirs = format!("theirs {}", unique());
+    other.copy_text(&theirs);
+    assert_eq!(read_text(&cb), Some(theirs.clone()));
+    assert_eq!(other.paste(), Some(theirs));
+}
+
+/// Two apps paste a large text at the same moment: two transfers in pieces side by side.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn two_readers_at_once_both_get_the_text() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    let text = varied_text(1024 * 1024);
+    cb.write_text(&text).unwrap();
+    let (one, two) = std::thread::scope(|s| {
+        let one = s.spawn(|| other.paste());
+        let two = s.spawn(|| other.paste());
+        (one.join().unwrap(), two.join().unwrap())
+    });
+    assert!(one.as_deref() == Some(text.as_str()), "the first reader");
+    assert!(two.as_deref() == Some(text.as_str()), "the second reader");
+}
+
+/// The compare-and-set is one step for the X server. Another app's copy is already on its way
+/// when our write starts, based on a sequence number from before that copy. Whichever of the
+/// two the server handles first, the other app's copy must be what the clipboard holds in the
+/// end: either our write saw it and did nothing, or it came after our write and replaced it.
+/// A write that compares first and takes the clipboard later overwrites the newer copy.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn a_copy_in_flight_is_never_overwritten() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    for round in 0..200 {
+        let stale = cb.sequence();
+        other.start_copy();
+        let wrote = cb
+            .write_if_unchanged("a write based on old news", stale)
+            .unwrap();
+        assert!(
+            other.copy_is_in_place(),
+            "round {round}: the newer copy was overwritten (the write returned {wrote})"
+        );
+    }
+}
+
+/// The same promise when the other app's copy arrives while our write is under way, at every
+/// point of it: before the comparison, after the write, and in the gap between the two that
+/// only the server grab closes. A second thread copies a little later each round.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn a_copy_during_the_write_is_never_overwritten() {
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+    const ROUNDS: u32 = 2000;
+    let display = display();
+    let (cb, other) = desktop(&display);
+    let (go, copied, stop) = (AtomicU32::new(0), AtomicU32::new(0), AtomicBool::new(false));
+    let mut failure = None;
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            for round in 1..=ROUNDS {
+                while go.load(Ordering::SeqCst) < round {
+                    if stop.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    std::hint::spin_loop();
+                }
+                // 0 to 249 microseconds into the write.
+                let started = Instant::now();
+                while started.elapsed() < Duration::from_micros(u64::from(round % 250)) {
+                    std::hint::spin_loop();
+                }
+                other.start_copy();
+                copied.store(round, Ordering::SeqCst);
+            }
+        });
+        for round in 1..=ROUNDS {
+            let stale = cb.sequence();
+            go.store(round, Ordering::SeqCst);
+            let wrote = cb.write_if_unchanged("a write based on old news", stale);
+            while copied.load(Ordering::SeqCst) < round {
+                std::hint::spin_loop();
+            }
+            if wrote.is_err() || !other.copy_is_in_place() {
+                failure = Some(format!("round {round}: the write returned {wrote:?}"));
+                break;
+            }
+        }
+        stop.store(true, Ordering::SeqCst);
+    });
+    assert_eq!(failure, None, "the newer copy was overwritten");
 }

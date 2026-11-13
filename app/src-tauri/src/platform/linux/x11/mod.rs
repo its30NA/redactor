@@ -9,8 +9,14 @@
 //! reports events in the order things happened; a [`X11Clipboard::ping`] (an empty append to a
 //! property of our own window) therefore comes back after every owner change the server saw
 //! before it, and the count read at that moment is exact.
+//!
+//! Writing means becoming the owner of the selection and answering whoever pastes (`serve`).
+//! The compare-and-set of [`Clipboard::write_if_unchanged`] holds a server grab from the ping
+//! to the ownership change: while it lasts the server handles no other client, so no copy can
+//! land between the comparison and the write.
 
 mod read;
+mod serve;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -26,9 +32,11 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
+use zeroize::Zeroizing;
 
 use crate::clipscrub::{ClipError, ClipText, Clipboard};
 use crate::platform::SystemClipboard;
+use serve::Serving;
 
 /// How long one answer may take: a `SelectionNotify`, a piece of a large transfer, a ping.
 const STEP_TIMEOUT: Duration = Duration::from_secs(1);
@@ -47,6 +55,7 @@ x11rb::atom_manager! {
         PING: b"_REDACTOR_PING",
         // Where a selection owner puts its answer on a read's window.
         TRANSFER: b"_REDACTOR_TRANSFER",
+        TIMESTAMP,
     }
 }
 
@@ -78,6 +87,13 @@ struct Shared {
     changes: AtomicU32,
     /// The window of the read in progress (0: none); its events go to the reading thread.
     listening: AtomicU32,
+    /// The text we serve while we own the selection. The lock is also held while ownership is
+    /// taken or checked, so the text and "we are the owner" always belong together.
+    text: Mutex<Option<Arc<Zeroizing<String>>>>,
+    /// The server time at which we took the selection.
+    owned_at: AtomicU32,
+    /// The largest piece of text sent in one request.
+    chunk: usize,
     stop: AtomicBool,
 }
 
@@ -139,6 +155,8 @@ impl X11Clipboard {
         .check()
         .map_err(lost)?;
 
+        // Without the BIG-REQUESTS extension a request holds a little less than 256 KiB.
+        let chunk = serve::INCR_CHUNK.min(conn.maximum_request_bytes().saturating_sub(1024));
         let shared = Arc::new(Shared {
             conn,
             root,
@@ -146,6 +164,9 @@ impl X11Clipboard {
             atoms,
             changes: AtomicU32::new(0),
             listening: AtomicU32::new(x11rb::NONE),
+            text: Mutex::new(None),
+            owned_at: AtomicU32::new(x11rb::CURRENT_TIME),
+            chunk,
             stop: AtomicBool::new(false),
         });
         let (tx, replies) = mpsc::channel();
@@ -191,7 +212,71 @@ impl X11Clipboard {
     }
 }
 
+impl X11Clipboard {
+    /// Makes us the owner of the clipboard, serving `text`. `time` is a server time from a ping.
+    fn own(&self, text: &str, time: Timestamp) -> Result<(), ClipError> {
+        let s = &self.shared;
+        let mut held = s.text.lock().unwrap_or_else(|e| e.into_inner());
+        // In place before we own the selection: a request can come the moment we do.
+        *held = Some(Arc::new(Zeroizing::new(text.to_owned())));
+        s.owned_at.store(time, Ordering::SeqCst);
+        // The server ignores a request with a time before the last change, so ask who owns it.
+        let owner = s
+            .conn
+            .set_selection_owner(s.window, s.atoms.CLIPBOARD, time)
+            .map_err(lost)
+            .and_then(|_| s.owner());
+        if owner != Ok(s.window) {
+            *held = None;
+            return Err(ClipError);
+        }
+        Ok(())
+    }
+}
+
+/// The server handles no other client while this lives. Every way out ends it.
+struct ServerGrab<'a>(&'a RustConnection);
+
+impl<'a> ServerGrab<'a> {
+    fn new(conn: &'a RustConnection) -> Result<Self, ClipError> {
+        conn.grab_server().map_err(lost)?;
+        Ok(ServerGrab(conn))
+    }
+}
+
+impl Drop for ServerGrab<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.ungrab_server();
+        let _ = self.0.flush();
+    }
+}
+
 impl Shared {
+    /// The window that owns the clipboard now (0: nobody).
+    fn owner(&self) -> Result<Window, ClipError> {
+        Ok(self
+            .conn
+            .get_selection_owner(self.atoms.CLIPBOARD)
+            .map_err(lost)?
+            .reply()
+            .map_err(lost)?
+            .owner)
+    }
+
+    /// The text we serve, if we own the clipboard.
+    fn owned_text(&self) -> Option<Arc<Zeroizing<String>>> {
+        self.text.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The server said we lost the clipboard. A write of ours may have taken it back since, so
+    /// the server is asked, under the same lock a write holds while it takes ownership.
+    fn forget_if_lost(&self) {
+        let mut held = self.text.lock().unwrap_or_else(|e| e.into_inner());
+        if self.owner() != Ok(self.window) {
+            *held = None;
+        }
+    }
+
     /// An empty append to a property of our own window. It changes nothing, and the server
     /// answers with a `PropertyNotify` that carries its time.
     fn touch(&self) -> Result<(), ClipError> {
@@ -214,6 +299,7 @@ impl Shared {
 fn worker(shared: &Shared, tx: &Sender<Reply>) {
     let a = &shared.atoms;
     let mut pings = 0u32;
+    let mut serving = Serving::default();
     loop {
         let Ok(event) = shared.conn.wait_for_event() else {
             return;
@@ -221,6 +307,7 @@ fn worker(shared: &Shared, tx: &Sender<Reply>) {
         if shared.stop.load(Ordering::SeqCst) {
             return;
         }
+        serving.expire(shared);
         let reply = match event {
             Event::XfixesSelectionNotify(e) if e.selection == a.CLIPBOARD => {
                 shared.changes.fetch_add(1, Ordering::SeqCst);
@@ -243,6 +330,22 @@ fn worker(shared: &Shared, tx: &Sender<Reply>) {
             }
             Event::SelectionNotify(e) if e.requestor == shared.listening.load(Ordering::SeqCst) => {
                 Reply::Selection(e)
+            }
+            Event::SelectionRequest(e) => {
+                serving.request(shared, &e);
+                continue;
+            }
+            Event::SelectionClear(e) if e.selection == a.CLIPBOARD => {
+                shared.forget_if_lost();
+                continue;
+            }
+            Event::PropertyNotify(e) if e.state == Property::DELETE => {
+                serving.deleted(shared, e.window, e.atom);
+                continue;
+            }
+            Event::DestroyNotify(e) => {
+                serving.gone(e.window);
+                continue;
             }
             _ => continue,
         };
@@ -278,8 +381,17 @@ impl Clipboard for X11Clipboard {
         read::read(&self.shared, &op, time)
     }
 
-    fn write_if_unchanged(&self, _text: &str, _seq: u32) -> Result<bool, ClipError> {
-        Err(ClipError)
+    fn write_if_unchanged(&self, text: &str, seq: u32) -> Result<bool, ClipError> {
+        let mut op = self.begin();
+        let _grab = ServerGrab::new(&self.shared.conn)?;
+        // Under the grab no other client can change the owner: what the ping counts is still
+        // true when the selection is taken.
+        let (changes, time) = self.ping(&mut op).ok_or(ClipError)?;
+        if changes != seq {
+            return Ok(false);
+        }
+        self.own(text, time)?;
+        Ok(true)
     }
 
     /// X11 has no clipboard history of its own; a clipboard manager's history is out of reach.
@@ -289,7 +401,9 @@ impl Clipboard for X11Clipboard {
 }
 
 impl SystemClipboard for X11Clipboard {
-    fn write_text(&self, _text: &str) -> Result<(), ClipError> {
-        Err(ClipError)
+    fn write_text(&self, text: &str) -> Result<(), ClipError> {
+        let mut op = self.begin();
+        let (_, time) = self.ping(&mut op).ok_or(ClipError)?;
+        self.own(text, time)
     }
 }

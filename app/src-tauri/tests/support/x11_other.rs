@@ -57,21 +57,39 @@ pub struct X11Other {
     display: String,
     conn: RustConnection,
     clipboard: Atom,
+    /// A window of this app's own, for [`X11Other::start_copy`].
+    window: Window,
     /// Helper processes still running; killed when this is dropped.
     helpers: Mutex<Vec<(Child, ChildStdout)>>,
 }
 
 impl X11Other {
     pub fn new(display: &str) -> X11Other {
-        let (conn, _) =
+        let (conn, screen) =
             RustConnection::connect(Some(display)).expect("connect to the test display");
         let clipboard = Atoms::new(&conn).unwrap().reply().unwrap().CLIPBOARD;
+        let window = plain_window(&conn, screen);
         X11Other {
             display: display.to_string(),
             conn,
             clipboard,
+            window,
             helpers: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Takes the clipboard and returns without waiting for the server: the copy is still on
+    /// its way when the caller goes on. (Nobody is served; the tests only look at who owns.)
+    pub fn start_copy(&self) {
+        self.conn
+            .set_selection_owner(self.window, self.clipboard, x11rb::CURRENT_TIME)
+            .unwrap();
+        self.conn.flush().unwrap();
+    }
+
+    /// True when the copy made with [`X11Other::start_copy`] is what the clipboard holds.
+    pub fn copy_is_in_place(&self) -> bool {
+        self.owner() == self.window
     }
 
     fn owner(&self) -> Window {
@@ -199,6 +217,26 @@ impl OtherApp for X11Other {
     }
 }
 
+/// An unmapped window to own a selection with.
+fn plain_window(conn: &RustConnection, screen: usize) -> Window {
+    let window = conn.generate_id().unwrap();
+    conn.create_window(
+        x11rb::COPY_DEPTH_FROM_PARENT,
+        window,
+        conn.setup().roots[screen].root,
+        0,
+        0,
+        1,
+        1,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        x11rb::COPY_FROM_PARENT,
+        &CreateWindowAux::new(),
+    )
+    .unwrap();
+    window
+}
+
 /// Not a test: the helper process of [`X11Other`]. Returns at once in a normal test run.
 #[test]
 #[ignore = "the helper process of X11Other; does nothing without X11_OTHER_MODE"]
@@ -242,22 +280,7 @@ impl Helper {
         let owner = if mode == "clear" {
             x11rb::NONE
         } else {
-            let window = conn.generate_id().unwrap();
-            conn.create_window(
-                x11rb::COPY_DEPTH_FROM_PARENT,
-                window,
-                conn.setup().roots[screen].root,
-                0,
-                0,
-                1,
-                1,
-                0,
-                WindowClass::INPUT_OUTPUT,
-                x11rb::COPY_FROM_PARENT,
-                &CreateWindowAux::new(),
-            )
-            .unwrap();
-            window
+            plain_window(&conn, screen)
         };
         conn.set_selection_owner(owner, atoms.CLIPBOARD, x11rb::CURRENT_TIME)
             .unwrap()
