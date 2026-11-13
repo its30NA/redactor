@@ -3102,6 +3102,7 @@ dependencies = [
  "webview2-com",
  "windows",
  "x11rb",
+ "zbus",
  "zeroize",
 ]
 

@@ -1,5 +1,6 @@
 //! Linux: the session decides what the app can use (X11 now, Wayland in phase 1-2d).
 
+pub mod lock;
 pub mod session;
 pub mod webview;
 pub mod x11;

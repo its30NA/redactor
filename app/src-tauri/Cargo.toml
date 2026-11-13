@@ -64,6 +64,7 @@ gtk = "=0.18.2"
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # `tests/x11_hotkey.rs` checks the layer the global-shortcut plugin hands the hotkey to.
 global-hotkey = "=0.8.0"
+zbus = "5"
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = ["isolation"] }

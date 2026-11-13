@@ -15,20 +15,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-tests=(x11_clipboard x11_hotkey linux_webview)
-
-run=()
-if [ "${1:-}" = "--run" ]; then
-  shift
-  if [ "$#" -eq 0 ]; then
-    echo "x11-tests: --run needs a command" >&2
-    exit 2
-  fi
-  run=("$@")
-elif [ "$#" -ne 0 ]; then
-  echo "usage: x11-tests.sh [--run <command...>]" >&2
-  exit 2
-fi
+tests=(x11_clipboard x11_hotkey linux_webview linux_desktop)
 
 for tool in Xvfb xclip dbus-daemon dbus-send timeout; do
   if ! command -v "$tool" >/dev/null; then
