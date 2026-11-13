@@ -99,8 +99,8 @@ The platform-neutral modules (settings, session secrets, the engine bridge, hotk
 decoding, clipboard logic over a trait) need no desktop. The shell (`app.rs`, `commands.rs`, `state.rs`,
 `tray.rs`) never names an operating system: it reaches the OS only through one `Platform` value built at
 start-up (`platform::native()`), and `tests/platform_boundary.rs` keeps it that way. The shell compiles and
-is tested on Windows, macOS and Linux CI (Linux needs the WebKitGTK packages); the app starts on Windows only
-for now, elsewhere the binary points to the `scrub` CLI.
+is tested on Windows, macOS and Linux CI (Linux needs the WebKitGTK packages). The app starts on Windows and
+on Linux X11 sessions; on macOS and on Wayland the binary says so and points to the `scrub` CLI.
 
 | Module | Role |
 |---|---|
@@ -118,10 +118,48 @@ for now, elsewhere the binary points to the `scrub` CLI.
 | `textfile.rs` | Decodes opened files with `redactor-wire`'s decoder: UTF-8 or UTF-16, binary refused, 20 MiB cap. |
 | `browser_args.rs` | The WebView2 browser switches: wry's defaults, no non-proxied WebRTC UDP, no DNS prefetch, no background networking. |
 | `platform/` | The platform layer: traits `SystemClipboard` (on top of `clipscrub::Clipboard`, which also covers clipboard history), `LockWatcher`, `WebviewHardening` and `GlobalHotkey`, a `tray` flag, and `native()`. `hotkey_plugin.rs` implements the hotkey with Tauri's global-shortcut plugin. |
-| `platform/windows/` | The Windows implementation, and the only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
-| `platform/unsupported.rs` | A placeholder for macOS and Linux until their own code lands: the clipboard only fails, lock and hardening do nothing. |
+| `platform/windows/` | The Windows implementation, and (but for one call in `platform/linux/tray.rs`) the only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
+| `platform/linux/` | Linux. `session.rs` reads the session from `DISPLAY` and `WAYLAND_DISPLAY`. `x11/` is the app's own X11 clipboard client (below). `lock.rs` wipes on lock and sleep: logind's `PrepareForSleep` and `Lock`, the session's `LockedHint` (GNOME and KDE lock without the `Lock` signal), and `ActiveChanged` of five screen-saver interfaces; a missing bus is not an error. `tray.rs` says whether the desktop shows a tray (a StatusNotifier host is registered and the indicator library loads; the one `unsafe` call on Linux), because the tray library aborts where there is none; without a tray, closing the window quits. `webview.rs` hardens WebKitGTK: no WebRTC, media stream, page cache, WebGL, WebAudio, swipe navigation or default context menu. On an X11 session GDK is pinned to X11, so the window lives on the same server as the clipboard and the hotkey. The screen-capture shield does not exist on Linux (`Platform.shield` is false; the setting is forced off and the UI says why). |
+| `platform/unsupported.rs` | The placeholder for macOS until its own code lands: `native()` returns the reason and the binary points to the `scrub` CLI. |
 
-Every clipboard implementation passes one contract, `tests/support/clipboard_contract.rs` (text round trip, a copy marked private is left alone, an empty clipboard or an image reads as empty, oversized text never reaches the window, a stale sequence blocks the write, scrub in place rewrites only when there are findings). An in-memory fake runs it on every OS (`tests/fake_clipboard_contract.rs`); each real clipboard runs it on its own desktop (`tests/win_clipboard.rs` on Windows, with the clipboard history check on top).
+Every clipboard implementation passes one contract, `tests/support/clipboard_contract.rs` (text round trip, a copy marked private is left alone, an empty clipboard or an image reads as empty, oversized text never reaches the window, a stale sequence blocks the write, scrub in place rewrites only when there are findings). An in-memory fake runs it on every OS (`tests/fake_clipboard_contract.rs`); each real clipboard runs it on its own desktop (`tests/win_clipboard.rs` on Windows, with the clipboard history check on top; `tests/x11_clipboard.rs` on a throwaway X server, against `xclip` and against helper processes that hint, lie about their size, stay silent or exit half way).
+
+### Start-up answers
+
+`platform::native()` returns the `Platform` or the reason there is none, and `main` prints that reason and
+exits with code 2. There is one sentence per case, each pointing to the `scrub` CLI: macOS (not yet), a
+Wayland session (not yet), no display at all, and an X server that cannot be reached or has no XFIXES
+extension.
+
+### The X11 clipboard (`platform/linux/x11/`)
+
+On X11 there is no clipboard store: the text stays in the application that copied it, and whoever pastes
+asks that application for it. Redactor speaks this protocol itself (`x11rb`), on its own connection, because
+the rules of the contract above need control a plugin does not give.
+
+- **Two kinds of threads, one connection.** A worker thread is the only one that waits for events. It counts
+  every change of the `CLIPBOARD` owner (XFIXES reports a new owner, an owner whose window is destroyed and an
+  owner that exits), answers applications that paste our text (`serve.rs`), and hands the answers of the one
+  clipboard operation in progress to the thread that asked for it.
+- **The sequence number is ours.** X11 has none, so it is the count of owner changes. Reading it sends a
+  "ping" first (an empty write to a property of our own window). The server reports events in the order
+  things happened, so when the ping comes back every earlier owner change has been counted.
+- **Compare-and-set under a server grab.** `write_if_unchanged` grabs the server, pings, compares the count
+  with the caller's number and only then takes the selection. While the grab lasts the server handles no
+  other client, so no copy can land between the comparison and the write. Two tests put another
+  application's copy on its way before and during the write and require that copy to survive.
+- **The other side is not trusted** (`read.rs`). A copy whose `x-kde-passwordManagerHint` says `secret`, or
+  cannot be read, is left alone. The size of the text is asked for before a byte is copied; text over 20 MiB
+  is refused, also when the owner announced less and sends more. Every answer has one second, a whole read
+  ten. A transfer in pieces that turns out too large is not abandoned half way (an owner that serves one
+  transfer at a time would answer nobody afterwards): its pieces are deleted on the server, unread.
+- **Serving.** `TARGETS`, `MULTIPLE` (how clipboard managers save), `TIMESTAMP` and the two UTF-8 text
+  targets. Text up to 256 KiB is answered in one property, larger text in pieces from a snapshot taken at
+  request time; at most 8 such transfers run at once, and one whose requestor goes away or stops asking is
+  dropped. When another application copies, our text is dropped.
+- **On exit** the clipboard would be empty. If the desktop runs a clipboard manager, it is asked to take the
+  text over (`SAVE_TARGETS`) and gets one second to do so.
+- X11 has no clipboard history to clean; a clipboard manager's own history is out of reach.
 
 The window is built in code, not from `tauri.conf.json`: frameless with a custom title bar, WebView2 private
 mode, browser extensions off, navigation limited to the app's own origin, new windows denied, developer
@@ -168,7 +206,7 @@ strings that never quote text.
 - The UI never receives a secret value from Rust, and Rust never logs or stores scanned text.
 - The window can reach only the app's own backend (CSP `connect-src ipc: http://ipc.localhost`).
 - `unsafe` is forbidden in the engine, the wire crate and the CLI, and confined to
-  `app/src-tauri/src/platform/windows/`.
+  `app/src-tauri/src/platform/windows/` and one library-loading call in `platform/linux/tray.rs`.
 - Dependencies are pinned (`=` for Tauri and its plugins, exact versions in `package.json`), lockfiles are
   committed, and CI runs `cargo deny` for licenses and advisories.
 

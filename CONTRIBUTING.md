@@ -42,9 +42,30 @@ npx playwright install chromium           # once
 npm run test:e2e                          # UI tests against the mock backend, with the app's CSP
 ```
 
-The Tauri shell compiles on Windows only (the platform-neutral modules test everywhere). To build and test
-it from WSL on a Windows machine, run `tools/win-build.sh`. The clipboard tests in
+The Tauri shell builds on Windows, macOS and Linux (Linux needs the WebKitGTK development packages). To build
+and test the Windows side from WSL on a Windows machine, run `tools/win-build.sh`. The clipboard tests in
 `app/src-tauri/tests/win_clipboard.rs` need a real desktop session and are ignored by default.
+
+### Linux desktop tests
+
+The tests that need an X server or a D-Bus bus (`app/src-tauri/tests/x11_clipboard.rs` and the other
+files listed in the script) are ignored by default and refuse to run unless `REDACTOR_TEST_DISPLAY` is set.
+Do not set it by hand: on a real desktop they would take over your clipboard. Run
+
+```bash
+sudo apt-get install -y xvfb xclip xdotool xbindkeys x11-utils openbox wmctrl python3-dbusmock dbus
+tools/ci/x11-tests.sh
+```
+
+The script starts its own Xvfb (a display number from 99 up), a private session bus and a private bus with
+a logind mock in place of the system bus, runs the tests one at a time and fails unless every test binary
+is green. It works under WSL too, where it never touches the Windows clipboard. Tests wait with a deadline
+and are never retried: a test that fails once in ten runs is a bug to find.
+
+`tools/ci/x11-tests.sh --run <command...>` runs any command in that same environment, for example the app
+itself. `tools/ci/linux-smoke.sh <app binary>` starts the built app there and checks it end to end (the
+hotkey scrubs the clipboard, clean text is left alone, the window closes or hides to the tray as the desktop
+allows); `--self-test` checks the script's own set-up without an app.
 
 ### Regenerating generated files
 
