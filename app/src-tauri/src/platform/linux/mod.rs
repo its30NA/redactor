@@ -32,6 +32,10 @@ pub fn platform() -> Result<Platform, Unavailable> {
 /// before any window exists.
 fn x11_platform() -> Result<Platform, Unavailable> {
     let clipboard = X11Clipboard::connect(None).map_err(|_| NO_X_SERVER)?;
+    // The window must live on the same X server as the clipboard and the hotkey. Left alone,
+    // GTK prefers Wayland whenever a compositor socket exists at the default place, also when
+    // `WAYLAND_DISPLAY` is not set (WSLg). Said before Tauri opens the display.
+    gtk::gdk::set_allowed_backends("x11");
     Ok(Platform {
         name: "linux",
         os: Os::Linux,
