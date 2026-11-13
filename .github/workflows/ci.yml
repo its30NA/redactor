@@ -87,6 +87,69 @@ jobs:
       - name: Test
         run: cargo test -p redactor-app --locked
 
+  # The desktop contract (L2: the ignored X11 and D-Bus tests) and the built app under test
+  # (L3: tools/ci/linux-smoke.sh), both on a throwaway Xvfb display with private buses.
+  app-linux-desktop:
+    name: App on X11 (Linux, Xvfb)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-app-linux-desktop-${{ steps.image.outputs.version }}-v1
+      - name: WebKitGTK, tray and X11 test packages
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          xvfb openbox xclip xdotool xbindkeys x11-utils wmctrl python3-dbusmock dbus
+          libglib2.0-bin webkit2gtk-driver imagemagick ffmpeg
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Desktop contract tests (L2, Xvfb)
+        run: tools/ci/x11-tests.sh
+      # Built as the Windows loop builds it, without an installer.
+      - name: Build the app
+        working-directory: app/src-tauri
+        run: ../ui/node_modules/.bin/tauri build --ci --no-bundle -- --locked
+      # Outside the repository, so the runner's own toolchain builds it, not the pinned one.
+      - name: Install tauri-driver
+        working-directory: ${{ runner.temp }}
+        run: cargo install tauri-driver --locked --version 2.1.0
+      # mainBinaryName renames the binary to Redactor; fall back to the cargo name.
+      - name: App smoke (L3, Xvfb)
+        run: |
+          app=target/release/Redactor
+          [ -x "$app" ] || app=target/release/redactor-app
+          tools/ci/linux-smoke.sh "$app"
+      - name: Upload screenshots, video and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-smoke
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
   app-macos:
     name: Rust and app shell (macOS)
     runs-on: macos-latest
