@@ -131,12 +131,14 @@ jobs:
       - name: Build the app
         working-directory: app/src-tauri
         run: ../ui/node_modules/.bin/tauri build --ci --no-bundle -- --locked
-      # Outside the repository, so the runner's own toolchain builds it, not the pinned one.
-      - name: Install tauri-driver
-        working-directory: ${{ runner.temp }}
-        run: cargo install tauri-driver --locked --version 2.1.0
       # mainBinaryName renames the binary to Redactor; fall back to the cargo name.
+      # WebDriver is off: WebKitWebDriver cannot open a session in the app's private-mode view
+      # ("failed to create a new browsing context"), so S1 is "the window is visible" and S2, S5
+      # and S6 are reported as SKIP (their L2 tests above stay). With it on, the job also needs
+      # `cargo install tauri-driver --locked --version 2.1.0`.
       - name: App smoke (L3, Xvfb)
+        env:
+          SMOKE_WEBDRIVER: "0"
         run: |
           app=target/release/Redactor
           [ -x "$app" ] || app=target/release/redactor-app

@@ -141,6 +141,9 @@ export XDG_CONFIG_HOME="$work/xdg/config" XDG_DATA_HOME="$work/xdg/data"
 export XDG_CACHE_HOME="$work/xdg/cache" XDG_STATE_HOME="$work/xdg/state"
 export XDG_RUNTIME_DIR="$work/xdg/runtime" XDG_SESSION_TYPE=x11 XDG_SESSION_ID=smoke
 export GDK_BACKEND=x11 NO_AT_BRIDGE=1
+# Xvfb has no GPU: with accelerated compositing WebKitGTK draws nothing into the X window, and
+# every screenshot is an empty page.
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
 
 openbox --sm-disable >"$work/openbox.log" 2>&1 &
 pids+=($!)
