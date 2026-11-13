@@ -205,17 +205,48 @@ fn our_own_text_reads_back_and_bumps_the_sequence() {
     assert!(matches!(cb.read().unwrap(), ClipText::TooLarge));
 }
 
-/// When another app copies, we stop being the source: its text is what everybody gets.
+/// When another app copies, we stop being the source: its text is what everybody gets, and
+/// ours is dropped. A client that still asks our window directly is refused.
 #[test]
 #[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
 fn losing_ownership_forgets_the_text() {
     let display = display();
     let (cb, other) = desktop(&display);
     cb.write_text(&format!("ours {}", unique())).unwrap();
+    let our_window = other.owner();
+    assert!(
+        other.asks_for_text(our_window),
+        "the owner hands its text out"
+    );
+
     let theirs = format!("theirs {}", unique());
     other.copy_text(&theirs);
+    assert!(
+        !other.asks_for_text(our_window),
+        "the old text is still handed out"
+    );
     assert_eq!(read_text(&cb), Some(theirs.clone()));
     assert_eq!(other.paste(), Some(theirs));
+}
+
+/// The app that holds the clipboard crashes: no new owner, but the clipboard is empty now.
+#[test]
+#[ignore = "needs a throwaway X display: tools/ci/x11-tests.sh"]
+fn a_crashed_owner_moves_the_sequence_and_reads_empty() {
+    let display = display();
+    let (cb, other) = desktop(&display);
+    other.helper("hint-other", &format!("about to crash {}", unique()));
+    let old = cb.sequence();
+    other.kill_helpers();
+    // The server notices the closed connection a moment later.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while cb.sequence() == old {
+        assert!(Instant::now() < deadline, "the sequence did not move");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(matches!(cb.read().unwrap(), ClipText::Empty));
+    assert!(!cb.write_if_unchanged("stale", old).unwrap());
+    assert_eq!(other.paste(), None);
 }
 
 /// Two apps paste a large text at the same moment: two transfers in pieces side by side.

@@ -6,7 +6,7 @@
 //! same connection, one operation at a time.
 //!
 //! X11 has no clipboard sequence number, so the count of owner changes is ours. The X server
-//! reports events in the order things happened; a [`X11Clipboard::ping`] (an empty append to a
+//! reports events in the order things happened; a [`X11Clipboard::ping`] (an empty write to a
 //! property of our own window) therefore comes back after every owner change the server saw
 //! before it, and the count read at that moment is exact.
 //!
@@ -59,6 +59,7 @@ x11rb::atom_manager! {
         // Where a selection owner puts its answer on a read's window.
         TRANSFER: b"_REDACTOR_TRANSFER",
         TIMESTAMP,
+        MULTIPLE,
         // The desktop's clipboard manager, and the request "save what I hold, I am leaving".
         CLIPBOARD_MANAGER,
         SAVE_TARGETS,
@@ -287,12 +288,13 @@ impl Shared {
         }
     }
 
-    /// An empty append to a property of our own window. It changes nothing, and the server
-    /// answers with a `PropertyNotify` that carries its time.
+    /// Sets a property of our own window to nothing. The server answers with a
+    /// `PropertyNotify` that carries its time. (Replace, not append: it works whatever another
+    /// client may have written there.)
     fn touch(&self) -> Result<(), ClipError> {
         self.conn
             .change_property(
-                PropMode::APPEND,
+                PropMode::REPLACE,
                 self.window,
                 self.atoms.PING,
                 AtomEnum::STRING,

@@ -27,6 +27,8 @@ use super::Shared;
 pub(super) const INCR_CHUNK: usize = 256 * 1024;
 /// More transfers in pieces at once are refused.
 const MAX_TRANSFERS: usize = 8;
+/// More pairs in one MULTIPLE request are refused.
+const MAX_PAIRS: u32 = 16;
 /// A transfer whose requestor has not asked for the next piece for this long is dropped (at
 /// the next event the worker sees).
 const IDLE: Duration = Duration::from_secs(5);
@@ -70,17 +72,95 @@ impl Serving {
     /// Writes the answer to the requestor's property. False: refused.
     fn answer(&mut self, shared: &Shared, req: &SelectionRequestEvent) -> bool {
         let a = &shared.atoms;
-        let conn = &shared.conn;
         if req.selection != a.CLIPBOARD || req.owner != shared.window || req.property == x11rb::NONE
+        {
+            return false;
+        }
+        // Never onto a window of our own. Any client can send a request that names one, and the
+        // answer would overwrite the property our pings use or switch off the events we wait for.
+        if req.requestor == shared.window
+            || req.requestor == shared.listening.load(Ordering::SeqCst)
         {
             return false;
         }
         let Some(text) = shared.owned_text() else {
             return false;
         };
-        let (window, property) = (req.requestor, req.property);
-        let sent = if req.target == a.TARGETS {
-            let targets = [a.TARGETS, a.TIMESTAMP, a.UTF8_STRING, a.TEXT_PLAIN_UTF8];
+        if req.target == a.MULTIPLE {
+            return self.multiple(shared, req, &text);
+        }
+        self.convert(shared, req.requestor, req.target, req.property, &text)
+    }
+
+    /// Several targets in one request (clipboard managers save this way): the requestor's
+    /// property lists pairs of target and property. Each pair is answered like a request of its
+    /// own; the property of a pair we refuse is set to None in the list.
+    fn multiple(
+        &mut self,
+        shared: &Shared,
+        req: &SelectionRequestEvent,
+        text: &Arc<Zeroizing<String>>,
+    ) -> bool {
+        let conn = &shared.conn;
+        let listed = conn
+            .get_property(
+                false,
+                req.requestor,
+                req.property,
+                AtomEnum::ANY,
+                0,
+                2 * MAX_PAIRS,
+            )
+            .ok()
+            .and_then(|cookie| cookie.reply().ok());
+        let Some(listed) = listed.filter(|l| l.bytes_after == 0) else {
+            return false;
+        };
+        let Some(mut pairs) = listed.value32().map(|v| v.collect::<Vec<Atom>>()) else {
+            return false;
+        };
+        if pairs.is_empty() || pairs.len() % 2 != 0 {
+            return false;
+        }
+        for pair in pairs.as_chunks_mut::<2>().0 {
+            let (target, property) = (pair[0], pair[1]);
+            let answered = property != x11rb::NONE
+                && property != req.property
+                && target != shared.atoms.MULTIPLE
+                && self.convert(shared, req.requestor, target, property, text);
+            if !answered {
+                pair[1] = x11rb::NONE;
+            }
+        }
+        conn.change_property32(
+            PropMode::REPLACE,
+            req.requestor,
+            req.property,
+            listed.type_,
+            &pairs,
+        )
+        .is_ok()
+    }
+
+    /// Writes one target of our text to `property` on the requestor's `window`. False: refused.
+    fn convert(
+        &mut self,
+        shared: &Shared,
+        window: Window,
+        target: Atom,
+        property: Atom,
+        text: &Arc<Zeroizing<String>>,
+    ) -> bool {
+        let a = &shared.atoms;
+        let conn = &shared.conn;
+        let sent = if target == a.TARGETS {
+            let targets = [
+                a.TARGETS,
+                a.MULTIPLE,
+                a.TIMESTAMP,
+                a.UTF8_STRING,
+                a.TEXT_PLAIN_UTF8,
+            ];
             conn.change_property32(
                 PropMode::REPLACE,
                 window,
@@ -88,7 +168,7 @@ impl Serving {
                 AtomEnum::ATOM,
                 &targets,
             )
-        } else if req.target == a.TIMESTAMP {
+        } else if target == a.TIMESTAMP {
             let since = [shared.owned_at.load(Ordering::SeqCst)];
             conn.change_property32(
                 PropMode::REPLACE,
@@ -97,17 +177,11 @@ impl Serving {
                 AtomEnum::INTEGER,
                 &since,
             )
-        } else if req.target == a.UTF8_STRING || req.target == a.TEXT_PLAIN_UTF8 {
+        } else if target == a.UTF8_STRING || target == a.TEXT_PLAIN_UTF8 {
             if text.len() <= shared.chunk {
-                conn.change_property8(
-                    PropMode::REPLACE,
-                    window,
-                    property,
-                    req.target,
-                    text.as_bytes(),
-                )
+                conn.change_property8(PropMode::REPLACE, window, property, target, text.as_bytes())
             } else {
-                return self.announce(shared, req, text);
+                return self.announce(shared, window, target, property, Arc::clone(text));
             }
         } else {
             return false;
@@ -120,13 +194,15 @@ impl Serving {
     fn announce(
         &mut self,
         shared: &Shared,
-        req: &SelectionRequestEvent,
+        requestor: Window,
+        target: Atom,
+        property: Atom,
         text: Arc<Zeroizing<String>>,
     ) -> bool {
         let conn = &shared.conn;
         // A requestor that asks again on the same property has given the earlier transfer up.
         self.transfers
-            .retain(|t| !(t.requestor == req.requestor && t.property == req.property));
+            .retain(|t| !(t.requestor == requestor && t.property == property));
         let Ok(size) = u32::try_from(text.len()) else {
             return false;
         };
@@ -137,24 +213,21 @@ impl Serving {
         // announcement is written, so that no delete is missed.
         let watch = ChangeWindowAttributesAux::new()
             .event_mask(EventMask::PROPERTY_CHANGE | EventMask::STRUCTURE_NOTIFY);
-        if conn
-            .change_window_attributes(req.requestor, &watch)
-            .is_err()
-        {
+        if conn.change_window_attributes(requestor, &watch).is_err() {
             return false;
         }
         self.transfers.push(Transfer {
-            requestor: req.requestor,
-            property: req.property,
-            target: req.target,
+            requestor,
+            property,
+            target,
             text,
             sent: 0,
             touched: Instant::now(),
         });
         conn.change_property32(
             PropMode::REPLACE,
-            req.requestor,
-            req.property,
+            requestor,
+            property,
             shared.atoms.INCR,
             &[size],
         )

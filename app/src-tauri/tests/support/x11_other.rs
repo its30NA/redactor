@@ -18,7 +18,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     Atom, AtomEnum, ChangeWindowAttributesAux, ConnectionExt, CreateWindowAux, EventMask, PropMode,
     Property, SelectionNotifyEvent, SelectionRequestEvent, Window, WindowClass,
-    SELECTION_NOTIFY_EVENT,
+    SELECTION_NOTIFY_EVENT, SELECTION_REQUEST_EVENT,
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
@@ -40,7 +40,10 @@ x11rb::atom_manager! {
         HINT: b"x-kde-passwordManagerHint",
         CLIPBOARD_MANAGER,
         SAVE_TARGETS,
+        MULTIPLE,
+        ATOM_PAIR,
         FETCHED: b"_X11_OTHER_FETCHED",
+        FETCHED_TEXT: b"_X11_OTHER_FETCHED_TEXT",
     }
 }
 
@@ -60,6 +63,7 @@ pub struct X11Other {
     display: String,
     conn: RustConnection,
     clipboard: Atom,
+    utf8: Atom,
     /// A window of this app's own, for [`X11Other::start_copy`].
     window: Window,
     /// Helper processes still running; killed when this is dropped.
@@ -70,12 +74,14 @@ impl X11Other {
     pub fn new(display: &str) -> X11Other {
         let (conn, screen) =
             RustConnection::connect(Some(display)).expect("connect to the test display");
-        let clipboard = Atoms::new(&conn).unwrap().reply().unwrap().CLIPBOARD;
+        let atoms = Atoms::new(&conn).unwrap().reply().unwrap();
+        let (clipboard, utf8) = (atoms.CLIPBOARD, atoms.UTF8_STRING);
         let window = plain_window(&conn, screen);
         X11Other {
             display: display.to_string(),
             conn,
             clipboard,
+            utf8,
             window,
             helpers: Mutex::new(Vec::new()),
         }
@@ -95,7 +101,48 @@ impl X11Other {
         self.owner() == self.window
     }
 
-    fn owner(&self) -> Window {
+    /// Asks `window` for the clipboard text directly, as a client would that still believes
+    /// this window owns the clipboard. True: it handed text out. False: it refused.
+    pub fn asks_for_text(&self, window: Window) -> bool {
+        let request = SelectionRequestEvent {
+            response_type: SELECTION_REQUEST_EVENT,
+            sequence: 0,
+            time: x11rb::CURRENT_TIME,
+            owner: window,
+            requestor: self.window,
+            selection: self.clipboard,
+            target: self.utf8,
+            property: self.utf8,
+        };
+        self.conn
+            .send_event(false, window, EventMask::NO_EVENT, request)
+            .unwrap();
+        self.conn.flush().unwrap();
+        let deadline = Instant::now() + OWNER_DEADLINE;
+        loop {
+            match self.conn.poll_for_event().unwrap() {
+                Some(Event::SelectionNotify(e)) if e.requestor == self.window => {
+                    return e.property != x11rb::NONE;
+                }
+                Some(_) => {}
+                None => {
+                    assert!(Instant::now() < deadline, "no answer to the request");
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
+    }
+
+    /// Ends the helper processes at once, as a crash would.
+    pub fn kill_helpers(&self) {
+        for (mut child, _) in self.helpers.lock().unwrap().drain(..) {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    /// The window that owns the clipboard now (0: nobody).
+    pub fn owner(&self) -> Window {
         self.conn
             .get_selection_owner(self.clipboard)
             .unwrap()
@@ -403,10 +450,17 @@ impl Helper {
     /// Small texts only (no transfer in pieces).
     fn take_over(&mut self) -> bool {
         let a = self.atoms;
+        // As the clipboard managers of GNOME's and Xfce's settings daemons do: one MULTIPLE
+        // request with a list of (target, property) pairs.
+        let pairs: Vec<u8> = [a.UTF8_STRING, a.FETCHED_TEXT]
+            .iter()
+            .flat_map(|atom| atom.to_ne_bytes())
+            .collect();
+        self.put(self.window, a.FETCHED, a.ATOM_PAIR, 32, &pairs);
         let _ = self.conn.convert_selection(
             self.window,
             a.CLIPBOARD,
-            a.UTF8_STRING,
+            a.MULTIPLE,
             a.FETCHED,
             x11rb::CURRENT_TIME,
         );
@@ -424,7 +478,14 @@ impl Helper {
         }
         let fetched = self
             .conn
-            .get_property(true, self.window, a.FETCHED, a.UTF8_STRING, 0, u32::MAX / 4)
+            .get_property(
+                true,
+                self.window,
+                a.FETCHED_TEXT,
+                a.UTF8_STRING,
+                0,
+                u32::MAX / 4,
+            )
             .unwrap()
             .reply()
             .unwrap();
