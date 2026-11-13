@@ -3084,6 +3084,7 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 name = "redactor-app"
 version = "2.1.0"
 dependencies = [
+ "gtk",
  "memchr",
  "redactor-core",
  "redactor-wire",
@@ -3096,6 +3097,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-single-instance",
  "unicode-normalization",
+ "webkit2gtk",
  "webview2-com",
  "windows",
  "x11rb",

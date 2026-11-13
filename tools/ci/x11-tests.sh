@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-tests=(x11_clipboard)
+tests=(x11_clipboard linux_webview)
 
 for tool in Xvfb xclip dbus-daemon dbus-send timeout; do
   if ! command -v "$tool" >/dev/null; then

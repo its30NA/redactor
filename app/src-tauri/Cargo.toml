@@ -54,6 +54,13 @@ windows = { version = "0.62", features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13.2", features = ["xfixes"] }
+# The version wry builds on; `v2_40` adds no crates and covers every setting `harden_settings`
+# changes (WebRTC needs 2.38).
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+
+# Only the WebKitGTK desktop test initialises GTK itself; the version wry already pulls in.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gtk = "=0.18.2"
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = ["isolation"] }
