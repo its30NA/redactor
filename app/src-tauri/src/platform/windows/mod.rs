@@ -27,6 +27,7 @@ pub fn platform() -> Platform {
         webview: Box::new(WebView2Hardening),
         hotkey: Box::new(PluginHotkey),
         tray: true,
+        shield: true,
     }
 }
 

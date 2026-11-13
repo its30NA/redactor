@@ -29,3 +29,12 @@ fn wayland_is_refused_by_name() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("Wayland"));
     assert!(out.stdout.is_empty());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_unreachable_x_server_is_refused() {
+    let out = run_app(&[("DISPLAY", ":987")]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("X server"));
+    assert!(out.stdout.is_empty());
+}

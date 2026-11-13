@@ -55,7 +55,7 @@ pub trait GlobalHotkey: Send + Sync {
 
 /// What this OS offers the shell.
 pub struct Platform {
-    /// `app_info.platform`. "windows" today.
+    /// `app_info.platform`: "windows" or "linux".
     pub name: &'static str,
     /// Which OS's rules apply (hotkeys, settings folder, the UI's shortcuts).
     pub os: Os,
@@ -65,6 +65,9 @@ pub struct Platform {
     pub hotkey: Box<dyn GlobalHotkey>,
     /// False where the desktop shows no tray: the window then never hides to it.
     pub tray: bool,
+    /// True where the OS can hide the window from screenshots and screen sharing. Without it
+    /// the screen-share shield is always off and the tray menu does not offer it.
+    pub shield: bool,
 }
 
 /// Why the desktop app cannot start here: one sentence that points to the `scrub` CLI.

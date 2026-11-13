@@ -32,7 +32,8 @@ pub fn run() -> Result<(), platform::Unavailable> {
     let settings = settings_file
         .as_ref()
         .map(SettingsFile::load)
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .without_unsupported(platform.shield);
     let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform));
 
     let app = tauri::Builder::default()
@@ -77,7 +78,8 @@ pub fn run() -> Result<(), platform::Unavailable> {
             let settings = st.settings();
             create_main_window(&handle, &settings)?;
             if st.platform.tray {
-                tray::build(&handle, settings.content_protection)?;
+                let shield = st.platform.shield.then_some(settings.content_protection);
+                tray::build(&handle, shield)?;
             }
             if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
                 // Another app may hold the key; the app still runs, and Settings can pick
@@ -136,13 +138,15 @@ pub fn run() -> Result<(), platform::Unavailable> {
 }
 
 fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<WebviewWindow> {
+    // Where the OS cannot hide the window, it is never marked as hidden.
+    let protected = state::state(app).platform.shield && settings.content_protection;
     let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Redactor")
         .inner_size(1280.0, 800.0)
         .min_inner_size(960.0, 640.0)
         .center()
         .decorations(false)
-        .content_protected(settings.content_protection)
+        .content_protected(protected)
         .incognito(true)
         .browser_extensions_enabled(false)
         .additional_browser_args(crate::browser_args::BROWSER_ARGS)
@@ -234,7 +238,10 @@ fn change_settings(
     let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
     let prev = st.settings();
     let os = st.platform.os;
-    let next = change(&prev).validated(os).map_err(|e| e.to_string())?;
+    let next = change(&prev)
+        .validated(os)
+        .map_err(|e| e.to_string())?
+        .without_unsupported(st.platform.shield);
 
     if next.hotkey != prev.hotkey {
         let new_hk = Hotkey::parse(&next.hotkey, os).map_err(|e| e.to_string())?;
@@ -252,7 +259,7 @@ fn change_settings(
             ));
         }
     }
-    if next.content_protection != prev.content_protection {
+    if st.platform.shield && next.content_protection != prev.content_protection {
         if let Some(w) = app.get_webview_window(MAIN) {
             let _ = w.set_content_protected(next.content_protection);
         }

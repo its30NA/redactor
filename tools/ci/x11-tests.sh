@@ -8,10 +8,27 @@
 # clipboard).
 #
 # Fails unless every listed test binary reports "0 failed" and at least one test passed.
+#
+# `x11-tests.sh --run <command...>` runs the command in the same environment instead of the
+# tests (from the repository root, with the same display, buses and clean-up) and exits with
+# its status: for starting the app by hand or a smoke test on the throwaway display.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-tests=(x11_clipboard linux_webview)
+tests=(x11_clipboard x11_hotkey linux_webview)
+
+run=()
+if [ "${1:-}" = "--run" ]; then
+  shift
+  if [ "$#" -eq 0 ]; then
+    echo "x11-tests: --run needs a command" >&2
+    exit 2
+  fi
+  run=("$@")
+elif [ "$#" -ne 0 ]; then
+  echo "usage: x11-tests.sh [--run <command...>]" >&2
+  exit 2
+fi
 
 for tool in Xvfb xclip dbus-daemon dbus-send timeout; do
   if ! command -v "$tool" >/dev/null; then
@@ -110,6 +127,20 @@ export REDACTOR_TEST_BUS=1
 # Tools that fall back to the environment get the throwaway display too, never the real one.
 export DISPLAY="$display"
 unset WAYLAND_DISPLAY XAUTHORITY
+# GTK finds a Wayland compositor without WAYLAND_DISPLAY too: at the default socket in
+# XDG_RUNTIME_DIR (on WSLg the Windows desktop). An app started here gets X11 only, a private
+# runtime folder, and no accessibility bus of the real session.
+export GDK_BACKEND=x11 NO_AT_BRIDGE=1
+mkdir -m 700 "$work/runtime"
+export XDG_RUNTIME_DIR="$work/runtime"
+
+if [ "${#run[@]}" -ne 0 ]; then
+  set +e
+  "${run[@]}"
+  status=$?
+  set -e
+  exit "$status"
+fi
 
 args=()
 for t in "${tests[@]}"; do args+=(--test "$t"); done

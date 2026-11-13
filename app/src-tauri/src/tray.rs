@@ -11,23 +11,36 @@ use crate::wipe::WipeReason;
 /// Held in app state so the shield check mark can follow Settings.
 pub struct ShieldItem(pub CheckMenuItem<Wry>);
 
-pub fn build(handle: &AppHandle, shield_on: bool) -> tauri::Result<()> {
+/// Builds the tray icon. `shield` is the shield's current state, or `None` where the OS cannot
+/// hide the window: the menu then has no shield item.
+pub fn build(handle: &AppHandle, shield: Option<bool>) -> tauri::Result<()> {
     let open = MenuItem::with_id(handle, "open", "Open Redactor", true, None::<&str>)?;
     let scrub = MenuItem::with_id(handle, "scrub", "Scrub clipboard", true, None::<&str>)?;
-    let shield = CheckMenuItem::with_id(
-        handle,
-        "shield",
-        "Screen-share shield",
-        true,
-        shield_on,
-        None::<&str>,
-    )?;
+    let shield = shield
+        .map(|on| {
+            CheckMenuItem::with_id(
+                handle,
+                "shield",
+                "Screen-share shield",
+                true,
+                on,
+                None::<&str>,
+            )
+        })
+        .transpose()?;
     let wipe = MenuItem::with_id(handle, "wipe", "Wipe now", true, None::<&str>)?;
     let quit = MenuItem::with_id(handle, "quit", "Quit", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(handle)?;
     let sep2 = PredefinedMenuItem::separator(handle)?;
-    let menu = Menu::with_items(handle, &[&open, &scrub, &shield, &sep, &wipe, &sep2, &quit])?;
-    handle.manage(ShieldItem(shield));
+    let menu = match &shield {
+        Some(shield) => {
+            Menu::with_items(handle, &[&open, &scrub, shield, &sep, &wipe, &sep2, &quit])?
+        }
+        None => Menu::with_items(handle, &[&open, &scrub, &sep, &wipe, &sep2, &quit])?,
+    };
+    if let Some(shield) = shield {
+        handle.manage(ShieldItem(shield));
+    }
 
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("Redactor")

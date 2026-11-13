@@ -199,6 +199,16 @@ impl Settings {
         s.always_redact = words;
         s
     }
+
+    /// Turns off what this desktop cannot do: without `shield` (the OS cannot hide the window
+    /// from screenshots) the screen-share shield is off, so the app never claims protection it
+    /// does not give.
+    pub fn without_unsupported(mut self, shield: bool) -> Settings {
+        if !shield {
+            self.content_protection = false;
+        }
+        self
+    }
 }
 
 /// Where `os` keeps the settings file, from the environment `var` reads. Empty or relative values
@@ -290,6 +300,29 @@ mod tests {
         if let Some(dir) = f.path().parent() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+
+    #[test]
+    fn shield_is_forced_off_where_unsupported() {
+        let on = Settings {
+            content_protection: true,
+            ..Settings::default()
+        };
+        assert!(!on.clone().without_unsupported(false).content_protection);
+        assert!(on.clone().without_unsupported(true).content_protection);
+        assert_eq!(
+            on.clone().without_unsupported(false),
+            Settings {
+                content_protection: false,
+                ..on
+            },
+            "only the shield changes"
+        );
+        let off = Settings {
+            content_protection: false,
+            ..Settings::default()
+        };
+        assert!(!off.without_unsupported(true).content_protection);
     }
 
     #[test]

@@ -236,6 +236,10 @@ pub struct AppInfo {
     engine_version: &'static str,
     rule_count: usize,
     platform: &'static str,
+    /// The desktop shows the tray icon, so closing the window can keep the app running there.
+    tray: bool,
+    /// The OS can hide the window from screenshots: the screen-share shield exists here.
+    shield: bool,
 }
 
 #[tauri::command]
@@ -246,6 +250,8 @@ pub async fn app_info(state: State<'_, Shared>) -> Res<AppInfo> {
         engine_version: redactor_core::ENGINE_VERSION,
         rule_count: st.engines.rule_count(),
         platform: st.platform.name,
+        tray: st.platform.tray,
+        shield: st.platform.shield,
     })
     .await
 }
