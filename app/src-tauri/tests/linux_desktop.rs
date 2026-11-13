@@ -68,24 +68,68 @@ where
         .unwrap_or_else(|e| panic!("{iface}.{method} on the logind mock: {e}"))
 }
 
-#[test]
-#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
-fn the_watcher_hears_logind() {
-    private_buses();
-    let system = Connection::system().expect("connect to the private system bus");
-    let id = format!("redactor{}", std::process::id());
-    let session: OwnedObjectPath = mock_call(
-        &system,
+/// Adds a session to the logind mock and returns its object path.
+fn add_session(system: &Connection, id: &str) -> OwnedObjectPath {
+    mock_call(
+        system,
         MANAGER_PATH,
         MOCK,
         "AddSession",
-        &(id.as_str(), "seat0", 1000u32, "redactor", true),
+        &(id, "seat0", 1000u32, "redactor", true),
     )
     .body()
     .deserialize::<String>()
     .expect("AddSession returns the session path")
     .try_into()
-    .expect("an object path");
+    .expect("an object path")
+}
+
+/// Started by the user's service manager, the app is in no session of its own. logind then
+/// names the user's display session (`auto`), and that session's lock wipes.
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn the_watcher_finds_the_display_session() {
+    private_buses();
+    let system = Connection::system().expect("connect to the private system bus");
+    let session = add_session(&system, &format!("display{}", std::process::id()));
+    // No session for this pid, and no session id that logind knows: only `auto` answers.
+    let no_session = "raise dbus.exceptions.DBusException(\
+        'no session', name='org.freedesktop.login1.NoSuchSession')";
+    mock_call(
+        &system,
+        MANAGER_PATH,
+        MOCK,
+        "AddMethod",
+        &(MANAGER, "GetSessionByPID", "u", "o", no_session),
+    );
+    mock_call(
+        &system,
+        MANAGER_PATH,
+        MOCK,
+        "AddMethod",
+        &(
+            MANAGER,
+            "GetSession",
+            "s",
+            "o",
+            format!(
+                "if args[0] != 'auto':\n    {no_session}\nret = '{}'",
+                session.as_str()
+            ),
+        ),
+    );
+
+    let events = watcher();
+    mock_call(&system, session.as_str(), SESSION, "Lock", &());
+    expect(&events, WipeReason::Lock, "Lock on the display session");
+}
+
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn the_watcher_hears_logind() {
+    private_buses();
+    let system = Connection::system().expect("connect to the private system bus");
+    let session = add_session(&system, &format!("redactor{}", std::process::id()));
     // The template has GetSession but not GetSessionByPID: this process belongs to the session.
     mock_call(
         &system,

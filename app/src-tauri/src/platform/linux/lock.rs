@@ -120,28 +120,31 @@ fn add_match(conn: &Connection, rule: &str) -> zbus::Result<()> {
     .map(drop)
 }
 
-/// This process's logind session: by pid, else by `$XDG_SESSION_ID`.
+/// This process's logind session: by pid, else by `$XDG_SESSION_ID`, else the one logind names
+/// for `auto` (the caller's session or, for an app the user's service manager started, which is
+/// in no session of its own, the user's display session).
 fn own_session(conn: &Connection, session_id: Option<String>) -> Option<OwnedObjectPath> {
-    let by_pid = conn.call_method(
+    let path = |reply: zbus::Result<zbus::Message>| {
+        reply.ok()?.body().deserialize::<OwnedObjectPath>().ok()
+    };
+    let by_id = |id: &str| {
+        path(conn.call_method(
+            Some(LOGIND),
+            MANAGER_PATH,
+            Some(MANAGER),
+            "GetSession",
+            &(id,),
+        ))
+    };
+    path(conn.call_method(
         Some(LOGIND),
         MANAGER_PATH,
         Some(MANAGER),
         "GetSessionByPID",
         &(std::process::id(),),
-    );
-    let reply = match by_pid {
-        Ok(reply) => reply,
-        Err(_) => conn
-            .call_method(
-                Some(LOGIND),
-                MANAGER_PATH,
-                Some(MANAGER),
-                "GetSession",
-                &(session_id?,),
-            )
-            .ok()?,
-    };
-    reply.body().deserialize::<OwnedObjectPath>().ok()
+    ))
+    .or_else(|| by_id(&session_id?))
+    .or_else(|| by_id("auto"))
 }
 
 /// Subscribes to logind's sleep signal and, where this process has a session, its lock signals.
