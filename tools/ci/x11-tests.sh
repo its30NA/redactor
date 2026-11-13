@@ -17,6 +17,19 @@ cd "$(dirname "$0")/../.."
 
 tests=(x11_clipboard x11_hotkey linux_webview linux_desktop)
 
+run=()
+if [ "${1:-}" = "--run" ]; then
+  shift
+  if [ "$#" -eq 0 ]; then
+    echo "x11-tests: --run needs a command" >&2
+    exit 2
+  fi
+  run=("$@")
+elif [ "$#" -ne 0 ]; then
+  echo "usage: x11-tests.sh [--run <command...>]" >&2
+  exit 2
+fi
+
 for tool in Xvfb xclip dbus-daemon dbus-send timeout; do
   if ! command -v "$tool" >/dev/null; then
     echo "x11-tests: $tool is missing (see CONTRIBUTING.md for the apt line)" >&2

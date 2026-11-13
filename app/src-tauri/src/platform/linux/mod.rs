@@ -9,9 +9,8 @@ pub mod x11;
 use std::sync::Arc;
 
 use super::hotkey_plugin::PluginHotkey;
-use super::{LockWatcher, Platform, Unavailable};
+use super::{Platform, Unavailable};
 use crate::os::Os;
-use crate::wipe::WipeReason;
 use session::Session;
 use x11::X11Clipboard;
 
@@ -42,20 +41,12 @@ fn x11_platform() -> Result<Platform, Unavailable> {
         name: "linux",
         os: Os::Linux,
         clipboard: Arc::new(clipboard),
-        // INTEGRATION: replaced by `lock::LogindLock` (Task 5).
-        lock: Box::new(PendingLock),
+        lock: Box::new(lock::LogindLock),
         webview: Box::new(webview::WebKitHardening),
         hotkey: Box::new(PluginHotkey),
-        // INTEGRATION: replaced by `tray::available()` (Task 6).
-        tray: false,
+        // Asked once, at start-up: a tray host that appears later is picked up at the next start.
+        tray: tray::available(),
         // Tauri's content protection does nothing on Linux.
         shield: false,
     })
-}
-
-// INTEGRATION: removed when `lock::LogindLock` (Task 5) takes its place.
-struct PendingLock;
-
-impl LockWatcher for PendingLock {
-    fn spawn(&self, _on_event: Box<dyn Fn(WipeReason) + Send + Sync>) {}
 }
