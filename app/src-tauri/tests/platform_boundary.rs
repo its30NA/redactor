@@ -103,6 +103,9 @@ fn unsafe_is_allowed_in_the_os_modules_only() {
         &mut found,
     );
     found.sort();
-    assert_eq!(found, ["src/platform/windows/mod.rs"]);
+    assert_eq!(
+        found,
+        ["src/platform/linux/tray.rs", "src/platform/windows/mod.rs"]
+    );
     assert!(src("src/lib.rs").contains("#![deny(unsafe_code)]"));
 }

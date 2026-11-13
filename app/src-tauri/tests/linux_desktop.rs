@@ -1,4 +1,5 @@
-//! The Linux desktop services over D-Bus: logind and the screen savers (wipe on lock and sleep).
+//! The Linux desktop services over D-Bus: logind and the screen savers (wipe on lock and sleep),
+//! and the StatusNotifier watcher (whether the desktop shows a tray).
 //!
 //! These tests talk to a system bus and a session bus, so they are `#[ignore]`d and panic unless
 //! `REDACTOR_TEST_BUS` says both buses are private ones. Only `tools/ci/x11-tests.sh` sets it: it
@@ -6,10 +7,12 @@
 //! stands in for the system bus, and runs these tests one at a time.
 #![cfg(target_os = "linux")]
 
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use redactor_app::platform::linux::lock::LogindLock;
+use redactor_app::platform::linux::tray;
 use redactor_app::platform::LockWatcher;
 use redactor_app::wipe::WipeReason;
 use zbus::blocking::Connection;
@@ -176,4 +179,123 @@ fn no_bus_is_not_an_error() {
         rx.recv_timeout(Duration::from_millis(500)).is_err(),
         "no bus, no event"
     );
+}
+
+const WATCHER: &str = "org.kde.StatusNotifierWatcher";
+const WATCHER_PATH: &str = "/StatusNotifierWatcher";
+
+fn name_has_owner(bus: &Connection, name: &str) -> bool {
+    bus.call_method(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        Some("org.freedesktop.DBus"),
+        "NameHasOwner",
+        &(name,),
+    )
+    .expect("NameHasOwner")
+    .body()
+    .deserialize::<bool>()
+    .expect("a boolean")
+}
+
+/// Polls `done` every 20 ms until it holds or `WAIT` passes.
+fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + WAIT;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what} within {WAIT:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// A StatusNotifier watcher (python3-dbusmock) on the private session bus; gone when dropped.
+struct MockWatcher {
+    child: Child,
+    bus: Connection,
+}
+
+impl MockWatcher {
+    fn start(bus: &Connection) -> Self {
+        // A pyenv or toolcache python3 does not see the system's python3-dbusmock.
+        let python = ["python3", "/usr/bin/python3"]
+            .into_iter()
+            .find(|p| {
+                Command::new(p)
+                    .args(["-c", "import dbusmock"])
+                    .stderr(Stdio::null())
+                    .status()
+                    .is_ok_and(|s| s.success())
+            })
+            .expect("python3-dbusmock is installed");
+        let child = Command::new(python)
+            .args([
+                "-m",
+                "dbusmock",
+                "--session",
+                WATCHER,
+                WATCHER_PATH,
+                WATCHER,
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start the watcher mock");
+        let mock = MockWatcher {
+            child,
+            bus: bus.clone(),
+        };
+        wait_until("the watcher mock owns its name", || {
+            name_has_owner(bus, WATCHER)
+        });
+        mock
+    }
+
+    fn call<B>(&self, iface: &str, method: &str, body: &B)
+    where
+        B: serde::Serialize + zbus::zvariant::DynamicType,
+    {
+        self.bus
+            .call_method(Some(WATCHER), WATCHER_PATH, Some(iface), method, body)
+            .unwrap_or_else(|e| panic!("{iface}.{method} on the watcher mock: {e}"));
+    }
+}
+
+impl Drop for MockWatcher {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let bus = self.bus.clone();
+        wait_until("the watcher mock's name is released", || {
+            !name_has_owner(&bus, WATCHER)
+        });
+    }
+}
+
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn no_watcher_means_no_tray() {
+    private_buses();
+    let bus = Connection::session().expect("connect to the private session bus");
+    assert!(!name_has_owner(&bus, WATCHER));
+    assert!(!tray::host_registered(&bus));
+}
+
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn host_registered_reads_the_watcher() {
+    private_buses();
+    let bus = Connection::session().expect("connect to the private session bus");
+    let mock = MockWatcher::start(&bus);
+    let property = "IsStatusNotifierHostRegistered";
+    mock.call(
+        "org.freedesktop.DBus.Mock",
+        "AddProperty",
+        &(WATCHER, property, Value::from(true)),
+    );
+    assert!(tray::host_registered(&bus), "a host is registered");
+    mock.call(
+        "org.freedesktop.DBus.Properties",
+        "Set",
+        &(WATCHER, property, Value::from(false)),
+    );
+    assert!(!tray::host_registered(&bus), "no host is registered");
 }

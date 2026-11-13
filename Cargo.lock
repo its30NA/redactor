@@ -3086,6 +3086,7 @@ version = "2.1.0"
 dependencies = [
  "global-hotkey",
  "gtk",
+ "libloading",
  "memchr",
  "redactor-core",
  "redactor-wire",
