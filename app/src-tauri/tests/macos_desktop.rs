@@ -1,6 +1,7 @@
-//! Desktop checks on macOS that need the main thread's event loop: the lock watcher
-//! (`MacLock`) against real notifications, and the global hotkey through `global_hotkey`, the
-//! layer the global-shortcut plugin (`PluginHotkey`) hands the hotkey to.
+//! Desktop checks on macOS that need the main thread or its event loop: the lock watcher
+//! (`MacLock`) against real notifications, the global hotkey through `global_hotkey` (the
+//! layer the global-shortcut plugin, `PluginHotkey`, hands the hotkey to), and what our
+//! configuration and hardening leave on a real `WKWebView`.
 //!
 //! This binary has no test harness (`harness = false`): the harness never runs a main event
 //! loop, and both the observers and Carbon hotkeys are served by it. The main thread sets up
@@ -36,17 +37,20 @@ mod mac {
     use global_hotkey::hotkey::{Code, HotKey, Modifiers};
     use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
     use objc2::rc::Retained;
-    use objc2::MainThreadMarker;
+    use objc2::runtime::NSObjectProtocol;
+    use objc2::{msg_send, sel, MainThreadMarker};
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSWorkspace,
         NSWorkspaceScreensDidSleepNotification, NSWorkspaceSessionDidResignActiveNotification,
         NSWorkspaceWillSleepNotification,
     };
     use objc2_foundation::{
-        NSDate, NSDistributedNotificationCenter, NSNotificationCenter, NSNotificationName,
-        NSRunLoop, NSString,
+        NSDate, NSDistributedNotificationCenter, NSNotificationCenter, NSNotificationName, NSPoint,
+        NSRect, NSRunLoop, NSSize, NSString,
     };
+    use objc2_web_kit::WKWebView;
     use redactor_app::platform::macos::lock::MacLock;
+    use redactor_app::platform::macos::webview::{configuration, harden_view};
     use redactor_app::platform::LockWatcher;
     use redactor_app::wipe::WipeReason;
 
@@ -81,6 +85,7 @@ mod mac {
         let manager = GlobalHotKeyManager::new();
         let hotkeys = Hotkeys::register(manager.as_ref().map_err(ToString::to_string));
         let workspace = NSWorkspace::sharedWorkspace().notificationCenter();
+        let web_view = web_view_checks(mtm);
 
         std::thread::spawn(|| {
             std::thread::sleep(WATCHDOG);
@@ -89,7 +94,7 @@ mod mac {
             std::process::exit(1);
         });
         std::thread::spawn(move || {
-            let report = run_checks(&wipes, &workspace, &hotkeys);
+            let report = run_checks(web_view, &wipes, &workspace, &hotkeys);
             std::process::exit(report.finish());
         });
         app.run();
@@ -199,6 +204,106 @@ mod mac {
         fn drop(&mut self) {
             let _ = self.0.kill();
             let _ = self.0.wait();
+        }
+    }
+
+    // ----- the web view -----
+
+    /// What `configuration` and `harden_view` leave on a real web view. On the main thread,
+    /// where WebKit's classes live; nothing is loaded into the view.
+    fn web_view_checks(mtm: MainThreadMarker) -> Vec<(&'static str, Outcome)> {
+        let frame = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(800.0, 600.0));
+        // SAFETY: on the main thread, with the configuration made on the line before.
+        let view = unsafe {
+            WKWebView::initWithFrame_configuration(mtm.alloc(), frame, &configuration(mtm))
+        };
+        // What wry switches on in every view it builds, and what WebKit allows by default.
+        // SAFETY: plain setters on the view made above.
+        unsafe {
+            view.configuration()
+                .preferences()
+                .setElementFullscreenEnabled(true);
+            view.setAllowsBackForwardNavigationGestures(true);
+            view.setAllowsMagnification(true);
+            view.setAllowsLinkPreview(true);
+        }
+        harden_view(&view);
+        vec![
+            (
+                "the_view_keeps_no_web_data",
+                outcome(the_view_keeps_no_web_data(&view)),
+            ),
+            ("the_view_is_hardened", outcome(the_view_is_hardened(&view))),
+            ("writing_tools_are_off", writing_tools_are_off(&view)),
+        ]
+    }
+
+    fn the_view_keeps_no_web_data(view: &WKWebView) -> Result<(), String> {
+        // SAFETY: plain getters on a live view.
+        let persistent = unsafe { view.configuration().websiteDataStore().isPersistent() };
+        if persistent {
+            Err("the view's data store is persistent".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn the_view_is_hardened(view: &WKWebView) -> Result<(), String> {
+        // SAFETY: plain getters on a live view; the one selector newer than macOS 13 is asked
+        // for first.
+        let still_on: Vec<&str> = unsafe {
+            let config = view.configuration();
+            let prefs = config.preferences();
+            [
+                (
+                    "back and forward gestures",
+                    view.allowsBackForwardNavigationGestures(),
+                ),
+                ("magnification", view.allowsMagnification()),
+                ("link preview", view.allowsLinkPreview()),
+                (
+                    "windows opened by scripts",
+                    prefs.javaScriptCanOpenWindowsAutomatically(),
+                ),
+                (
+                    "the fraudulent website look-up",
+                    prefs.isFraudulentWebsiteWarningEnabled(),
+                ),
+                ("element fullscreen", prefs.isElementFullscreenEnabled()),
+                (
+                    "inline predictions",
+                    config.respondsToSelector(sel!(allowsInlinePredictions))
+                        && config.allowsInlinePredictions(),
+                ),
+            ]
+            .into_iter()
+            .filter(|(_, on)| *on)
+            .map(|(name, _)| name)
+            .collect()
+        };
+        if still_on.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("still on: {}", still_on.join(", ")))
+        }
+    }
+
+    /// Writing Tools exist from macOS 15: on an older system there is nothing to switch off.
+    fn writing_tools_are_off(view: &WKWebView) -> Outcome {
+        // SAFETY: a plain getter on a live view.
+        let config = unsafe { view.configuration() };
+        if !config.respondsToSelector(sel!(writingToolsBehavior)) {
+            println!("OBSERVED writing-tools=selector-missing");
+            return Outcome::NotChecked("this macOS has no Writing Tools setting".into());
+        }
+        // SAFETY: the configuration answers this selector; it returns an NSInteger.
+        let behaviour: isize = unsafe { msg_send![&*config, writingToolsBehavior] };
+        if behaviour == -1 {
+            Outcome::Passed
+        } else {
+            Outcome::Failed(format!(
+                "writingToolsBehavior is {behaviour}, not -1 (none)"
+            ))
         }
     }
 
@@ -469,11 +574,15 @@ mod mac {
     }
 
     fn run_checks(
+        web_view: Vec<(&'static str, Outcome)>,
         wipes: &mpsc::Receiver<WipeReason>,
         workspace: &Retained<NSNotificationCenter>,
         hotkeys: &Hotkeys,
     ) -> Report {
         let mut report = Report::default();
+        for (name, outcome) in web_view {
+            report.check(name, outcome);
+        }
         report.check(
             "a_lock_from_another_process_reaches_the_callback",
             outcome(a_lock_from_another_process_reaches_the_callback(wipes)),
