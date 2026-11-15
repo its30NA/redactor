@@ -53,7 +53,7 @@ files listed in the script) are ignored by default and refuse to run unless `RED
 Do not set it by hand: on a real desktop they would take over your clipboard. Run
 
 ```bash
-sudo apt-get install -y xvfb xclip xdotool xbindkeys x11-utils openbox wmctrl python3-dbusmock dbus
+sudo apt-get install -y xvfb xclip xdotool xbindkeys x11-utils x11-xserver-utils openbox wmctrl python3-dbusmock dbus
 tools/ci/x11-tests.sh
 ```
 

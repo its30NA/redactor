@@ -30,7 +30,9 @@ elif [ "$#" -ne 0 ]; then
   exit 2
 fi
 
-for tool in Xvfb xclip dbus-daemon dbus-send timeout; do
+# Everything the script and the tests start, so a missing package is named here and not as a
+# test failure half way through.
+for tool in Xvfb xclip xdotool xbindkeys xset stdbuf dbus-daemon dbus-send timeout; do
   if ! command -v "$tool" >/dev/null; then
     echo "x11-tests: $tool is missing (see CONTRIBUTING.md for the apt line)" >&2
     exit 2

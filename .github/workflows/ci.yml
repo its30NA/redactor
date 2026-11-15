@@ -112,12 +112,12 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-cache
-          key: apt-app-linux-desktop-${{ steps.image.outputs.version }}-v1
+          key: apt-app-linux-desktop-${{ steps.image.outputs.version }}-v2
       - name: WebKitGTK, tray and X11 test packages
         run: >-
           tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
           libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
-          xvfb openbox xclip xdotool xbindkeys x11-utils wmctrl python3-dbusmock dbus
+          xvfb openbox xclip xdotool xbindkeys x11-utils x11-xserver-utils wmctrl python3-dbusmock dbus
           libglib2.0-bin webkit2gtk-driver imagemagick ffmpeg
       # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
       - name: Build the UI
