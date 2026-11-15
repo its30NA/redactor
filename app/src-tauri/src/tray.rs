@@ -12,8 +12,13 @@ use crate::wipe::WipeReason;
 pub struct ShieldItem(pub CheckMenuItem<Wry>);
 
 /// Builds the tray icon. `shield` is the shield's current state, or `None` where the OS cannot
-/// hide the window: the menu then has no shield item.
-pub fn build(handle: &AppHandle, shield: Option<bool>) -> tauri::Result<()> {
+/// hide the window: the menu then has no shield item. With `click_opens_menu` a left click
+/// opens the menu; without it a left click opens the window.
+pub fn build(
+    handle: &AppHandle,
+    shield: Option<bool>,
+    click_opens_menu: bool,
+) -> tauri::Result<()> {
     let open = MenuItem::with_id(handle, "open", "Open Redactor", true, None::<&str>)?;
     let scrub = MenuItem::with_id(handle, "scrub", "Scrub clipboard", true, None::<&str>)?;
     let shield = shield
@@ -45,7 +50,7 @@ pub fn build(handle: &AppHandle, shield: Option<bool>) -> tauri::Result<()> {
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("Redactor")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(click_opens_menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => app::show_main(app),
             "scrub" => {
@@ -64,7 +69,10 @@ pub fn build(handle: &AppHandle, shield: Option<bool>) -> tauri::Result<()> {
             "quit" => app::quit(app),
             _ => {}
         })
-        .on_tray_icon_event(|tray, event| {
+        .on_tray_icon_event(move |tray, event| {
+            if click_opens_menu {
+                return;
+            }
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,

@@ -48,5 +48,8 @@ fn x11_platform() -> Result<Platform, Unavailable> {
         tray: tray::available(),
         // Tauri's content protection does nothing on Linux.
         shield: false,
+        reopen: super::never_reopens,
+        tray_click_opens_menu: false,
+        tray_notice: super::TRAY_NOTICE,
     })
 }

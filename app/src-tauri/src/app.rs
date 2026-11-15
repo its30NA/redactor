@@ -35,6 +35,7 @@ pub fn run() -> Result<(), platform::Unavailable> {
         .unwrap_or_default()
         .without_unsupported(platform.shield);
     let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform));
+    let reopen = shared.platform.reopen;
 
     let app = tauri::Builder::default()
         // Must come first: a second launch focuses this window and exits.
@@ -79,7 +80,7 @@ pub fn run() -> Result<(), platform::Unavailable> {
             create_main_window(&handle, &settings)?;
             if st.platform.tray {
                 let shield = st.platform.shield.then_some(settings.content_protection);
-                tray::build(&handle, shield)?;
+                tray::build(&handle, shield, st.platform.tray_click_opens_menu)?;
             }
             if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
                 // Another app may hold the key; the app still runs, and Settings can pick
@@ -112,10 +113,7 @@ pub fn run() -> Result<(), platform::Unavailable> {
                     api.prevent_close();
                     let _ = window.hide();
                     if !st.tray_notice_shown.swap(true, Ordering::SeqCst) {
-                        notify(
-                            app,
-                            "Redactor is still running in the tray. Quit it from the tray menu.",
-                        );
+                        notify(app, st.platform.tray_notice);
                     }
                 } else {
                     quit(app);
@@ -125,7 +123,10 @@ pub fn run() -> Result<(), platform::Unavailable> {
         .build(tauri::generate_context!())
         .unwrap_or_else(|_| std::process::abort());
 
-    app.run(|app, event| {
+    app.run(move |app, event| {
+        if reopen(&event) {
+            show_main(app);
+        }
         if let RunEvent::Exit = event {
             let st = state::state(app);
             // Text the user copied from us stays pasteable after we are gone.
@@ -138,9 +139,10 @@ pub fn run() -> Result<(), platform::Unavailable> {
 }
 
 fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<WebviewWindow> {
+    let st = state::state(app);
     // Where the OS cannot hide the window, it is never marked as hidden.
-    let protected = state::state(app).platform.shield && settings.content_protection;
-    let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    let protected = st.platform.shield && settings.content_protection;
+    let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Redactor")
         .inner_size(1280.0, 800.0)
         .min_inner_size(960.0, 640.0)
@@ -152,9 +154,9 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
         .additional_browser_args(crate::browser_args::BROWSER_ARGS)
         .devtools(cfg!(debug_assertions))
         .on_navigation(allowed_origin)
-        .on_new_window(|_url, _features| NewWindowResponse::Deny)
-        .build()?;
-    state::state(app).platform.webview.harden(&window);
+        .on_new_window(|_url, _features| NewWindowResponse::Deny);
+    let window = st.platform.webview.prepare(builder).build()?;
+    st.platform.webview.harden(&window);
     Ok(window)
 }
 

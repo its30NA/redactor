@@ -1,5 +1,6 @@
 //! Where the desktop app cannot run, it says why, points to the `scrub` CLI and exits 2.
-#![cfg(not(windows))]
+//! Linux only: on macOS the binary starts the app, and these tests would wait for it.
+#![cfg(target_os = "linux")]
 
 use std::process::{Command, Output};
 
@@ -21,7 +22,6 @@ fn no_display_points_to_the_cli_and_exits_2() {
     assert!(out.stdout.is_empty());
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn wayland_is_refused_by_name() {
     let out = run_app(&[("WAYLAND_DISPLAY", "wayland-test")]);
@@ -30,7 +30,6 @@ fn wayland_is_refused_by_name() {
     assert!(out.stdout.is_empty());
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn an_unreachable_x_server_is_refused() {
     let out = run_app(&[("DISPLAY", ":987")]);

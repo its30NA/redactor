@@ -20,6 +20,7 @@ fn os_mentions(text: &str) -> Vec<&'static str> {
         "platform::windows",
         "platform::unsupported",
         "platform::linux",
+        "platform::macos",
         "crate::win",
         "WinClipboard",
     ]
@@ -64,6 +65,7 @@ fn the_checker_catches_every_os_spelling() {
         "crate::platform::windows::lock::spawn(f);",
         "use crate::platform::unsupported;",
         "use crate::platform::linux::session;",
+        "use crate::platform::macos;",
         "let cb = WinClipboard;",
     ] {
         assert!(!os_mentions(line).is_empty(), "not caught: {line}");

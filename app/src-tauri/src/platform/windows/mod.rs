@@ -28,6 +28,9 @@ pub fn platform() -> Platform {
         hotkey: Box::new(PluginHotkey),
         tray: true,
         shield: true,
+        reopen: super::never_reopens,
+        tray_click_opens_menu: false,
+        tray_notice: super::TRAY_NOTICE,
     }
 }
 
@@ -52,5 +55,21 @@ pub struct WebView2Hardening;
 impl WebviewHardening for WebView2Hardening {
     fn harden(&self, window: &tauri::WebviewWindow) {
         webview::harden(window);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tray_behaves_as_before() {
+        let p = platform();
+        assert!(!p.tray_click_opens_menu);
+        assert_eq!(
+            p.tray_notice,
+            "Redactor is still running in the tray. Quit it from the tray menu."
+        );
+        assert!(!(p.reopen)(&tauri::RunEvent::Ready));
     }
 }

@@ -39,6 +39,15 @@ pub trait LockWatcher: Send + Sync {
 
 /// Webview settings the Tauri builder does not expose.
 pub trait WebviewHardening: Send + Sync {
+    /// The last step before the main window is built: settings the OS only takes before the
+    /// web view exists. Most OSes need none.
+    fn prepare<'a>(
+        &self,
+        builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>,
+    ) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle> {
+        builder
+    }
+
     /// Settings the Tauri builder does not expose, applied to the built window.
     fn harden(&self, window: &tauri::WebviewWindow);
 }
@@ -68,6 +77,21 @@ pub struct Platform {
     /// True where the OS can hide the window from screenshots and screen sharing. Without it
     /// the screen-share shield is always off and the tray menu does not offer it.
     pub shield: bool,
+    /// True when this run-loop event is the OS asking for the window back (the window is then
+    /// shown again).
+    pub reopen: fn(&tauri::RunEvent) -> bool,
+    /// True where a left click on the tray icon opens its menu; false where it opens the window.
+    pub tray_click_opens_menu: bool,
+    /// Shown once, when closing the window hides it to the tray.
+    pub tray_notice: &'static str,
+}
+
+/// The tray notice where the icon sits in a tray.
+pub const TRAY_NOTICE: &str = "Redactor is still running in the tray. Quit it from the tray menu.";
+
+/// For OSes that never ask for the window back.
+pub fn never_reopens(_event: &tauri::RunEvent) -> bool {
+    false
 }
 
 /// Why the desktop app cannot start here: one sentence that points to the `scrub` CLI.

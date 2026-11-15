@@ -27,6 +27,9 @@ pub fn platform() -> Platform {
         hotkey: Box::new(PluginHotkey),
         tray: true,
         shield: true,
+        reopen: super::never_reopens,
+        tray_click_opens_menu: false,
+        tray_notice: super::TRAY_NOTICE,
     }
 }
 
