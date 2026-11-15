@@ -66,6 +66,24 @@ zbus = "5"
 # Only to ask whether the tray's library can be loaded; in the lock through the tray crates.
 libloading = "0.7"
 
+# Each is in the lock through Tauri, at exactly this version. Without `default-features = false`
+# the AppKit and WebKit bindings would pull in crates that are not.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.5"
+block2 = "=0.6.2"
+dispatch2 = "=0.3.1"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = [
+    "std", "block2", "NSArray", "NSData", "NSDate", "NSDictionary", "NSDistributedNotificationCenter",
+    "NSNotification", "NSObjCRuntime", "NSObject", "NSOperation", "NSRunLoop", "NSString",
+    "NSUserDefaults", "NSValue",
+] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = [
+    "std", "NSApplication", "NSResponder", "NSView", "NSWindow", "NSPasteboard", "NSWorkspace",
+] }
+objc2-web-kit = { version = "=0.3.2", default-features = false, features = [
+    "std", "objc2-app-kit", "WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore",
+] }
+
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # `tests/x11_hotkey.rs` checks the layer the global-shortcut plugin hands the hotkey to.
 global-hotkey = "=0.8.0"

@@ -3084,10 +3084,16 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 name = "redactor-app"
 version = "2.1.0"
 dependencies = [
+ "block2",
+ "dispatch2",
  "global-hotkey",
  "gtk",
  "libloading",
  "memchr",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "redactor-core",
  "redactor-wire",
  "serde",
