@@ -16,6 +16,13 @@ path = "src/lib.rs"
 name = "redactor-app"
 path = "src/main.rs"
 
+# The macOS desktop checks need the main thread's event loop, which the test harness never
+# runs. On other systems the binary does nothing.
+[[test]]
+name = "macos_desktop"
+path = "tests/macos_desktop.rs"
+harness = false
+
 # The platform-neutral modules (settings, session secrets, the engine bridge, hotkey rules) need
 # no desktop. The Tauri shell builds on Windows, macOS and Linux; where `platform::native` finds
 # no supported desktop it exits 2 with a pointer to the `scrub` CLI. On Linux it needs the
@@ -87,6 +94,13 @@ objc2-web-kit = { version = "=0.3.2", default-features = false, features = [
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # `tests/x11_hotkey.rs` checks the layer the global-shortcut plugin hands the hotkey to.
 global-hotkey = "=0.8.0"
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+# `tests/macos_desktop.rs`: the layer the global-shortcut plugin hands the hotkey to, posted key
+# presses, and the activation policy of its own process. All three are in the lock already.
+global-hotkey = "=0.8.0"
+core-graphics = "=0.25.0"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["NSRunningApplication"] }
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = ["isolation"] }
