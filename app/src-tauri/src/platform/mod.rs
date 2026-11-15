@@ -16,7 +16,7 @@ pub mod hotkey_plugin;
 pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub mod unsupported;
 #[cfg(windows)]
 pub mod windows;
@@ -66,7 +66,7 @@ pub trait GlobalHotkey: Send + Sync {
 
 /// What this OS offers the shell.
 pub struct Platform {
-    /// `app_info.platform`: "windows" or "linux".
+    /// `app_info.platform`: "windows", "macos" or "linux".
     pub name: &'static str,
     /// Which OS's rules apply (hotkeys, settings folder, the UI's shortcuts).
     pub os: Os,
@@ -112,8 +112,14 @@ pub fn native() -> Result<Platform, Unavailable> {
     linux::platform()
 }
 
-/// Not yet: macOS gets its own platform in port phase 1-2b.
-#[cfg(not(any(windows, target_os = "linux")))]
+/// The platform this build runs on.
+#[cfg(target_os = "macos")]
+pub fn native() -> Result<Platform, Unavailable> {
+    Ok(macos::platform())
+}
+
+/// Any other system: the shell compiles, and refuses to start.
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn native() -> Result<Platform, Unavailable> {
     Err(unsupported::UNAVAILABLE)
 }

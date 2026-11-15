@@ -24,9 +24,9 @@ path = "tests/macos_desktop.rs"
 harness = false
 
 # The platform-neutral modules (settings, session secrets, the engine bridge, hotkey rules) need
-# no desktop. The Tauri shell builds on Windows, macOS and Linux; where `platform::native` finds
-# no supported desktop it exits 2 with a pointer to the `scrub` CLI. On Linux it needs the
-# WebKitGTK development packages. Only the Win32/WinRT bindings are Windows-only dependencies.
+# no desktop. The Tauri shell runs on Windows, macOS and Linux (X11); where `platform::native`
+# finds no supported desktop it exits 2 with a pointer to the `scrub` CLI. On Linux it needs
+# the WebKitGTK development packages. Each OS's own bindings are in the target sections below.
 [dependencies]
 redactor-core = { path = "../../crates/redactor-core", features = ["serde"] }
 redactor-wire = { path = "../../crates/redactor-wire" }

@@ -1,6 +1,6 @@
-//! The placeholder platform for macOS until its own code lands (port phase 1-2b). It lets the
-//! shell compile there; [`super::native`] refuses to start with [`UNAVAILABLE`]. The clipboard
-//! only ever fails, so nothing is read or written by accident.
+//! The placeholder platform for systems the app has no code for (not Windows, macOS or
+//! Linux). It lets the shell compile there; [`super::native`] refuses to start with
+//! [`UNAVAILABLE`]. The clipboard only ever fails, so nothing is read or written by accident.
 
 use std::sync::Arc;
 
@@ -11,16 +11,12 @@ use crate::os::Os;
 use crate::wipe::WipeReason;
 
 pub const UNAVAILABLE: Unavailable =
-    Unavailable("The Redactor desktop app does not run on macOS yet. Use the `scrub` CLI.");
+    Unavailable("The Redactor desktop app does not run on this system. Use the `scrub` CLI.");
 
 pub fn platform() -> Platform {
     Platform {
         name: "unsupported",
-        os: if cfg!(target_os = "macos") {
-            Os::Mac
-        } else {
-            Os::Linux
-        },
+        os: Os::Linux,
         clipboard: Arc::new(NoClipboard),
         lock: Box::new(NoLockWatcher),
         webview: Box::new(NoHardening),
