@@ -217,6 +217,19 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: app/src-tauri
         run: ../ui/node_modules/.bin/tauri build --ci --bundles app -- --locked
+      # For a hand test on a real Mac, packed before the smoke run touches anything. ditto keeps
+      # the bundle's permissions and signature, which a plain artifact upload of the folder loses.
+      - name: Pack the app for a hand test
+        if: ${{ !cancelled() && hashFiles('target/release/bundle/macos/Redactor.app/Contents/Info.plist') != '' }}
+        run: ditto -c -k --keepParent target/release/bundle/macos/Redactor.app "Redactor-$(uname -m).zip"
+      - name: Upload the app for a hand test
+        if: ${{ !cancelled() && hashFiles('Redactor-*.zip') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: redactor-app-${{ matrix.os }}
+          path: Redactor-*.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: App smoke (L3)
         if: ${{ !cancelled() && hashFiles('target/release/bundle/macos/Redactor.app/Contents/Info.plist') != '' }}
         run: tools/ci/macos-smoke.sh target/release/bundle/macos/Redactor.app
