@@ -32,6 +32,12 @@ All text in the screenshots is synthetic demo data.
 
 ## Download
 
+**Step-by-step install guides** (no coding needed):
+
+[![Install on Windows](https://img.shields.io/badge/Windows-install-0078D4?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0wIDBoMTEuNHYxMS40SDB6TTEyLjYgMEgyNHYxMS40SDEyLjZ6TTAgMTIuNmgxMS40VjI0SDB6TTEyLjYgMTIuNkgyNFYyNEgxMi42eiIvPjwvc3ZnPg==)](docs/install/windows.md)
+[![Install on macOS (preview)](https://img.shields.io/badge/macOS-preview-000000?style=for-the-badge&logo=apple&logoColor=white)](docs/install/macos.md)
+[![Install on Linux (preview)](https://img.shields.io/badge/Linux-preview-FCC624?style=for-the-badge&logo=linux&logoColor=black)](docs/install/linux.md)
+
 Get the latest build from [GitHub Releases](https://github.com/its30NA/redactor/releases/latest).
 
 | File | What it is |
@@ -43,7 +49,8 @@ Get the latest build from [GitHub Releases](https://github.com/its30NA/redactor/
 | `scrub-v<version>-aarch64-apple-darwin.tar.gz`, `scrub-v<version>-x86_64-apple-darwin.tar.gz` | `scrub` for macOS (Apple silicon, Intel). |
 | `SHA256SUMS` | Checksums of every file above. |
 
-The desktop app is Windows only. It runs on Microsoft's WebView2 runtime, which ships with Windows 11
+The desktop app is released for Windows; macOS and Linux (X11) are in preview (see the guides above). On
+Windows it runs on Microsoft's WebView2 runtime, which ships with Windows 11
 and current Windows 10; on a PC without it, the installer downloads it from Microsoft (the portable
 zip downloads nothing and needs it installed). `scrub` runs on Windows, Linux and macOS.
 
