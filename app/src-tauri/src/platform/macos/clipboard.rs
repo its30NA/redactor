@@ -6,8 +6,9 @@
 //! - A read is thrown away and started again when the count moved while it ran: what was read
 //!   may belong to a newer copy than the types that were checked (a password manager's, say).
 //! - A write checks the count, takes the pasteboard over, and checks the count that step
-//!   returns. A copy that landed in between is lost (the pasteboard stays empty and the write
-//!   reports an error), but it is never replaced by our text.
+//!   returns, and again after the text is written. A copy that landed in between is lost (the
+//!   pasteboard ends up empty and the write reports an error), but it is never replaced by our
+//!   text: AppKit can accept our text on top of a newer copy, so then our text is cleared away.
 //!
 //! Every call fetches the pasteboard itself and may come from any thread; one lock keeps this
 //! process's call sequences apart.
@@ -82,6 +83,24 @@ fn look(pasteboard: &NSPasteboard) -> ClipText {
     }
 }
 
+/// Whether the pasteboard's UTF-8 text is byte for byte `text`. A concealed or transient copy
+/// is never read for this: it is not ours.
+fn holds_exactly(pasteboard: &NSPasteboard, text: &str) -> bool {
+    let Some(types) = pasteboard.types() else {
+        return false;
+    };
+    let names: Vec<String> = types.to_vec().iter().map(|n| n.to_string()).collect();
+    if names.iter().any(|n| n == CONCEALED || n == TRANSIENT) || !names.iter().any(|n| n == UTF8) {
+        return false;
+    }
+    match pasteboard.dataForType(&NSString::from_str(UTF8)) {
+        Some(data) if data.len() == text.len() => {
+            *Zeroizing::new(data.to_vec()) == *text.as_bytes()
+        }
+        _ => false,
+    }
+}
+
 impl Clipboard for MacClipboard {
     fn sequence(&self) -> u32 {
         let _lock = one_at_a_time();
@@ -119,10 +138,17 @@ impl Clipboard for MacClipboard {
             }
             let written =
                 pasteboard.setString_forType(&NSString::from_str(text), &NSString::from_str(UTF8));
-            if !written || count(&pasteboard) != ours {
-                return Err(ClipError);
+            if written && count(&pasteboard) == ours {
+                return Ok(true);
             }
-            Ok(true)
+            // Another app took the pasteboard over between our two steps. AppKit may still
+            // accept our text on top of that newer copy (CI round 1: 22 of 2000 on macOS 26), so
+            // when the pasteboard now holds our text, it is taken away again: the other copy is
+            // lost, never replaced by ours.
+            if holds_exactly(&pasteboard, text) {
+                pasteboard.clearContents();
+            }
+            Err(ClipError)
         })
     }
 
