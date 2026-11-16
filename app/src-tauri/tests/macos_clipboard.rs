@@ -13,7 +13,7 @@ mod contract;
 mod mac_other;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use contract::{secret_text, unique, OtherApp};
 use mac_other::{MacOther, OtherProcess};
@@ -25,6 +25,9 @@ use redactor_app::platform::SystemClipboard;
 const OTHER_PROCESS_TEST: &str = "the_other_process_of_the_race_tests";
 
 const ROUNDS: u32 = 2000;
+
+/// How long the concealed-copy race reads on, past `ROUNDS`, until both kinds of copy were seen.
+const DEADLINE: Duration = Duration::from_secs(10);
 
 /// Refuses to touch a clipboard nobody offered.
 fn guard() {
@@ -157,8 +160,14 @@ fn the_other_process_of_the_race_tests() {
 fn a_concealed_copy_is_never_read_in_a_race() {
     guard();
     let mut other = OtherProcess::start(OTHER_PROCESS_TEST);
+    // CI round 1: 2000 reads ran before the other process's first copy landed. So its first
+    // copy is waited for, and the reads go on until both kinds were seen (or a deadline).
+    other.send("raw plain start");
+    other.done();
     let stop = AtomicBool::new(false);
     let (mut plain, mut protected, mut empty, mut gave_up, mut hidden) = (0, 0, 0, 0, 0);
+    let (mut reads, mut first) = (0u32, 0);
+    let started = Instant::now();
     std::thread::scope(|scope| {
         scope.spawn(|| {
             let mut n = 0u32;
@@ -170,8 +179,11 @@ fn a_concealed_copy_is_never_read_in_a_race() {
                 n += 1;
             }
         });
-        for _ in 0..ROUNDS {
+        while reads < ROUNDS || ((plain == 0 || protected == 0) && started.elapsed() < DEADLINE) {
+            reads += 1;
             match MacClipboard.read() {
+                // The first copy, made before the race, does not count as the race.
+                Ok(ClipText::Text(t)) if t.as_str() == "plain start" => first += 1,
                 Ok(ClipText::Text(t)) if t.starts_with("plain") => plain += 1,
                 // Counted, not asserted here: a panic would leave the other thread running.
                 Ok(ClipText::Text(_) | ClipText::TooLarge) => hidden += 1,
@@ -183,7 +195,8 @@ fn a_concealed_copy_is_never_read_in_a_race() {
         stop.store(true, Ordering::SeqCst);
     });
     println!(
-        "OBSERVED concealed-race plain={plain} protected={protected} empty={empty} gave-up={gave_up} of {ROUNDS}"
+        "OBSERVED concealed-race first-copy={first} plain={plain} protected={protected} empty={empty} gave-up={gave_up} of {reads} reads in {} ms",
+        started.elapsed().as_millis()
     );
     assert_eq!(hidden, 0, "a concealed copy was read");
     assert!(
