@@ -138,14 +138,18 @@ impl Clipboard for MacClipboard {
             }
             let written =
                 pasteboard.setString_forType(&NSString::from_str(text), &NSString::from_str(UTF8));
-            if written && count(&pasteboard) == ours {
+            // Reading our text back asks the pasteboard server after our write, so the count
+            // read after it is not older than the write (CI round 2: a count read straight
+            // after the write still let 9 of 2000 copies be replaced).
+            let holds = holds_exactly(&pasteboard, text);
+            if written && holds && count(&pasteboard) == ours {
                 return Ok(true);
             }
-            // Another app took the pasteboard over between our two steps. AppKit may still
-            // accept our text on top of that newer copy (CI round 1: 22 of 2000 on macOS 26), so
-            // when the pasteboard now holds our text, it is taken away again: the other copy is
-            // lost, never replaced by ours.
-            if holds_exactly(&pasteboard, text) {
+            // Another app took the pasteboard over between our steps. AppKit may still accept
+            // our text on top of that newer copy (CI round 1: 22 of 2000 on macOS 26), so when
+            // the pasteboard holds our text, it is taken away again: the other copy is lost,
+            // never replaced by ours.
+            if holds {
                 pasteboard.clearContents();
             }
             Err(ClipError)

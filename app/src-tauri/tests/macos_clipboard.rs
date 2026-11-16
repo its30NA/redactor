@@ -215,7 +215,9 @@ fn a_copy_during_the_write_is_never_replaced_by_ours() {
     let (cb, start) = (MacClipboard, MacOther);
     let mut other = OtherProcess::start(OTHER_PROCESS_TEST);
     let (mut wrote, mut left_alone, mut errors, mut lost) = (0, 0, 0, 0);
-    let (mut ours_won, mut unexplained) = (0, 0);
+    // Which write result left our text on top, and how often the clipboard still changed
+    // after the other process said it was done (CI round 2 could not tell).
+    let (mut ours_after_ok, mut ours_after_err, mut unexplained, mut unsettled) = (0, 0, 0, 0);
     for n in 0..ROUNDS {
         start.copy_raw(&format!("start {n}"));
         let seq = cb.sequence();
@@ -232,10 +234,17 @@ fn a_copy_during_the_write_is_never_replaced_by_ours() {
             Ok(false) => left_alone += 1,
             Err(_) => errors += 1,
         }
-        match mac_other::raw_text() {
+        let first_look = mac_other::raw_text();
+        mac_other::spin(Duration::from_millis(2));
+        let settled = mac_other::raw_text();
+        if settled != first_look {
+            unsettled += 1;
+        }
+        match settled {
             Some(now) if now == theirs => {}
             None if result.is_err() => lost += 1,
-            Some(now) if now == ours => ours_won += 1,
+            Some(now) if now == ours && result.is_ok() => ours_after_ok += 1,
+            Some(now) if now == ours => ours_after_err += 1,
             _ => unexplained += 1,
         }
     }
@@ -243,7 +252,14 @@ fn a_copy_during_the_write_is_never_replaced_by_ours() {
     println!(
         "OBSERVED write-race wrote={wrote} left-alone={left_alone} errors={errors} of {ROUNDS}"
     );
-    assert_eq!(ours_won, 0, "our text replaced another app's newer copy");
+    println!(
+        "OBSERVED write-race-ours-on-top after-ok={ours_after_ok} after-error={ours_after_err} changed-after-done={unsettled}"
+    );
+    assert_eq!(
+        ours_after_ok + ours_after_err,
+        0,
+        "our text replaced another app's newer copy"
+    );
     assert_eq!(
         unexplained, 0,
         "the clipboard held neither copy, without an error"
