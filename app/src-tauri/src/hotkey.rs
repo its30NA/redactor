@@ -123,7 +123,8 @@ const RESERVED: &[&str] = &["Ctrl+Alt+Space", "Ctrl+Alt+A"];
 /// Windows' own secure attention and task manager keys.
 const SYSTEM_WINDOWS: &[&str] = &["Ctrl+Alt+Delete", "Ctrl+Shift+Escape"];
 
-/// macOS screenshots, quit and log out, lock, emoji, full screen, force quit.
+/// macOS screenshots, quit and log out, lock, emoji, full screen, force quit, Finder search,
+/// Dock hiding, look up.
 const SYSTEM_MAC: &[&str] = &[
     "Shift+Cmd+3",
     "Shift+Cmd+4",
@@ -133,6 +134,9 @@ const SYSTEM_MAC: &[&str] = &[
     "Ctrl+Cmd+Space",
     "Ctrl+Cmd+F",
     "Alt+Cmd+Escape",
+    "Alt+Cmd+Space",
+    "Alt+Cmd+D",
+    "Ctrl+Cmd+D",
 ];
 
 /// Linux desktops: log out, terminal, X server kill, virtual consoles.

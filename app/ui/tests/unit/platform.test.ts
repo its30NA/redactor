@@ -4,9 +4,14 @@ import {
   lockDesc,
   lockShort,
   lockTitle,
+  settingsNote,
   shieldNote,
   themeDesc,
+  thisComputer,
   trayNote,
+  traySection,
+  trayTitle,
+  trayWipeNotice,
   wipeNotice,
 } from '../../src/lib/platform';
 import type { AppInfo } from '../../src/lib/types';
@@ -22,39 +27,78 @@ const info = (flags: Partial<AppInfo> = {}): AppInfo => ({
 });
 
 describe('platform texts', () => {
-  const table: [string, (os: KeyOs) => string, string, string][] = [
-    ['lockTitle', lockTitle, 'Wipe when Windows locks', 'Wipe when the screen locks'],
-    ['lockDesc', lockDesc, 'Win+L or the screen saver lock.', "The desktop's screen lock, or suspend."],
-    ['lockShort', lockShort, 'when Windows locks', 'when the screen locks'],
+  // name, function, Windows (today's text, byte for byte), Linux, macOS
+  const table: [string, (os: KeyOs) => string, string, string, string][] = [
+    ['lockTitle', lockTitle, 'Wipe when Windows locks', 'Wipe when the screen locks', 'Wipe when the Mac locks'],
+    [
+      'lockDesc',
+      lockDesc,
+      'Win+L or the screen saver lock.',
+      "The desktop's screen lock, or suspend.",
+      'The lock screen, display sleep, or sleep.',
+    ],
+    ['lockShort', lockShort, 'when Windows locks', 'when the screen locks', 'when the Mac locks'],
     [
       "wipeNotice('lock')",
       (os) => wipeNotice('lock', os),
       'Windows was locked. Both panes are empty.',
       'The screen was locked. Both panes are empty.',
+      'The Mac was locked. Both panes are empty.',
     ],
     [
       "wipeNotice('sleep')",
       (os) => wipeNotice('sleep', os),
       'Windows went to sleep. Both panes are empty.',
       'The computer went to sleep. Both panes are empty.',
+      'The Mac went to sleep. Both panes are empty.',
     ],
-    ['themeDesc', themeDesc, 'Follows Windows by default.', 'Follows the desktop by default.'],
+    [
+      'themeDesc',
+      themeDesc,
+      'Follows Windows by default.',
+      'Follows the desktop by default.',
+      'Follows macOS by default.',
+    ],
+    ['trayTitle', trayTitle, 'Keep running in the tray', 'Keep running in the tray', 'Keep running in the menu bar'],
+    ['traySection', traySection, 'Hotkey and tray', 'Hotkey and tray', 'Hotkey and menu bar'],
+    [
+      'trayWipeNotice',
+      trayWipeNotice,
+      'From the tray. Both panes are empty.',
+      'From the tray. Both panes are empty.',
+      'From the menu bar. Both panes are empty.',
+    ],
+    ['thisComputer', thisComputer, 'this PC', 'this PC', 'this Mac'],
+    [
+      'settingsNote',
+      settingsNote,
+      'Stored on this PC only. Never any text.',
+      'Stored on this PC only. Never any text.',
+      'Stored on this Mac only. Never any text.',
+    ],
   ];
 
-  for (const [name, fn, windows, linux] of table) {
+  for (const [name, fn, windows, linux, macos] of table) {
     test(`${name} on Windows keeps today's text`, () => expect(fn('windows')).toBe(windows));
     test(`${name} on Linux`, () => expect(fn('linux')).toBe(linux));
-    test(`${name} on macOS uses the Linux wording for now`, () => expect(fn('macos')).toBe(linux));
+    test(`${name} on macOS`, () => expect(fn('macos')).toBe(macos));
   }
 });
 
 describe('shieldNote', () => {
-  test('no note when the shield works', () => expect(shieldNote(info({ shield: true }))).toBeNull());
-  test('says why when the desktop cannot hide the window', () =>
-    expect(shieldNote(info({ shield: false }))).toBe(
+  const os: KeyOs[] = ['windows', 'linux', 'macos'];
+  for (const o of os) {
+    test(`no note when the shield works (${o})`, () => expect(shieldNote(info({ shield: true }), o)).toBeNull());
+    test(`no note before app_info answers (${o})`, () => expect(shieldNote(null, o)).toBeNull());
+  }
+  test('Linux: the desktop cannot hide the window', () =>
+    expect(shieldNote(info({ shield: false }), 'linux')).toBe(
       'Not available on Linux: the desktop cannot hide a window from screenshots.',
     ));
-  test('no note before app_info answers', () => expect(shieldNote(null)).toBeNull());
+  test('macOS: screen capture ignores it', () =>
+    expect(shieldNote(info({ shield: false }), 'macos')).toBe(
+      'Not available on macOS: since macOS 15, screen capture ignores it.',
+    ));
 });
 
 describe('trayNote', () => {

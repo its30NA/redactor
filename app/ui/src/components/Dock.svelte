@@ -9,9 +9,11 @@
   import Button from './Button.svelte';
   import Segmented, { type SegmentOption } from './Segmented.svelte';
   import Toggle from './Toggle.svelte';
+  import { keysFor, type Action, type KeyOs } from '../lib/keys';
   import type { Sensitivity } from '../lib/types';
 
   let {
+    os = 'windows',
     sensitivity = $bindable(),
     pii = $bindable(),
     onsensitivity,
@@ -20,6 +22,7 @@
     onwipe,
     oncopy,
   }: {
+    os?: KeyOs;
     sensitivity: Sensitivity;
     pii: boolean;
     onsensitivity?: (s: Sensitivity) => void;
@@ -29,11 +32,19 @@
     oncopy?: () => void;
   } = $props();
 
-  const levels: SegmentOption<Sensitivity>[] = [
-    { value: 'relaxed', label: 'Relaxed', hint: 'Only clear-cut secrets  (Ctrl+1)', tone: 'mint' },
-    { value: 'balanced', label: 'Balanced', hint: 'Recommended  (Ctrl+2)', tone: 'cyan' },
-    { value: 'paranoid', label: 'Paranoid', hint: 'Also anything that looks random  (Ctrl+3)', tone: 'violet' },
-  ];
+  /** "Ctrl+V", or "Cmd+V" on macOS. */
+  const combo = (action: Action) => keysFor(action, os).join('+');
+
+  const levels = $derived<SegmentOption<Sensitivity>[]>([
+    { value: 'relaxed', label: 'Relaxed', hint: `Only clear-cut secrets  (${combo('sensitivity:relaxed')})`, tone: 'mint' },
+    { value: 'balanced', label: 'Balanced', hint: `Recommended  (${combo('sensitivity:balanced')})`, tone: 'cyan' },
+    {
+      value: 'paranoid',
+      label: 'Paranoid',
+      hint: `Also anything that looks random  (${combo('sensitivity:paranoid')})`,
+      tone: 'violet',
+    },
+  ]);
 </script>
 
 <div class="dock" role="toolbar" aria-label="Scrub controls">
@@ -51,20 +62,20 @@
     <Button
       variant="ghost"
       icon={ClipboardPaste}
-      keys={['Ctrl', 'V']}
+      keys={keysFor('paste', os)}
       onclick={onpaste}
       class="paste"
-      title="Paste the clipboard and scrub it (Ctrl+V)"
+      title="Paste the clipboard and scrub it ({combo('paste')})"
     >
       Paste &amp; scrub
     </Button>
     <Button
       variant="danger"
       icon={Eraser}
-      keys={['Ctrl', 'Shift', 'X']}
+      keys={keysFor('wipe', os)}
       onclick={onwipe}
       class="wipe"
-      title="Clear both panes (Ctrl+Shift+X)"
+      title="Clear both panes ({combo('wipe')})"
     >
       Wipe
     </Button>
@@ -73,9 +84,9 @@
       variant="primary"
       size="lg"
       icon={Copy}
-      keys={['Ctrl', 'Shift', 'C']}
+      keys={keysFor('copySafe', os)}
       onclick={oncopy}
-      title="Copy the safe text (Ctrl+Shift+C)"
+      title="Copy the safe text ({combo('copySafe')})"
       data-testid="copy-safe"
     >
       Copy safe text

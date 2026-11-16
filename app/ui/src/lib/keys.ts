@@ -169,6 +169,9 @@ const SYSTEM: Record<KeyOs, string[]> = {
     'Ctrl+Cmd+Space',
     'Ctrl+Cmd+F',
     'Alt+Cmd+Escape',
+    'Alt+Cmd+Space',
+    'Alt+Cmd+D',
+    'Ctrl+Cmd+D',
   ],
   linux: [
     'Ctrl+Alt+Delete',

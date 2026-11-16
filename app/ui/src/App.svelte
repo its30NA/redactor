@@ -124,7 +124,7 @@
 
   const pill = $derived.by<{ tone: 'ok' | 'busy' | 'warn' | 'alert'; segments: PillSegment[]; announce?: string }>(() => {
     // No shield segment (and no warning about it) where the desktop cannot hide the window.
-    const noShield = shieldNote(info) !== null;
+    const noShield = shieldNote(info, keyOs) !== null;
     const shield: PillSegment[] = noShield
       ? []
       : settings.value.contentProtection
@@ -269,7 +269,7 @@
 <Aurora />
 
 <div class="app" data-ready={settings.loaded ? '' : undefined}>
-  <TitleBar>
+  <TitleBar os={keyOs}>
     {#snippet status()}
       <StatusPill tone={pill.tone} segments={pill.segments} announce={pill.announce} />
     {/snippet}
@@ -313,6 +313,7 @@
 
   <div class="dock-wrap">
     <Dock
+      os={keyOs}
       bind:sensitivity={settings.value.sensitivity}
       bind:pii={settings.value.pii}
       onsensitivity={(sensitivity) => workspace.rescanAfter(settings.update({ sensitivity }))}
@@ -329,7 +330,7 @@
 <SettingsSheet bind:open={settingsOpen} {info} />
 <RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
-<FirstRun bind:open={firstRunOpen} shield={shieldNote(info) === null} />
+<FirstRun bind:open={firstRunOpen} shield={shieldNote(info, keyOs) === null} os={keyOs} />
 
 <style>
   .app {

@@ -9,14 +9,14 @@
   import Sheet from './Sheet.svelte';
   import Toggle from './Toggle.svelte';
   import { hotkeyFrom, hotkeyProblem, keyOsFrom, modifiersOf } from '../lib/keys';
-  import { lockDesc, lockTitle, shieldNote, themeDesc, trayNote } from '../lib/platform';
+  import { lockDesc, lockTitle, settingsNote, shieldNote, themeDesc, trayNote, traySection, trayTitle } from '../lib/platform';
   import { settings } from '../lib/settings.svelte';
   import { workspace } from '../lib/workspace.svelte';
   import type { AppInfo, MotionSetting, Sensitivity, Settings, ThemeSetting } from '../lib/types';
 
   let { open = $bindable(false), info }: { open: boolean; info: AppInfo | null } = $props();
   const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
-  const noShield = $derived(shieldNote(info));
+  const noShield = $derived(shieldNote(info, keyOs));
   const noTray = $derived(trayNote(info));
 
   const themeOptions: SegmentOption<ThemeSetting>[] = [
@@ -91,7 +91,7 @@
   const shownKeys = $derived((capturing ? (pending ?? '') : settings.value.hotkey).split('+').filter(Boolean));
 </script>
 
-<Sheet bind:open title="Settings" description="Stored on this PC only. Never any text." width={460}>
+<Sheet bind:open title="Settings" description={settingsNote(keyOs)} width={460}>
   <section class="group">
     <h3 class="eyebrow">Scanning</h3>
     <div class="row">
@@ -186,7 +186,7 @@
   </section>
 
   <section class="group">
-    <h3 class="eyebrow">Hotkey and tray</h3>
+    <h3 class="eyebrow">{traySection(keyOs)}</h3>
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Scrub the clipboard</p>
@@ -213,12 +213,12 @@
     {#if hotkeyError}<p class="error" role="alert">{hotkeyError}</p>{/if}
     <div class="row">
       <div class="row-copy">
-        <p class="row-title">Keep running in the tray</p>
+        <p class="row-title">{trayTitle(keyOs)}</p>
         <p class="row-desc">{noTray ?? 'Closing the window keeps the hotkey working.'}</p>
       </div>
       <Toggle
         quiet
-        label="Keep running in the tray"
+        label={trayTitle(keyOs)}
         disabled={noTray !== null}
         checked={noTray === null && settings.value.trayMode}
         onchange={(trayMode) => update({ trayMode })}

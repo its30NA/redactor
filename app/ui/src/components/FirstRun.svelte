@@ -11,10 +11,16 @@
   import Dialog from './Dialog.svelte';
   import Kbd from './Kbd.svelte';
   import Mark from './Mark.svelte';
+  import type { KeyOs } from '../lib/keys';
+  import { thisComputer } from '../lib/platform';
   import { settings } from '../lib/settings.svelte';
 
-  // `shield`: false where the desktop cannot hide a window from screenshots (Linux).
-  let { open = $bindable(false), shield = true }: { open: boolean; shield?: boolean } = $props();
+  // `shield`: false where the desktop cannot hide a window from screenshots (Linux, macOS).
+  let {
+    open = $bindable(false),
+    shield = true,
+    os = 'windows',
+  }: { open: boolean; shield?: boolean; os?: KeyOs } = $props();
 
   const seen = () => void settings.update({ firstRunDone: true });
 
@@ -37,7 +43,7 @@
         <span class="icon mint" aria-hidden="true"><CloudOff size={16} strokeWidth={1.9} /></span>
         <div>
           <p class="title">Offline by design</p>
-          <p class="desc">No network code. What you paste stays on this PC and is never written to disk.</p>
+          <p class="desc">No network code. What you paste stays on {thisComputer(os)} and is never written to disk.</p>
         </div>
       </li>
       <li>

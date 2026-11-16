@@ -143,3 +143,19 @@ describe('mock backend', () => {
     expect(got).toEqual(['tray']);
   });
 });
+
+describe('mock app_info per OS', () => {
+  test('no os keeps the Windows fixture', async () => {
+    const i = await api.appInfo();
+    expect([i.platform, i.shield, i.tray]).toEqual(['windows-x86_64', true, true]);
+  });
+
+  for (const os of ['macos', 'linux'] as const) {
+    test(`os ${os} names the platform and has no shield`, async () => {
+      backend.uninstall();
+      backend = installMockBackend({ scanLatencyMs: 0, os });
+      const i = await api.appInfo();
+      expect([i.platform, i.shield, i.tray]).toEqual([os, false, true]);
+    });
+  }
+});

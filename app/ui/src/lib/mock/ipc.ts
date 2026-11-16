@@ -42,6 +42,8 @@ export interface MockOptions {
   clipboard?: string | null;
   /** Show the first-run card (settings.firstRunDone = false). */
   firstRun?: boolean;
+  /** Answer app_info as this desktop (no shield there); unset keeps the Windows fixture. */
+  os?: 'macos' | 'linux';
 }
 
 export interface MockBackend {
@@ -329,7 +331,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
           backend.settings = settings;
           return settings;
         case COMMANDS.appInfo:
-          return fixture('app-info');
+          return opts.os ? { ...fixture('app-info'), platform: opts.os, shield: false } : fixture('app-info');
         case 'plugin:window|minimize':
         case 'plugin:window|close':
           return null;
