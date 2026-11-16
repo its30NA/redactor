@@ -31,12 +31,12 @@ func die(_ message: String) -> Never {
     exit(2)
 }
 
-func pause() { usleep(30_000) }
+func settle() { usleep(30_000) }
 
 func post(_ event: CGEvent?) {
     guard let event else { die("could not make the event") }
     event.post(tap: .cghidEventTap)
-    pause()
+    settle()
 }
 
 func pressKey(_ name: String, _ held: [String]) {

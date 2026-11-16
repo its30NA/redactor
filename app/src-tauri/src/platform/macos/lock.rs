@@ -9,11 +9,13 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 use block2::RcBlock;
-use objc2::rc::autoreleasepool;
+use objc2::rc::{autoreleasepool, Retained};
+use objc2::runtime::NSObject;
+use objc2::{define_class, msg_send, sel, AnyThread, DefinedClass};
 use objc2_app_kit::NSWorkspace;
 use objc2_foundation::{
-    NSDistributedNotificationCenter, NSNotification, NSNotificationCenter, NSOperationQueue,
-    NSString,
+    NSDistributedNotificationCenter, NSNotification, NSNotificationSuspensionBehavior,
+    NSOperationQueue, NSString,
 };
 
 use crate::platform::LockWatcher;
@@ -61,6 +63,37 @@ pub fn reason(name: &str) -> Option<WipeReason> {
         .map(|&(_, _, why)| why)
 }
 
+type OnEvent = Arc<dyn Fn(WipeReason) + Send + Sync>;
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements, and the class does not implement Drop.
+    #[unsafe(super(NSObject))]
+    #[ivars = OnEvent]
+    /// Receives the distributed signals. A block observer cannot say how it wants to be
+    /// treated while the centre is suspended, and AppKit suspends the distributed centre
+    /// whenever the app is not the active one, which a menu-bar app hardly ever is: the lock
+    /// would wait until the app is activated again. This observer is registered with
+    /// "deliver immediately", which a suspension does not hold back.
+    struct LockObserver;
+
+    impl LockObserver {
+        #[unsafe(method(signal:))]
+        fn signal(&self, notification: &NSNotification) {
+            if let Some(why) = reason(&notification.name().to_string()) {
+                (self.ivars())(why);
+            }
+        }
+    }
+);
+
+impl LockObserver {
+    fn new(on_event: OnEvent) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(on_event);
+        // SAFETY: NSObject's designated initialiser, called on a freshly allocated object.
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
 /// Watches the lock, display-sleep, sleep and session-switch notifications.
 pub struct MacLock;
 
@@ -68,16 +101,29 @@ impl LockWatcher for MacLock {
     /// Adds one observer per signal. `on_event` runs on the main thread, so the main thread
     /// must run its event loop. The observers stay for the life of the process.
     fn spawn(&self, on_event: Box<dyn Fn(WipeReason) + Send + Sync>) {
-        let on_event: Arc<dyn Fn(WipeReason) + Send + Sync> = Arc::from(on_event);
+        let on_event: OnEvent = Arc::from(on_event);
         autoreleasepool(|_| {
             let main_queue = NSOperationQueue::mainQueue();
             let distributed = NSDistributedNotificationCenter::defaultCenter();
             let workspace = NSWorkspace::sharedWorkspace().notificationCenter();
+            let receiver = LockObserver::new(Arc::clone(&on_event));
             for (name, centre, _) in SIGNALS {
-                let centre: &NSNotificationCenter = match centre {
-                    Centre::Distributed => &distributed,
-                    Centre::Workspace => &workspace,
-                };
+                if centre == Centre::Distributed {
+                    // SAFETY: the observer is a LockObserver, which implements `signal:` with
+                    // the one notification argument the centre passes; no sender object is
+                    // passed. The centre does not retain observers: `receiver` is kept for
+                    // the life of the process below.
+                    unsafe {
+                        distributed.addObserver_selector_name_object_suspensionBehavior(
+                            &receiver,
+                            sel!(signal:),
+                            Some(&NSString::from_str(name)),
+                            None,
+                            NSNotificationSuspensionBehavior::DeliverImmediately,
+                        );
+                    }
+                    continue;
+                }
                 let on_event = Arc::clone(&on_event);
                 let block = RcBlock::new(move |notification: NonNull<NSNotification>| {
                     // SAFETY: the centre passes a valid notification that outlives the call.
@@ -90,7 +136,7 @@ impl LockWatcher for MacLock {
                 // thread. The block owns only the callback, which is `Send + Sync`, so it
                 // may be run on, and released from, any thread.
                 let observer = unsafe {
-                    centre.addObserverForName_object_queue_usingBlock(
+                    workspace.addObserverForName_object_queue_usingBlock(
                         Some(&NSString::from_str(name)),
                         None,
                         Some(&main_queue),
@@ -100,6 +146,8 @@ impl LockWatcher for MacLock {
                 // Never removed: the observer is kept for the life of the process.
                 std::mem::forget(observer);
             }
+            // Never released: the centre holds it unretained for the life of the process.
+            std::mem::forget(receiver);
         });
     }
 }

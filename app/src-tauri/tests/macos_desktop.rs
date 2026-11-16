@@ -29,9 +29,11 @@ fn main() {
 mod mac {
     use std::io::{BufRead, BufReader};
     use std::process::{Child, Command, Stdio};
+    use std::ptr::NonNull;
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
+    use block2::RcBlock;
     use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGKeyCode, KeyCode};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
     use global_hotkey::hotkey::{Code, HotKey, Modifiers};
@@ -45,8 +47,8 @@ mod mac {
         NSWorkspaceWillSleepNotification,
     };
     use objc2_foundation::{
-        NSDate, NSDistributedNotificationCenter, NSNotificationCenter, NSNotificationName, NSPoint,
-        NSRect, NSRunLoop, NSSize, NSString,
+        NSDate, NSDistributedNotificationCenter, NSNotification, NSNotificationCenter,
+        NSNotificationName, NSOperationQueue, NSPoint, NSRect, NSRunLoop, NSSize, NSString,
     };
     use objc2_web_kit::WKWebView;
     use redactor_app::platform::macos::lock::MacLock;
@@ -79,6 +81,7 @@ mod mac {
         MacLock.spawn(Box::new(move |why| {
             let _ = wipes_tx.send(why);
         }));
+        let plain = plain_lock_observer();
 
         // Carbon wants the manager made and the keys registered on the main thread. The
         // manager lives until the process ends: dropping it would give the keys back.
@@ -94,7 +97,7 @@ mod mac {
             std::process::exit(1);
         });
         std::thread::spawn(move || {
-            let report = run_checks(web_view, &wipes, &workspace, &hotkeys);
+            let report = run_checks(web_view, &wipes, &plain, &workspace, &hotkeys);
             std::process::exit(report.finish());
         });
         app.run();
@@ -573,9 +576,65 @@ mod mac {
         drain_wipes(wipes);
     }
 
+    /// A plain observer of the lock notification, registered as most code registers one: with
+    /// a block, so with the default suspension behaviour. It is the control of
+    /// `a_lock_reaches_a_suspended_centre`: it shows that the suspension really holds back.
+    fn plain_lock_observer() -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel();
+        let tx = std::sync::Mutex::new(tx);
+        let block = RcBlock::new(move |_: NonNull<NSNotification>| {
+            if let Ok(tx) = tx.lock() {
+                let _ = tx.send(());
+            }
+        });
+        let centre = NSDistributedNotificationCenter::defaultCenter();
+        let main_queue = NSOperationQueue::mainQueue();
+        // SAFETY: no sender object is passed; the block runs on the main queue.
+        let observer = unsafe {
+            centre.addObserverForName_object_queue_usingBlock(
+                Some(&NSString::from_str(LOCKED)),
+                None,
+                Some(&main_queue),
+                &block,
+            )
+        };
+        std::mem::forget(observer);
+        rx
+    }
+
+    /// The system posts the lock without "deliver at once", and AppKit suspends the distributed
+    /// centre while the app is not the active one, which a menu-bar app hardly ever is. The
+    /// centre is suspended here on purpose; the lock must still reach the callback at once.
+    fn a_lock_reaches_a_suspended_centre(
+        wipes: &mpsc::Receiver<WipeReason>,
+        plain: &mpsc::Receiver<()>,
+    ) -> Outcome {
+        let centre = NSDistributedNotificationCenter::defaultCenter();
+        drain_wipes(wipes);
+        while plain.try_recv().is_ok() {}
+        centre.setSuspended(true);
+        let result = run_helper("post-lock-queued")
+            .and_then(|()| expect_wipe(wipes, WipeReason::Lock, Duration::from_secs(3)));
+        let held_back = plain.recv_timeout(Duration::from_millis(300)).is_err();
+        centre.setSuspended(false);
+        // Whatever the suspension held back arrives now; none of it may count for a later check.
+        std::thread::sleep(Duration::from_millis(500));
+        drain_wipes(wipes);
+        while plain.try_recv().is_ok() {}
+        match (result, held_back) {
+            (Ok(()), true) => Outcome::Passed,
+            (Err(e), true) => Outcome::Failed(e),
+            (Ok(()), false) => Outcome::NotChecked(
+                "the suspension held nothing back: the plain observer got the lock too".into(),
+            ),
+            (Err(e), false) => Outcome::Failed(format!("{e} (the plain observer got it)")),
+        }
+    }
+
     fn run_checks(
         web_view: Vec<(&'static str, Outcome)>,
         wipes: &mpsc::Receiver<WipeReason>,
+        plain: &mpsc::Receiver<()>,
         workspace: &Retained<NSNotificationCenter>,
         hotkeys: &Hotkeys,
     ) -> Report {
@@ -593,6 +652,10 @@ mod mac {
         );
         report.check("an_unlock_is_ignored", outcome(an_unlock_is_ignored(wipes)));
         observe_a_queued_lock(wipes);
+        report.check(
+            "a_lock_reaches_a_suspended_centre",
+            a_lock_reaches_a_suspended_centre(wipes, plain),
+        );
         report.check(
             "a_free_combo_fires",
             fires(
