@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { demoInput } from '../../src/lib/mock/demo';
-import { expect, mockCalls, openApp, test } from './fixtures';
+import { expect, lastSettings, mockCalls, openApp, test } from './fixtures';
 
 /**
  * The UI as it runs on a Mac (`?os=macos`: the mock's app_info says platform "macos", no shield):
@@ -101,6 +101,28 @@ test.describe('macOS', () => {
       return e.defaultPrevented;
     });
     expect(prevented).toBe(true);
+  });
+
+  // WebKit on a Mac does not focus a button that is clicked (CI round 1). `dispatchEvent('click')`
+  // is such a click in any engine: the button gets the click, not the focus.
+  test('a_sheet_opened_by_a_click_returns_focus_to_its_button', async ({ page, problems: _ }) => {
+    await openMac(page);
+    const opener = page.getByTestId('settings-open');
+    await opener.dispatchEvent('click');
+    const dialog = page.getByRole('dialog', { name: 'Settings' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+  });
+
+  test('hotkey_capture_listens_after_a_click_that_did_not_focus_it', async ({ page, problems: _ }) => {
+    await openMac(page);
+    await page.getByTestId('settings-open').click();
+    const hotkey = page.getByTestId('hotkey');
+    await hotkey.dispatchEvent('click');
+    await page.keyboard.press('Control+Alt+K');
+    await expect.poll(async () => (await lastSettings(page))?.hotkey).toBe('Ctrl+Alt+K');
   });
 
   for (const size of SIZES) {

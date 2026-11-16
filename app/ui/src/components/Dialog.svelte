@@ -8,6 +8,7 @@
   import { fade, scale } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { appearance } from '../lib/appearance.svelte';
+  import { openerNow } from '../lib/opener';
 
   let {
     open = $bindable(false),
@@ -35,7 +36,7 @@
 
   $effect(() => {
     if (!open) return;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const opener = openerNow();
     queueMicrotask(() => {
       const first = panel?.querySelector<HTMLElement>('[data-autofocus]') ?? panel;
       first?.focus();

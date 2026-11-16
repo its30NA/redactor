@@ -56,7 +56,9 @@
   let hotkeyError = $state<string | null>(null);
   let pending = $state<string | null>(null);
 
-  function startCapture() {
+  function startCapture(e: MouseEvent) {
+    // WebKit on a Mac does not focus a clicked button; the keys must still reach this one.
+    (e.currentTarget as HTMLElement).focus();
     capturing = true;
     pending = null;
     hotkeyError = null;
