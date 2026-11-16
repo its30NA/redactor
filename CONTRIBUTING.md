@@ -67,6 +67,28 @@ itself. `tools/ci/linux-smoke.sh <app binary>` starts the built app there and ch
 hotkey scrubs the clipboard, clean text is left alone, the window closes or hides to the tray as the desktop
 allows); `--self-test` checks the script's own set-up without an app.
 
+### macOS desktop tests
+
+The macOS tests run on GitHub's macOS runners (macOS 26 on Apple silicon and macOS 15 on Intel, job
+`app-macos-desktop`). `app/src-tauri/tests/macos_clipboard.rs` runs the clipboard contract and the macOS
+race tests on the real pasteboard; `tests/macos_desktop.rs` checks the hardened web view, the lock and sleep
+signals and the global hotkey. They are ignored by default and refuse to run unless
+`REDACTOR_TEST_PASTEBOARD` (and `REDACTOR_TEST_DESKTOP`) is set. On your own Mac they take over the clipboard,
+press hotkeys and post "screen locked" to the apps of the session, so the script runs only on a CI runner or
+when told so:
+
+```bash
+tools/ci/macos-tests.sh --i-know-this-takes-my-clipboard
+tools/ci/macos-smoke.sh <Redactor.app> --i-know-this-takes-my-desktop
+```
+
+`macos-smoke.sh` starts the built app with a throwaway home and drives it with posted keys and clicks
+(small Swift helpers in `tools/ci/macos/`, compiled on the run): the hotkey scrubs the clipboard, Cmd+V in
+the window, the lock wipes, the window comes back from the menu bar, nothing is left on disk. Lines starting
+with `OBSERVED` say what this macOS did where that is not a pass or a fail; read them in the job summary.
+The UI's Playwright suite also runs in WebKit on the macOS runners (`PW_WEBKIT=1 npx playwright test
+--project=webkit`; it runs on Linux too once Playwright's WebKit is installed).
+
 ### Regenerating generated files
 
 | File | How |
@@ -84,12 +106,14 @@ Do not edit generated files by hand.
 - Keep changes small and focused, and add a test with them. A new detector needs a positive test (a
   generated token it must catch) and a negative one (a look-alike it must leave alone).
 - `redactor-core`, `redactor-wire` and `scrub` forbid `unsafe` code. In the app, `unsafe` is allowed only
-  under `app/src-tauri/src/platform/windows/`, with a `// SAFETY:` comment on each block.
+  under `app/src-tauri/src/platform/windows/` and `platform/macos/`, and in one library-loading call in
+  `platform/linux/tray.rs`, with a `// SAFETY:` comment on each block.
 - Code that talks to the operating system goes into `app/src-tauri/src/platform/<os>/`, behind the traits in
   `platform/mod.rs`. The shell (`app.rs`, `commands.rs`, `state.rs`, `tray.rs`) never uses `cfg(windows)` or
   an OS API; `tests/platform_boundary.rs` fails if it does.
 - A new clipboard implementation passes the shared contract, `app/src-tauri/tests/support/clipboard_contract.rs`,
-  on its own OS: add a runner like `tests/win_clipboard.rs` that supplies the clipboard and an `OtherApp`.
+  on its own OS: add a runner like `tests/win_clipboard.rs`, `tests/x11_clipboard.rs` or
+  `tests/macos_clipboard.rs` that supplies the clipboard and an `OtherApp`.
 - Rules that differ by OS (hotkey names, the settings folder, shortcuts) take an `Os` value instead of
   `cfg`, so their tests run for every OS on any machine.
 - Detection uses the `regex` crate only (linear time). There is no lookaround; check boundaries in code.
