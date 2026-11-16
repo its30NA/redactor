@@ -179,6 +179,71 @@ jobs:
       - name: Test (includes the corpus gates)
         run: cargo test --workspace --locked
 
+  # The desktop contract (L2: the ignored pasteboard, lock and hotkey tests), the built bundle
+  # under test (L3: tools/ci/macos-smoke.sh, with screenshots), and the UI tests in WebKit, the
+  # engine of the macOS app. On Apple silicon and on Intel.
+  app-macos-desktop:
+    name: App on macOS (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Desktop contract tests (L2)
+        run: tools/ci/macos-tests.sh
+      # Each round should show every result: the steps after the L2 tests run even when a test
+      # before them failed (a CI round is one push by hand).
+      # Only the .app (ad hoc signed, bundle.macOS in tauri.conf.json), no disk image.
+      - name: Build the app bundle
+        if: ${{ !cancelled() }}
+        working-directory: app/src-tauri
+        run: ../ui/node_modules/.bin/tauri build --ci --bundles app -- --locked
+      - name: App smoke (L3)
+        if: ${{ !cancelled() && hashFiles('target/release/bundle/macos/Redactor.app/Contents/Info.plist') != '' }}
+        run: tools/ci/macos-smoke.sh target/release/bundle/macos/Redactor.app
+      # The snapshots were made in Chromium: the WebKit project compares no pictures.
+      - name: Install WebKit
+        if: ${{ !cancelled() }}
+        working-directory: app/ui
+        run: npx playwright install webkit
+      - name: UI tests in WebKit (mocked IPC)
+        if: ${{ !cancelled() }}
+        working-directory: app/ui
+        env:
+          PW_WEBKIT: "1"
+          PLAYWRIGHT_HTML_OPEN: never
+        run: npx playwright test --project=webkit --reporter=github,html
+      - name: Upload screenshots, logs and the Playwright report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-desktop-${{ matrix.os }}
+          path: |
+            smoke-out/
+            app/ui/playwright-report/
+            app/ui/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
   windows:
     name: Rust (Windows)
     runs-on: windows-latest
