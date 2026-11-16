@@ -190,7 +190,7 @@ test.describe('editor', () => {
     await pasteAndWait(page);
     const before = (await scanRequests(page)).length;
     await input(page).locator('.cm-content').click();
-    await page.keyboard.press('Control+End');
+    await page.keyboard.press('ControlOrMeta+End'); // the host's key: Cmd+End on a Mac
     await page.keyboard.type(' more', { delay: 20 });
     await expect.poll(async () => (await scanRequests(page)).length).toBe(before + 1);
     expect((await scanRequests(page)).at(-1)?.text.endsWith(' more')).toBe(true);
@@ -204,7 +204,7 @@ test.describe('editor', () => {
     await expect(page.getByTestId('empty-state')).toBeVisible();
     await expect(output(page).locator('.cm-chip')).toHaveCount(0);
     await input(page).locator('.cm-content').click();
-    await page.keyboard.press('Control+z');
+    await page.keyboard.press('ControlOrMeta+z'); // the host's undo: Cmd+Z on a Mac
     await expect(page.getByTestId('input-count')).toHaveText('0 chars');
   });
 
