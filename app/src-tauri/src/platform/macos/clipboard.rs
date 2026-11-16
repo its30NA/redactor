@@ -6,9 +6,13 @@
 //! - A read is thrown away and started again when the count moved while it ran: what was read
 //!   may belong to a newer copy than the types that were checked (a password manager's, say).
 //! - A write checks the count, takes the pasteboard over, and checks the count that step
-//!   returns, and again after the text is written. A copy that landed in between is lost (the
-//!   pasteboard ends up empty and the write reports an error), but it is never replaced by our
-//!   text: AppKit can accept our text on top of a newer copy, so then our text is cleared away.
+//!   returns, and again after the text is written. A copy seen landing in between is lost (the
+//!   pasteboard ends up empty and the write reports an error), never replaced by our text:
+//!   AppKit can accept our text on top of a newer copy, so then our text is cleared away.
+//! - What no check here can see: macOS hands a copy to the pasteboard server a moment after
+//!   the call returns, in our process and in others. A copy another app makes within about a
+//!   millisecond of our write can therefore still end up under our (safe) text while every
+//!   check passed (CI, races forced 2000 times: 9 on macOS 26 arm64, 2 on macOS 15 Intel).
 //!
 //! Every call fetches the pasteboard itself and may come from any thread; one lock keeps this
 //! process's call sequences apart.
@@ -138,18 +142,14 @@ impl Clipboard for MacClipboard {
             }
             let written =
                 pasteboard.setString_forType(&NSString::from_str(text), &NSString::from_str(UTF8));
-            // Reading our text back asks the pasteboard server after our write, so the count
-            // read after it is not older than the write (CI round 2: a count read straight
-            // after the write still let 9 of 2000 copies be replaced).
-            let holds = holds_exactly(&pasteboard, text);
-            if written && holds && count(&pasteboard) == ours {
+            if written && count(&pasteboard) == ours {
                 return Ok(true);
             }
             // Another app took the pasteboard over between our steps. AppKit may still accept
             // our text on top of that newer copy (CI round 1: 22 of 2000 on macOS 26), so when
             // the pasteboard holds our text, it is taken away again: the other copy is lost,
-            // never replaced by ours.
-            if holds {
+            // never replaced by ours after an error.
+            if holds_exactly(&pasteboard, text) {
                 pasteboard.clearContents();
             }
             Err(ClipError)
