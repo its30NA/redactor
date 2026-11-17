@@ -10,6 +10,7 @@ use zeroize::Zeroize;
 use crate::app;
 use crate::bridge::{self, ScanRequestIn, ScanResponseOut};
 use crate::clipscrub::{self, ClipboardScrub};
+use crate::platform::HotkeyMode;
 use crate::session::SessionSecret;
 use crate::settings::Settings;
 use crate::state::Shared;
@@ -240,6 +241,10 @@ pub struct AppInfo {
     tray: bool,
     /// The OS can hide the window from screenshots: the screen-share shield exists here.
     shield: bool,
+    /// How a hotkey press reaches the app.
+    hotkey: HotkeyMode,
+    /// The clipboard works only while the window is in front.
+    clipboard_needs_focus: bool,
 }
 
 #[tauri::command]
@@ -252,6 +257,8 @@ pub async fn app_info(state: State<'_, Shared>) -> Res<AppInfo> {
         platform: st.platform.name,
         tray: st.platform.tray,
         shield: st.platform.shield,
+        hotkey: st.platform.hotkey.mode(),
+        clipboard_needs_focus: st.platform.clipboard.needs_focus(),
     })
     .await
 }

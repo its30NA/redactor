@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::engines::{EngineSet, Profile};
+use crate::pending::PendingScrub;
 use crate::platform::Platform;
 use crate::session::SessionStore;
 use crate::settings::{Settings, SettingsFile};
@@ -23,6 +24,8 @@ pub struct AppState {
     pub scrub_lock: Mutex<()>,
     /// Held across a whole settings change (read, apply, store), so two changes never interleave.
     pub settings_change: Mutex<()>,
+    /// A hotkey press waiting for the window to come to the front.
+    pub pending: PendingScrub,
     /// The operating system behind the shell.
     pub platform: Platform,
 }
@@ -43,6 +46,7 @@ impl AppState {
             tray_notice_shown: AtomicBool::new(false),
             scrub_lock: Mutex::new(()),
             settings_change: Mutex::new(()),
+            pending: PendingScrub::new(),
             platform,
         }
     }

@@ -12,11 +12,13 @@
 
 pub mod bridge;
 pub mod browser_args;
+pub mod cli;
 pub mod clipscrub;
 pub mod engines;
 pub mod hotkey;
 pub mod ipc_names;
 pub mod os;
+pub mod pending;
 pub mod session;
 pub mod settings;
 pub mod textfile;

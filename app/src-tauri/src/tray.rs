@@ -53,13 +53,7 @@ pub fn build(
         .show_menu_on_left_click(click_opens_menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => app::show_main(app),
-            "scrub" => {
-                let app = app.clone();
-                std::thread::spawn(move || {
-                    let r = app::scrub_clipboard_now(&app);
-                    app::notify(&app, &r.notice());
-                });
-            }
+            "scrub" => app::hotkey_pressed(app),
             "shield" => {
                 // Off the main thread: a settings change may wait for it while holding its lock.
                 let app = app.clone();

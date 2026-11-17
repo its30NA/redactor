@@ -12,10 +12,12 @@ use tauri::{
 use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_notification::NotificationExt;
 
+use crate::cli;
 use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
+use crate::pending::Take;
 use crate::platform;
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
@@ -38,19 +40,20 @@ pub fn run() -> Result<(), platform::Unavailable> {
     let reopen = shared.platform.reopen;
 
     let app = tauri::Builder::default()
-        // Must come first: a second launch focuses this window and exits.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main(app);
+        // Must come first: a second launch focuses this window, or cleans the clipboard when
+        // it carries `--scrub-clipboard`, and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if cli::scrub_requested(&args) {
+                hotkey_pressed(app);
+            } else {
+                show_main(app);
+            }
         }))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        let app = app.clone();
-                        std::thread::spawn(move || {
-                            let r = scrub_clipboard_now(&app);
-                            notify(&app, &r.notice());
-                        });
+                        hotkey_pressed(app);
                     }
                 })
                 .build(),
@@ -82,6 +85,7 @@ pub fn run() -> Result<(), platform::Unavailable> {
                 let shield = st.platform.shield.then_some(settings.content_protection);
                 tray::build(&handle, shield, st.platform.tray_click_opens_menu)?;
             }
+            st.platform.hotkey.listen(&handle, Arc::new(hotkey_pressed));
             if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
                 // Another app may hold the key; the app still runs, and Settings can pick
                 // another one.
@@ -100,11 +104,17 @@ pub fn run() -> Result<(), platform::Unavailable> {
             std::thread::spawn(move || {
                 warm.engines.get(true);
             });
+            if cli::scrub_requested(&args()) {
+                hotkey_pressed(&handle);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
             if window.label() != MAIN {
                 return;
+            }
+            if let WindowEvent::Focused(true) = event {
+                scrub_if_pending(window.app_handle());
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
@@ -194,8 +204,58 @@ pub fn notify(app: &AppHandle, body: &str) {
         .show();
 }
 
+/// This process's arguments. One that is not valid Unicode is kept lossily (it is never the
+/// flag), where `std::env::args` would panic.
+fn args() -> Vec<String> {
+    std::env::args_os()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// A hotkey press, the tray's scrub item or `--scrub-clipboard`. Where the clipboard needs the
+/// window in front and it is not, the window comes back and the scrub waits for focus.
+/// Otherwise the clipboard is scrubbed now, off the calling thread.
+pub fn hotkey_pressed(app: &AppHandle) {
+    let st = state::state(app);
+    if st.platform.clipboard.needs_focus() && !main_is_focused(app) {
+        // Armed before the window is asked for, so the focus-in can never come first.
+        st.pending.arm(Instant::now());
+        show_main(app);
+        notify(app, "Bring Redactor to the front to clean the clipboard");
+    } else {
+        scrub_and_notify(app);
+    }
+}
+
+/// The main window came to the front: runs the scrub a hotkey press left waiting.
+fn scrub_if_pending(app: &AppHandle) {
+    match state::state(app).pending.take_on_focus(Instant::now()) {
+        Take::Run => scrub_and_notify(app),
+        Take::Expired => notify(
+            app,
+            "Not cleaned: Redactor's window did not come to the front",
+        ),
+        Take::Nothing => {}
+    }
+}
+
+fn main_is_focused(app: &AppHandle) -> bool {
+    app.get_webview_window(MAIN)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false)
+}
+
+/// Scrubs the clipboard on a new thread and shows the result as a notification.
+fn scrub_and_notify(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let r = scrub_clipboard_now(&app);
+        notify(&app, &r.notice());
+    });
+}
+
 /// Scrubs the clipboard with the current settings and tells the UI.
-pub fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
+fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
     let st = state::state(app);
     let _one_at_a_time = st.scrub_lock.lock().unwrap_or_else(|e| e.into_inner());
     let s = st.settings();

@@ -6,7 +6,9 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut}
 use super::{GlobalHotkey, HotkeyTaken};
 use crate::hotkey::{Hotkey, Key};
 
-/// Registers hotkeys with Tauri's global-shortcut plugin.
+/// Registers hotkeys with Tauri's global-shortcut plugin. Presses arrive through the plugin's
+/// handler, which the shell installs, so `mode` (keys) and `listen` (nothing to do) keep their
+/// defaults.
 pub struct PluginHotkey;
 
 impl GlobalHotkey for PluginHotkey {

@@ -6,6 +6,8 @@
 
 use std::sync::Arc;
 
+use serde::Serialize;
+
 use crate::clipscrub::{ClipError, Clipboard};
 use crate::hotkey::Hotkey;
 use crate::os::Os;
@@ -30,6 +32,12 @@ pub trait SystemClipboard: Clipboard + Send + Sync {
     /// it and dies with it (X11), this hands it to the desktop so it can still be pasted.
     /// Elsewhere the text stays anyway and there is nothing to do.
     fn keep_after_exit(&self) {}
+
+    /// True where the clipboard can be read and written only while Redactor's window is in
+    /// front. A hotkey press then shows the window and the scrub waits for focus.
+    fn needs_focus(&self) -> bool {
+        false
+    }
 }
 
 /// Session lock and sleep notifications.
@@ -58,10 +66,37 @@ pub trait WebviewHardening: Send + Sync {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HotkeyTaken;
 
+/// How a hotkey press reaches the app (`app_info.hotkey`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HotkeyMode {
+    /// The app registers the key combination from Settings itself.
+    Keys,
+    /// The desktop's shortcuts portal binds the key; the user confirms it there.
+    Portal,
+    /// The app holds no key: a desktop shortcut runs `redactor --scrub-clipboard`.
+    Command,
+}
+
 /// The system-wide hotkey.
 pub trait GlobalHotkey: Send + Sync {
     fn register(&self, app: &tauri::AppHandle, hk: &Hotkey) -> Result<(), HotkeyTaken>;
     fn unregister(&self, app: &tauri::AppHandle, hk: &Hotkey);
+
+    /// How a press reaches the app.
+    fn mode(&self) -> HotkeyMode {
+        HotkeyMode::Keys
+    }
+
+    /// Hands over what a press does. Called once, in `setup`, before the first `register`.
+    /// Where presses arrive some other way (the global-shortcut plugin's handler) this does
+    /// nothing.
+    fn listen(
+        &self,
+        _app: &tauri::AppHandle,
+        _on_press: Arc<dyn Fn(&tauri::AppHandle) + Send + Sync>,
+    ) {
+    }
 }
 
 /// What this OS offers the shell.
