@@ -202,9 +202,9 @@ jobs:
       # mainBinaryName renames the binary to Redactor; fall back to the cargo name.
       # WebDriver is off, as in the X11 job: WebKitWebDriver cannot open a session in the app's
       # incognito web context, so W6 (Settings without a portal) is reported as SKIP (the UI tests
-      # of the Settings notes stay). The script fails unless W1-W5 and W7 report PASS. With it
-      # on, the job also needs webkit2gtk-driver and
-      # `cargo install tauri-driver --locked --version 2.1.0`.
+      # of the Settings notes stay). The script passes when all 7 checks report and none is FAIL;
+      # only W6 can report SKIP, and that SKIP is accepted. With WebDriver on, the job also needs
+      # webkit2gtk-driver and `cargo install tauri-driver --locked --version 2.1.0`.
       - name: App smoke (L3, sway)
         env:
           SMOKE_WEBDRIVER: "0"
