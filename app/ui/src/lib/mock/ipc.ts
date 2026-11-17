@@ -44,6 +44,10 @@ export interface MockOptions {
   firstRun?: boolean;
   /** Answer app_info as this desktop (no shield there); unset keeps the Windows fixture. */
   os?: 'macos' | 'linux';
+  /** With `os`: how a hotkey press reaches the app (Wayland portal or command); unset leaves it out. */
+  hotkey?: 'portal' | 'command';
+  /** With `os`: the clipboard works only while the window is in front. */
+  clipboardNeedsFocus?: boolean;
 }
 
 export interface MockBackend {
@@ -331,7 +335,15 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
           backend.settings = settings;
           return settings;
         case COMMANDS.appInfo:
-          return opts.os ? { ...fixture('app-info'), platform: opts.os, shield: false } : fixture('app-info');
+          return opts.os
+            ? {
+                ...fixture('app-info'),
+                platform: opts.os,
+                shield: false,
+                ...(opts.hotkey ? { hotkey: opts.hotkey } : {}),
+                ...(opts.clipboardNeedsFocus ? { clipboardNeedsFocus: true } : {}),
+              }
+            : fixture('app-info');
         case 'plugin:window|minimize':
         case 'plugin:window|close':
           return null;
