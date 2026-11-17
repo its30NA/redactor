@@ -52,6 +52,21 @@ case "$compositor" in
     ;;
 esac
 
+# KWin offers data-control, so the app never uses the focused-window clipboard there, and it
+# keeps the virtual keyboard those tests need from ordinary clients. The Plasma run proves the
+# data-control path only.
+if [ "$compositor" = kwin ] && [ "${#run[@]}" -eq 0 ]; then
+  kept=()
+  for t in "${tests[@]}"; do
+    if [ "$t" = wayland_focused ]; then
+      echo "wayland-tests: skipping wayland_focused on kwin (data-control is used there, not the focused-window clipboard)"
+    else
+      kept+=("$t")
+    fi
+  done
+  tests=("${kept[@]}")
+fi
+
 # Everything the script and the tests start, so a missing package is named here and not as a
 # test failure half way through.
 for tool in "$compositor_tool" wl-copy wl-paste dbus-daemon timeout; do
