@@ -217,6 +217,60 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The data-control contract on KWin (Plasma 6), where `ext-data-control-v1` is offered: the
+  # `wayland_clipboard` tests in a fedora:42 container (tools/ci/desktop-container.sh), with
+  # `ext_or_wlr_is_reported` expecting `Ext`. Ubuntu 24.04 has no Plasma 6.
+  #
+  # The test binary is built here, on the runner (toolchain, rust-cache and the WebKitGTK
+  # packages as in the other app jobs), and only run in the container: it links nothing but
+  # glibc, so the container needs no Rust and no -dev packages. A test build is a debug build,
+  # which loads the UI from devUrl, so app/ui/dist is not needed.
+  app-linux-plasma:
+    name: App on Wayland (Plasma 6, KWin)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-app-linux-plasma-${{ steps.image.outputs.version }}-v1
+      - name: WebKitGTK and tray packages
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      # On kwin the run lists wayland_clipboard alone; the skipped binaries are named in the
+      # job summary.
+      - name: Build the test binaries for the KWin run
+        env:
+          REDACTOR_WAYLAND_COMPOSITOR: kwin
+        run: tools/ci/wayland-tests.sh --build target/wayland-tests
+      # The count (wayland_clipboard: 18) makes a test that went missing fail the job.
+      # The container does not see GITHUB_STEP_SUMMARY; the OBSERVED lines go there from the log.
+      - name: Data-control tests on KWin (L2, Plasma 6 container)
+        run: |
+          tools/ci/desktop-container.sh env REDACTOR_WAYLAND_COMPOSITOR=kwin WAYLAND_TESTS_EXPECT=18 \
+            WAYLAND_TEST_BINARIES=target/wayland-tests tools/ci/wayland-tests.sh 2>&1 |
+            tee wayland-plasma.log
+      - name: Observed on KWin
+        if: always()
+        run: |
+          {
+            echo "### Wayland desktop tests: observed on kwin"
+            echo '```'
+            grep -E '^ *[0-9]+ OBSERVED ' wayland-plasma.log || echo "(none)"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
   app-macos:
     name: Rust and app shell (macOS)
     runs-on: macos-latest
