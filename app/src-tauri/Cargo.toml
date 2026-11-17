@@ -72,6 +72,11 @@ gtk = "=0.18.2"
 zbus = "5"
 # Only to ask whether the tray's library can be loaded; in the lock through the tray crates.
 libloading = "0.7"
+# The Wayland clipboard in the background (`platform/linux/wayland`): our own client of the
+# data-control protocols, `ext-data-control-v1` (staging) and `zwlr-data-control-unstable-v1`.
+wayland-client = "0.31.15"
+wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 
 # Each is in the lock through Tauri, at exactly this version. Without `default-features = false`
 # the AppKit and WebKit bindings would pull in crates that are not.
