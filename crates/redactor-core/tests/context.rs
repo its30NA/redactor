@@ -1173,6 +1173,23 @@ fn prose_connectors_name_the_value() {
     }
 }
 
+/// A fallback quote left open at a Windows line end (`password=??"` then `\r\n`) once ended
+/// the scan past the line end and crashed the engine (the 2026-11-17 property test input).
+/// The open quote is no value; the secret on the next line is still found.
+#[test]
+fn open_fallback_quote_at_a_crlf_line_end() {
+    let text = "password=??\"\r\nDB_PASSWORD=Hunter2-Fake-9x\r\n";
+    assert_redacted(text, "Hunter2-Fake-9x");
+    for s in [
+        Sensitivity::Relaxed,
+        Sensitivity::Balanced,
+        Sensitivity::Paranoid,
+    ] {
+        scan_at("x = y ?? '\r\n", s);
+        scan_at("x = y || `\r\n", s);
+    }
+}
+
 /// A secret passed to a setting call, a setter, a fallback, a plan diff, a PHP dump or a
 /// SQL insert is redacted; code around it is not.
 #[test]
