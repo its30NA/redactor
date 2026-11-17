@@ -9,11 +9,12 @@ pub mod wayland;
 pub mod webview;
 pub mod x11;
 
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, OnceLock};
 use std::time::Duration;
 
 use super::hotkey_plugin::PluginHotkey;
-use super::{GlobalHotkey, Platform, SystemClipboard, Unavailable};
+use super::{GlobalHotkey, HotkeyMode, HotkeyTaken, Platform, SystemClipboard, Unavailable};
+use crate::hotkey::Hotkey;
 use crate::os::Os;
 use command_hotkey::CommandHotkey;
 use portal::{portal_version, session_bus, PortalHotkey};
@@ -27,7 +28,8 @@ const NO_X_SERVER: Unavailable = Unavailable("Could not reach the X server. Use 
 const NO_COMPOSITOR: Unavailable =
     Unavailable("Could not reach the Wayland compositor. Use the `scrub` CLI.");
 
-/// How long start-up waits for the session bus to say whether it has a shortcuts portal.
+/// How long the hotkey's first use waits for the session bus to say whether it has a shortcuts
+/// portal.
 const PORTAL_PROBE: Duration = Duration::from_secs(5);
 
 /// A test switch: set to `1`, the app uses the focused-window clipboard even where the
@@ -72,7 +74,9 @@ fn x11_platform() -> Result<Platform, Unavailable> {
 /// Wayland: a compositor that does not answer is refused before any window exists. The
 /// clipboard works in the background where the compositor offers data-control, else only while
 /// the window is in front. The hotkey goes through the desktop's shortcuts portal where the
-/// session bus has one, else through a desktop shortcut that runs `--scrub-clipboard`.
+/// session bus has one, else through a desktop shortcut that runs `--scrub-clipboard`; which
+/// one is asked at its first use, so a second start (which hands its arguments to the running
+/// app and exits before `setup`) never waits for the session bus.
 fn wayland_platform() -> Result<Platform, Unavailable> {
     let globals = wayland::globals().map_err(|_| NO_COMPOSITOR)?;
     let focused_only = std::env::var_os(FOCUSED_ONLY).is_some_and(|v| v == "1");
@@ -94,7 +98,7 @@ fn wayland_platform() -> Result<Platform, Unavailable> {
         clipboard,
         lock: Box::new(lock::LogindLock),
         webview: Box::new(webview::WebKitHardening),
-        hotkey: wayland_hotkey(),
+        hotkey: Box::new(ProbedHotkey::new(wayland_hotkey)),
         // Asked once, at start-up: a tray host that appears later is picked up at the next start.
         tray: tray::available(),
         // Tauri's content protection does nothing on Linux.
@@ -137,6 +141,47 @@ fn wayland_hotkey() -> Box<dyn GlobalHotkey> {
     match portal {
         Some(p) => Box::new(p),
         None => Box::new(CommandHotkey),
+    }
+}
+
+/// A hotkey chosen by `probe` at its first use, then kept.
+struct ProbedHotkey {
+    probe: Box<dyn Fn() -> Box<dyn GlobalHotkey> + Send + Sync>,
+    chosen: OnceLock<Box<dyn GlobalHotkey>>,
+}
+
+impl ProbedHotkey {
+    fn new(probe: impl Fn() -> Box<dyn GlobalHotkey> + Send + Sync + 'static) -> ProbedHotkey {
+        ProbedHotkey {
+            probe: Box::new(probe),
+            chosen: OnceLock::new(),
+        }
+    }
+
+    fn get(&self) -> &dyn GlobalHotkey {
+        self.chosen.get_or_init(|| (self.probe)()).as_ref()
+    }
+}
+
+impl GlobalHotkey for ProbedHotkey {
+    fn register(&self, app: &tauri::AppHandle, hk: &Hotkey) -> Result<(), HotkeyTaken> {
+        self.get().register(app, hk)
+    }
+
+    fn unregister(&self, app: &tauri::AppHandle, hk: &Hotkey) {
+        self.get().unregister(app, hk)
+    }
+
+    fn mode(&self) -> HotkeyMode {
+        self.get().mode()
+    }
+
+    fn listen(
+        &self,
+        app: &tauri::AppHandle,
+        on_press: Arc<dyn Fn(&tauri::AppHandle) + Send + Sync>,
+    ) {
+        self.get().listen(app, on_press)
     }
 }
 
@@ -204,6 +249,25 @@ mod tests {
         assert!(!uses_portal(Some(0)));
         assert!(uses_portal(Some(1)));
         assert!(uses_portal(Some(2)));
+    }
+
+    #[test]
+    fn the_hotkey_is_probed_at_first_use_and_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let probes = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&probes);
+        let hotkey = ProbedHotkey::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Box::new(CommandHotkey)
+        });
+        assert_eq!(
+            probes.load(Ordering::SeqCst),
+            0,
+            "not probed before its first use"
+        );
+        assert_eq!(hotkey.mode(), HotkeyMode::Command);
+        assert_eq!(hotkey.mode(), HotkeyMode::Command);
+        assert_eq!(probes.load(Ordering::SeqCst), 1, "probed once");
     }
 
     #[test]
