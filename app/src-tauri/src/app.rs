@@ -325,7 +325,9 @@ fn start_idle_timer(app: AppHandle) {
 }
 
 /// Validates, applies and stores new settings. The hotkey changes first: if another app holds
-/// the new key, the old one stays registered and nothing else changes.
+/// the new key, the old one stays registered and nothing else changes. Where the desktop binds
+/// the key (the portal) and refuses the new one, nothing else changes either, and no hotkey is
+/// set until another one is picked.
 pub fn apply_settings(app: &AppHandle, incoming: Settings) -> Result<Settings, String> {
     change_settings(app, |_| incoming)
 }
@@ -350,13 +352,17 @@ fn change_settings(
     if next.hotkey != prev.hotkey {
         let new_hk = Hotkey::parse(&next.hotkey, os).map_err(|e| e.to_string())?;
         let old = Hotkey::parse(&prev.hotkey, os).ok();
-        let swapped = hotkey::replace_registration(
-            old.as_ref(),
-            &new_hk,
-            |h| st.platform.hotkey.register(app, h).is_ok(),
-            |h| st.platform.hotkey.unregister(app, h),
-        );
-        if !swapped {
+        let register = |h: &Hotkey| st.platform.hotkey.register(app, h).is_ok();
+        let unregister = |h: &Hotkey| st.platform.hotkey.unregister(app, h);
+        if st.platform.hotkey.mode() == HotkeyMode::Portal {
+            // A refusal leaves no key: the old one ended with its session when it was unbound.
+            if !hotkey::rebind(old.as_ref(), &new_hk, register, unregister) {
+                return Err(format!(
+                    "Your desktop did not accept {}. No hotkey is set now; pick another in Settings.",
+                    next.hotkey
+                ));
+            }
+        } else if !hotkey::replace_registration(old.as_ref(), &new_hk, register, unregister) {
             return Err(format!(
                 "Another app already uses {}. Kept {}.",
                 next.hotkey, prev.hotkey

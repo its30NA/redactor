@@ -252,6 +252,22 @@ pub fn replace_registration(
     false
 }
 
+/// Swaps the hotkey where the desktop binds it (the shortcuts portal): unregisters `old` (if
+/// any), then registers `new`. When the desktop refuses `new`, `old` is not asked for again:
+/// its binding ended with its session, and asking again could show the desktop's dialog a
+/// second time. False: no hotkey is set now.
+pub fn rebind(
+    old: Option<&Hotkey>,
+    new: &Hotkey,
+    register: impl FnOnce(&Hotkey) -> bool,
+    unregister: impl FnOnce(&Hotkey),
+) -> bool {
+    if let Some(old) = old {
+        unregister(old);
+    }
+    register(new)
+}
+
 fn canonical_mods(ctrl: bool, shift: bool, alt: bool, meta: Option<&str>, key: &str) -> String {
     let mut s = String::new();
     for (on, name) in [(ctrl, "Ctrl"), (shift, "Shift"), (alt, "Alt")] {
@@ -446,5 +462,53 @@ mod tests {
         let mut held = vec![old];
         assert!(!swap(&mut held, &[new], Some(&old), &new));
         assert_eq!(held, [old]);
+    }
+
+    /// A fake desktop that binds keys: like `swap`, and every key asked for is recorded.
+    fn desktop_swap(
+        held: &mut Vec<Hotkey>,
+        taken: &[Hotkey],
+        old: Option<&Hotkey>,
+        new: &Hotkey,
+    ) -> (bool, Vec<Hotkey>) {
+        let held = std::cell::RefCell::new(held);
+        let mut asked = vec![];
+        let bound = rebind(
+            old,
+            new,
+            |h| {
+                asked.push(*h);
+                if taken.contains(h) {
+                    false
+                } else {
+                    held.borrow_mut().push(*h);
+                    true
+                }
+            },
+            |h| held.borrow_mut().retain(|x| x != h),
+        );
+        (bound, asked)
+    }
+
+    #[test]
+    fn rebinding_binds_the_new_key_and_drops_the_old() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert_eq!(
+            desktop_swap(&mut held, &[], Some(&old), &new),
+            (true, vec![new])
+        );
+        assert_eq!(held, [new]);
+    }
+
+    #[test]
+    fn a_key_the_desktop_refuses_leaves_none_and_never_asks_for_the_old() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert_eq!(
+            desktop_swap(&mut held, &[new], Some(&old), &new),
+            (false, vec![new])
+        );
+        assert!(held.is_empty(), "no hotkey is set: {held:?}");
     }
 }
