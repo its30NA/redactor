@@ -16,7 +16,7 @@ use super::hotkey_plugin::PluginHotkey;
 use super::{GlobalHotkey, Platform, SystemClipboard, Unavailable};
 use crate::os::Os;
 use command_hotkey::CommandHotkey;
-use portal::{portal_version, PortalHotkey};
+use portal::{portal_version, session_bus, PortalHotkey};
 use session::Session;
 use wayland::{DataControlClipboard, FocusedClipboard, Globals};
 use x11::X11Clipboard;
@@ -128,7 +128,7 @@ fn clipboard_kind(globals: &Globals, focused_only: bool) -> ClipboardKind {
 /// [`PORTAL_PROBE`] means the command.
 fn wayland_hotkey() -> Box<dyn GlobalHotkey> {
     let portal = within(PORTAL_PROBE, || {
-        let bus = zbus::blocking::Connection::session().ok()?;
+        let bus = session_bus().ok()?;
         if !uses_portal(portal_version(&bus)) {
             return None;
         }

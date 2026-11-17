@@ -2,12 +2,14 @@
 //! KDE 6, GNOME 48 and later): the key from Settings goes as a wish, the desktop binds it (it may
 //! ask the user, pick another key or refuse) and sends `Activated` on each press.
 //!
-//! Own blocking `zbus` code, on a connection of its own. Every portal call answers through a
-//! `Request` object whose `Response` signal comes later; its path is known before the call (the
-//! sender's unique name and our token), so the match rule for it is in place before the call is
-//! made. One thread reads the connection: it hands each `Response` to the call waiting for it
-//! and each `Activated` on the current session to a second thread, which runs the press
-//! callback. Signals carry no clipboard content and nothing here logs.
+//! Own blocking `zbus` code, on a connection of its own ([`session_bus`]) whose method calls give
+//! up after [`CALL_TIMEOUT`]: a portal that never replies cannot hold up a settings change for
+//! good. Every portal call answers through a `Request` object whose `Response` signal comes
+//! later; its path is known before the call (the sender's unique name and our token), so the
+//! match rule for it is in place before the call is made. One thread reads the connection: it
+//! hands each `Response` to the call waiting for it and each `Activated` on the current session
+//! to a second thread, which runs the press callback. Signals carry no clipboard content and
+//! nothing here logs.
 //!
 //! Where there is no portal, the app uses `CommandHotkey` instead (`portal_version` decides).
 
@@ -17,6 +19,7 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use tauri::AppHandle;
+use zbus::blocking::connection::Builder;
 use zbus::blocking::{Connection, MessageIterator};
 use zbus::message::Type;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
@@ -36,6 +39,9 @@ const APP_ID: &str = "io.github.its30na.redactor";
 /// The one shortcut the app binds.
 const SHORTCUT_ID: &str = "scrub-clipboard";
 const DESCRIPTION: &str = "Clean the clipboard";
+/// How long a method call on the bus may take to reply (the portal replies at once; its answer
+/// comes later, as a `Response`).
+const CALL_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long a portal call may take to answer.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a bind may take: a person may be reading GNOME's dialog.
@@ -46,6 +52,17 @@ pub type Press = Arc<dyn Fn() + Send + Sync>;
 
 /// The portal's `Response`: its code (0 done, 1 cancelled by the user, 2 other) and results.
 type Response = (u32, HashMap<String, OwnedValue>);
+
+/// A connection to the session bus whose method calls give up after [`CALL_TIMEOUT`].
+pub fn session_bus() -> zbus::Result<Connection> {
+    session_bus_with(CALL_TIMEOUT)
+}
+
+/// As [`session_bus`], with another call deadline: for tests only.
+#[doc(hidden)]
+pub fn session_bus_with(call_timeout: Duration) -> zbus::Result<Connection> {
+    Builder::session()?.method_timeout(call_timeout).build()
+}
 
 /// The GlobalShortcuts version the session bus offers; `None` where there is no portal or it
 /// has no GlobalShortcuts.
@@ -143,18 +160,22 @@ pub struct PortalHotkey {
 }
 
 impl PortalHotkey {
-    /// The portal hotkey on `bus` (the session bus), with the shipped timeouts.
+    /// The portal hotkey on `bus` (from [`session_bus`]), with the shipped timeouts.
     pub fn new(bus: Connection) -> zbus::Result<PortalHotkey> {
         Self::with_timeouts(bus, REQUEST_TIMEOUT, BIND_TIMEOUT)
     }
 
-    /// As [`PortalHotkey::new`], with shorter waits: for tests only.
+    /// As [`PortalHotkey::new`], with shorter waits: for tests only. Both refuse a bus without a
+    /// call deadline.
     #[doc(hidden)]
     pub fn with_timeouts(
         bus: Connection,
         request: Duration,
         bind: Duration,
     ) -> zbus::Result<PortalHotkey> {
+        if bus.method_timeout().is_none() {
+            return Err(zbus::Error::Failure("a bus without a call deadline".into()));
+        }
         let sender = bus
             .unique_name()
             .ok_or_else(|| zbus::Error::Failure("not a bus connection".into()))?
@@ -216,8 +237,8 @@ impl PortalHotkey {
         self.open_session(&mut session);
     }
 
-    /// Asks the portal to bind `hk`. `HotkeyTaken` when the desktop refuses it, fails, or does
-    /// not answer within the bind wait.
+    /// Asks the portal to bind `hk`. `HotkeyTaken` when the desktop refuses it, fails, does not
+    /// reply within the call deadline or does not answer within the bind wait.
     pub fn bind(&self, hk: &Hotkey) -> Result<(), HotkeyTaken> {
         let mut session = lock(&self.session);
         let path = self.open_session(&mut session).ok_or(HotkeyTaken)?;
@@ -303,8 +324,9 @@ impl PortalHotkey {
     }
 
     /// Makes one portal call and waits for its `Response`. The match rule for the predicted
-    /// request path is in place before the call. `None` when the call fails, names another
-    /// path, or no answer comes within `timeout` (the request is then closed).
+    /// request path is in place before the call. `None` when the call fails (also when it gets
+    /// no reply within the call deadline), names another path, or no answer comes within
+    /// `timeout` (the request is then closed).
     fn request(
         &self,
         timeout: Duration,

@@ -190,10 +190,10 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
       # The count makes a test that went missing fail the job: wayland_clipboard 18,
-      # wayland_focused 12, wayland_portal 4 (plus the no-portal pass), wayland_webview 1.
+      # wayland_focused 12, wayland_portal 5 (plus the no-portal pass), wayland_webview 1.
       - name: Desktop contract tests (L2, sway)
         env:
-          WAYLAND_TESTS_EXPECT: "35"
+          WAYLAND_TESTS_EXPECT: "36"
         run: tools/ci/wayland-tests.sh
       # Built as the Windows loop builds it, without an installer.
       - name: Build the app

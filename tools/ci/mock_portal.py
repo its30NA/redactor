@@ -5,8 +5,9 @@ Owns org.freedesktop.portal.Desktop on the script's private session bus and answ
 xdg-desktop-portal does: CreateSession and BindShortcuts return a Request path at once and send
 its Response afterwards, sessions are objects with Close, and the version property is 1.
 
-MOCK_PORTAL_BIND says how BindShortcuts ends: ok (code 0), refuse (code 1, the user said no) or
-never (no Response, the dialog was left open). Test-only methods on org.redactor.Mock:
+MOCK_PORTAL_BIND says how BindShortcuts ends: ok (code 0), refuse (code 1, the user said no),
+never (no Response, the dialog was left open) or silent (the method call itself never replies,
+a hung portal). Test-only methods on org.redactor.Mock:
   Press(s id)            sends Activated(session, id) for every open session that bound id
   SetBind(s mode)        changes how the next BindShortcuts ends
   Sessions(s owner)      the owner's open sessions and the trigger each one asked for
@@ -29,7 +30,7 @@ PATH = "/org/freedesktop/portal/desktop"
 SHORTCUTS = "org.freedesktop.portal.GlobalShortcuts"
 REQUEST = "org.freedesktop.portal.Request"
 MOCK = "org.redactor.Mock"
-BIND_MODES = ("ok", "refuse", "never")
+BIND_MODES = ("ok", "refuse", "never", "silent")
 
 PORTAL_XML = """
 <node>
@@ -105,6 +106,8 @@ class Portal:
         self.conn = conn
         self.bind_mode = bind_mode
         self.counter = 0
+        # BindShortcuts calls left without a reply (bind mode silent), kept so none is answered.
+        self.unanswered = []
         # session path -> {"owner": unique name, "reg": registration id, "bound": {id: trigger}}
         self.sessions = {}
         self.session_iface = Gio.DBusNodeInfo.new_for_xml(SESSION_XML).interfaces[0]
@@ -139,7 +142,7 @@ class Portal:
         elif iface == MOCK and method == "SetBind":
             if args[0] not in BIND_MODES:
                 invocation.return_dbus_error(
-                    "org.freedesktop.DBus.Error.InvalidArgs", "mode is ok, refuse or never"
+                    "org.freedesktop.DBus.Error.InvalidArgs", "mode is ok, refuse, never or silent"
                 )
                 return
             self.bind_mode = args[0]
@@ -174,6 +177,9 @@ class Portal:
         state = self.sessions.get(session)
         if state is None or state["owner"] != sender:
             invocation.return_dbus_error("org.freedesktop.portal.Error.InvalidArgument", "no such session")
+            return
+        if self.bind_mode == "silent":
+            self.unanswered.append(invocation)
             return
         request = "%s/request/%s/%s" % (PATH, sender_part(sender), self.token(options, "handle_token"))
         invocation.return_value(GLib.Variant("(o)", (request,)))
@@ -229,7 +235,7 @@ def main():
     private_bus_or_exit()
     bind_mode = os.environ.get("MOCK_PORTAL_BIND", "ok")
     if bind_mode not in BIND_MODES:
-        print("mock_portal: MOCK_PORTAL_BIND must be ok, refuse or never", file=sys.stderr)
+        print("mock_portal: MOCK_PORTAL_BIND must be ok, refuse, never or silent", file=sys.stderr)
         sys.exit(2)
     conn = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     portal = Portal(conn, bind_mode)
