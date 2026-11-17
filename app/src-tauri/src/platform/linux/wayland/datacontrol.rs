@@ -18,7 +18,7 @@
 
 use std::io::pipe;
 use std::os::fd::{AsFd, OwnedFd};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
@@ -48,6 +48,9 @@ const READ_TIMEOUT: Duration = Duration::from_secs(10);
 const HINT_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a paste of our text may take before we stop writing.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How many pastes of our text are written at once; past it a paste gets nothing (its pipe
+/// closes at once), so pastes that are never read cannot pile up threads.
+const MAX_WRITERS: usize = 8;
 
 /// What the worker and the calling threads share.
 struct Shared {
@@ -66,6 +69,8 @@ struct Shared {
     /// The device ended or the connection broke: every operation fails from now on.
     gone: AtomicBool,
     stop: AtomicBool,
+    /// The pastes being written now.
+    writers: Writers,
 }
 
 /// The state of the worker thread, the only one that dispatches events.
@@ -102,6 +107,7 @@ impl DataControlClipboard {
             ours: Mutex::new(None),
             gone: AtomicBool::new(false),
             stop: AtomicBool::new(false),
+            writers: Writers::default(),
         });
         let worker = std::thread::Builder::new()
             .name("wayland-clipboard".into())
@@ -313,11 +319,16 @@ impl Events for Worker {
         if !TEXT_MIMES.contains(&mime.as_str()) {
             return;
         }
+        // Too many pastes at once: this one gets nothing (`fd` closes here).
+        let Some(slot) = self.shared.writers.take() else {
+            return;
+        };
         let text = Arc::clone(&source.text);
         // A paste that is slow to read must not hold up the worker.
         let _ = std::thread::Builder::new()
             .name("wayland-clipboard-send".into())
             .spawn(move || {
+                let _slot = slot;
                 let _ = write_bounded(fd, text.as_bytes(), WRITE_TIMEOUT);
             });
     }
@@ -329,6 +340,29 @@ impl Events for Worker {
         }
         drop(ours);
         source.destroy();
+    }
+}
+
+/// Counts the pastes being written, up to [`MAX_WRITERS`].
+#[derive(Default)]
+struct Writers(Arc<AtomicUsize>);
+
+/// One paste being written; its place is free again when it is dropped.
+struct WriterSlot(Arc<AtomicUsize>);
+
+impl Writers {
+    /// A place for one more paste; `None` when [`MAX_WRITERS`] are being written.
+    fn take(&self) -> Option<WriterSlot> {
+        let before = self.0.fetch_add(1, Ordering::SeqCst);
+        // Made at once, so a refused place is given back when it drops.
+        let slot = WriterSlot(Arc::clone(&self.0));
+        (before < MAX_WRITERS).then_some(slot)
+    }
+}
+
+impl Drop for WriterSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -473,6 +507,17 @@ impl SystemClipboard for DataControlClipboard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn at_most_8_pastes_are_written_at_once() {
+        let writers = Writers::default();
+        let mut slots: Vec<WriterSlot> = (0..MAX_WRITERS)
+            .map(|_| writers.take().expect("a free place"))
+            .collect();
+        assert!(writers.take().is_none(), "a ninth paste gets nothing");
+        slots.pop();
+        assert!(writers.take().is_some(), "a finished paste frees its place");
+    }
 
     #[test]
     fn own_text_ends_at_nul_and_keeps_the_limit() {
