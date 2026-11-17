@@ -5,13 +5,15 @@
 <script lang="ts">
   import Kbd from './Kbd.svelte';
   import ShieldEmblem from './ShieldEmblem.svelte';
+  import { keysFor, type KeyOs } from '../lib/keys';
 
   let {
     compact = false,
     late = false,
+    os = 'windows',
     onpaste,
     onopen,
-  }: { compact?: boolean; late?: boolean; onpaste?: () => void; onopen?: () => void } = $props();
+  }: { compact?: boolean; late?: boolean; os?: KeyOs; onpaste?: () => void; onopen?: () => void } = $props();
 </script>
 
 <div class="empty" class:compact class:late data-testid="empty-state">
@@ -19,9 +21,9 @@
   <p class="lead">Paste anything.</p>
   <p class="sub">Secrets never leave this machine.</p>
   <p class="keys">
-    <button type="button" onclick={onpaste}><Kbd keys={['Ctrl', 'V']} /> <span>paste</span></button>
+    <button type="button" onclick={onpaste}><Kbd keys={keysFor('paste', os)} /> <span>paste</span></button>
     <span class="dot" aria-hidden="true"></span>
-    <button type="button" onclick={onopen}><Kbd keys={['Ctrl', 'O']} /> <span>open a file</span></button>
+    <button type="button" onclick={onopen}><Kbd keys={keysFor('open', os)} /> <span>open a file</span></button>
   </p>
 </div>
 

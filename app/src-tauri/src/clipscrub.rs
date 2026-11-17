@@ -51,6 +51,73 @@ pub fn utf16_text_len(units: &[u16], max_bytes: usize) -> Option<usize> {
     Some(units.len())
 }
 
+/// The text in UTF-8 `bytes` a clipboard handed out: it ends at the first NUL (as on Windows)
+/// and invalid UTF-8 becomes U+FFFD. No text is `Empty`; more than
+/// [`bridge::MAX_INPUT_BYTES`] is `TooLarge`.
+pub fn text_from_utf8(mut bytes: Zeroizing<Vec<u8>>) -> ClipText {
+    if let Some(nul) = memchr::memchr(0, &bytes) {
+        bytes.truncate(nul);
+    }
+    let text = match String::from_utf8(std::mem::take(&mut *bytes)) {
+        // The usual case: the bytes become the string, nothing is copied.
+        Ok(text) => text,
+        Err(invalid) => {
+            let raw = Zeroizing::new(invalid.into_bytes());
+            // Sized once, for the worst case, so no copy of the text is left behind in memory
+            // that a growing buffer gave back.
+            let mut text = String::with_capacity(raw.len() * 3);
+            for chunk in raw.utf8_chunks() {
+                text.push_str(chunk.valid());
+                if !chunk.invalid().is_empty() {
+                    text.push(char::REPLACEMENT_CHARACTER);
+                }
+            }
+            text
+        }
+    };
+    sized(Zeroizing::new(text))
+}
+
+/// The text in UTF-16 `bytes` a clipboard handed out. A byte-order mark decides the byte order
+/// and is not part of the text; without one the order is this machine's. The text ends at the
+/// first NUL, half a unit at the end is dropped, and a surrogate without its partner becomes
+/// U+FFFD. No text is `Empty`; more than [`bridge::MAX_INPUT_BYTES`] of UTF-8 is `TooLarge`.
+pub fn text_from_utf16(bytes: &[u8]) -> ClipText {
+    let (big_endian, body) = match bytes {
+        [0xFF, 0xFE, rest @ ..] => (false, rest),
+        [0xFE, 0xFF, rest @ ..] => (true, rest),
+        _ => (cfg!(target_endian = "big"), bytes),
+    };
+    let mut units = Zeroizing::new(Vec::with_capacity(body.len() / 2));
+    units.extend(body.as_chunks::<2>().0.iter().map(|&pair| {
+        if big_endian {
+            u16::from_be_bytes(pair)
+        } else {
+            u16::from_le_bytes(pair)
+        }
+    }));
+    let Some(len) = utf16_text_len(&units, bridge::MAX_INPUT_BYTES) else {
+        return ClipText::TooLarge;
+    };
+    // Sized once: a unit is at most three bytes of UTF-8.
+    let mut text = Zeroizing::new(String::with_capacity(len * 3));
+    for c in char::decode_utf16(units[..len].iter().copied()) {
+        text.push(c.unwrap_or(char::REPLACEMENT_CHARACTER));
+    }
+    sized(text)
+}
+
+/// `text` as clipboard content: nothing is `Empty`, more than the input limit is `TooLarge`.
+fn sized(text: Zeroizing<String>) -> ClipText {
+    if text.is_empty() {
+        ClipText::Empty
+    } else if text.len() > bridge::MAX_INPUT_BYTES {
+        ClipText::TooLarge
+    } else {
+        ClipText::Text(text)
+    }
+}
+
 /// The platform clipboard. Errors carry no content.
 pub trait Clipboard {
     /// Changes whenever the clipboard content changes.
@@ -76,6 +143,16 @@ impl std::fmt::Display for ClipError {
 }
 
 impl std::error::Error for ClipError {}
+
+/// `readClipboard` for the UI: the text, or None when empty, not text, or protected. Text over
+/// 20 MiB is an error with a clear message; it never reaches JavaScript.
+pub fn read_text_for_ui(cb: &(impl Clipboard + ?Sized)) -> Result<Option<String>, String> {
+    match cb.read().map_err(|e| e.to_string())? {
+        ClipText::Text(mut t) => Ok(Some(std::mem::take(&mut *t))),
+        ClipText::Empty | ClipText::Protected => Ok(None),
+        ClipText::TooLarge => Err(TOO_LARGE_MESSAGE.to_string()),
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -148,7 +225,7 @@ impl ClipboardScrub {
 
 /// Scans the clipboard text and rewrites it when something was redacted.
 pub fn scrub(
-    cb: &impl Clipboard,
+    cb: &(impl Clipboard + ?Sized),
     engine: &Engine,
     sensitivity: Sensitivity,
     pii: bool,
@@ -161,7 +238,7 @@ pub fn scrub(
 
 /// [`scrub`] with the scan passed in, so tests can hand back any engine result.
 fn scrub_with(
-    cb: &impl Clipboard,
+    cb: &(impl Clipboard + ?Sized),
     sensitivity: Sensitivity,
     pii: bool,
     strip_invisible: bool,
@@ -447,5 +524,160 @@ mod tests {
         assert_eq!(v["status"], "cleaned");
         assert_eq!(v["historyCleaned"], false);
         assert!(v["byLabel"].is_array());
+    }
+    #[test]
+    fn read_for_ui_never_hands_out_protected_or_oversized_text() {
+        struct Fixed(fn() -> Result<ClipText, ClipError>);
+        impl Clipboard for Fixed {
+            fn sequence(&self) -> u32 {
+                1
+            }
+            fn read(&self) -> Result<ClipText, ClipError> {
+                (self.0)()
+            }
+            fn write_if_unchanged(&self, _: &str, _: u32) -> Result<bool, ClipError> {
+                panic!("must not write")
+            }
+            fn delete_from_history(&self, _: &str) -> bool {
+                panic!("must not touch the history")
+            }
+        }
+        let text = Fixed(|| Ok(ClipText::Text(Zeroizing::new("abc".to_string()))));
+        assert_eq!(read_text_for_ui(&text), Ok(Some("abc".to_string())));
+        assert_eq!(read_text_for_ui(&Fixed(|| Ok(ClipText::Empty))), Ok(None));
+        assert_eq!(
+            read_text_for_ui(&Fixed(|| Ok(ClipText::Protected))),
+            Ok(None)
+        );
+        assert_eq!(
+            read_text_for_ui(&Fixed(|| Ok(ClipText::TooLarge))),
+            Err(TOO_LARGE_MESSAGE.to_string())
+        );
+        assert_eq!(
+            read_text_for_ui(&Fixed(|| Err(ClipError))),
+            Err(ClipError.to_string())
+        );
+    }
+
+    #[test]
+    fn scrub_accepts_a_trait_object() {
+        let (text, pw) = secret_text();
+        let cb = FakeClipboard::new(Fake::Text(text));
+        let dynamic: &dyn Clipboard = &cb;
+        let r = scrub(dynamic, &engine(), Sensitivity::Balanced, false, true);
+        assert_eq!(r.status, ClipStatus::Cleaned);
+        assert!(!cb.text().unwrap().contains(&pw));
+    }
+
+    fn utf8(bytes: &[u8]) -> Option<String> {
+        match text_from_utf8(Zeroizing::new(bytes.to_vec())) {
+            ClipText::Text(t) => Some(t.to_string()),
+            _ => None,
+        }
+    }
+
+    /// `text` as UTF-16 bytes in the given order, after `bom`.
+    fn utf16_bytes(text: &str, bom: &[u8], big_endian: bool) -> Vec<u8> {
+        let mut bytes = bom.to_vec();
+        for unit in text.encode_utf16() {
+            bytes.extend(if big_endian {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            });
+        }
+        bytes
+    }
+
+    fn utf16(bytes: &[u8]) -> Option<String> {
+        match text_from_utf16(bytes) {
+            ClipText::Text(t) => Some(t.to_string()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn utf8_bytes_pass_through_and_end_at_the_first_nul() {
+        let sample = "😀 Grüße\r\n\tline two";
+        assert_eq!(utf8(sample.as_bytes()).as_deref(), Some(sample));
+        assert_eq!(utf8(b"one\0two").as_deref(), Some("one"));
+        assert!(matches!(
+            text_from_utf8(Zeroizing::new(b"\0two".to_vec())),
+            ClipText::Empty
+        ));
+        assert!(matches!(
+            text_from_utf8(Zeroizing::new(Vec::new())),
+            ClipText::Empty
+        ));
+    }
+
+    #[test]
+    fn invalid_utf8_bytes_become_the_replacement_character() {
+        assert_eq!(utf8(b"a\xFFb\xC3").as_deref(), Some("a\u{FFFD}b\u{FFFD}"));
+    }
+
+    #[test]
+    fn utf8_bytes_over_the_limit_are_too_large() {
+        assert!(matches!(
+            text_from_utf8(Zeroizing::new(vec![b'a'; bridge::MAX_INPUT_BYTES + 1])),
+            ClipText::TooLarge
+        ));
+        // Each invalid byte grows to three: over the limit only after decoding.
+        assert!(matches!(
+            text_from_utf8(Zeroizing::new(vec![0xFF; bridge::MAX_INPUT_BYTES / 3 + 1])),
+            ClipText::TooLarge
+        ));
+        assert!(matches!(
+            text_from_utf8(Zeroizing::new(vec![b'a'; bridge::MAX_INPUT_BYTES])),
+            ClipText::Text(_)
+        ));
+    }
+
+    #[test]
+    fn utf16_bytes_follow_the_byte_order_mark() {
+        let sample = "Grüße 😀\r\n";
+        assert_eq!(
+            utf16(&utf16_bytes(sample, &[0xFF, 0xFE], false)).as_deref(),
+            Some(sample)
+        );
+        assert_eq!(
+            utf16(&utf16_bytes(sample, &[0xFE, 0xFF], true)).as_deref(),
+            Some(sample)
+        );
+        // No mark: this machine's order.
+        assert_eq!(
+            utf16(&utf16_bytes(sample, &[], cfg!(target_endian = "big"))).as_deref(),
+            Some(sample)
+        );
+    }
+
+    #[test]
+    fn utf16_bytes_end_at_the_first_nul_and_survive_damage() {
+        let le = |text: &str| utf16_bytes(text, &[0xFF, 0xFE], false);
+        assert_eq!(utf16(&le("one\0two")).as_deref(), Some("one"));
+        assert!(matches!(text_from_utf16(&le("")), ClipText::Empty));
+        assert!(matches!(text_from_utf16(&le("\0two")), ClipText::Empty));
+        assert!(matches!(text_from_utf16(&[]), ClipText::Empty));
+        // Half a unit at the end is not text.
+        let mut odd = le("ab");
+        odd.push(0x41);
+        assert_eq!(utf16(&odd).as_deref(), Some("ab"));
+        // A surrogate without its partner.
+        let mut lone = le("a");
+        lone.extend([0x3D, 0xD8]);
+        assert_eq!(utf16(&lone).as_deref(), Some("a\u{FFFD}"));
+    }
+
+    #[test]
+    fn utf16_bytes_over_the_limit_are_too_large() {
+        // "é" is one unit and two bytes of UTF-8.
+        let units = bridge::MAX_INPUT_BYTES / 2 + 1;
+        let mut big = vec![0xFF, 0xFE];
+        for _ in 0..units {
+            big.extend([0xE9, 0x00]);
+        }
+        assert!(matches!(text_from_utf16(&big), ClipText::TooLarge));
+        big.truncate(big.len() - 2);
+        assert!(matches!(text_from_utf16(&big), ClipText::Text(_)));
     }
 }

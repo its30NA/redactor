@@ -13,6 +13,20 @@ All notable changes to this project are documented here. The format follows
 - A roadmap (`docs/ROADMAP.md`): the macOS and Linux app, fixes for the known misses, and an optional
   local-model judge under research.
 
+### Changed
+
+- The desktop shell reaches the operating system through one platform layer. No change in behaviour.
+- CI builds and tests the app shell on Linux and macOS too, and checks the dependency policy for both with
+  the shell included. On Linux this allows the ISC licence and five advisories inside Tauri's GTK3 and D-Bus
+  stack, each with its reason in `deny.toml`.
+
+### Fixed
+
+- Detection: a file path with a generated folder name (macOS temp folders under `/var/folders`, Xcode
+  DerivedData, a timestamped release folder) is no longer a Random String in Balanced. A path is judged by
+  the names in it, not as one run with its slashes; a random name inside a path and a secret with slashes
+  in it are found as before, and Paranoid reports what it reported.
+
 ## [2.1.0] - 2026-11-11
 
 ### Added

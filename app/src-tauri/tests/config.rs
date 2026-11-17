@@ -149,6 +149,9 @@ fn hardening_flags_are_set() {
         conf["bundle"]["windows"]["nsis"]["installMode"],
         "currentUser"
     );
+    // macOS: signed ad hoc (no Apple Developer ID), for macOS 13 and later.
+    assert_eq!(conf["bundle"]["macOS"]["signingIdentity"], "-");
+    assert_eq!(conf["bundle"]["macOS"]["minimumSystemVersion"], "13.0");
 }
 
 #[test]

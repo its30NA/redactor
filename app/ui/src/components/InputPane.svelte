@@ -16,10 +16,11 @@
   import Panel from './Panel.svelte';
   import SelectionBar from './SelectionBar.svelte';
   import { appearance } from '../lib/appearance.svelte';
+  import { keysFor, type KeyOs } from '../lib/keys';
   import { workspace } from '../lib/workspace.svelte';
   import type { WarningKind } from '../lib/types';
 
-  let { compact = false }: { compact?: boolean } = $props();
+  let { compact = false, os = 'windows' }: { compact?: boolean; os?: KeyOs } = $props();
 
   let host: HTMLDivElement;
   let body: HTMLDivElement | undefined = $state();
@@ -74,14 +75,14 @@
       {/each}
     </div>
     <div class="tools">
-      <Button variant="ghost" size="sm" icon={FolderOpen} label="Open a text file (Ctrl+O)" onclick={() => workspace.open()} />
-      <Button variant="ghost" size="sm" icon={ClipboardPaste} label="Paste (Ctrl+V)" onclick={() => workspace.paste()} />
+      <Button variant="ghost" size="sm" icon={FolderOpen} label="Open a text file ({keysFor('open', os).join('+')})" onclick={() => workspace.open()} />
+      <Button variant="ghost" size="sm" icon={ClipboardPaste} label="Paste ({keysFor('paste', os).join('+')})" onclick={() => workspace.paste()} />
     </div>
   </header>
   <div class="pane-body" bind:this={body}>
     <div class="editor-host" bind:this={host} data-testid="input-editor"></div>
     {#if !workspace.hasText}
-      <EmptyState {compact} late={workspace.shredding} onpaste={() => workspace.paste()} onopen={() => workspace.open()} />
+      <EmptyState {compact} {os} late={workspace.shredding} onpaste={() => workspace.paste()} onopen={() => workspace.open()} />
     {/if}
     {#if workspace.pasteEpoch > 0 && !appearance.reducedMotion}
       {#key workspace.pasteEpoch}

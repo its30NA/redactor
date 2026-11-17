@@ -9,8 +9,8 @@ Redactor is one detection engine and two front ends. The engine is a pure librar
  (private,  |                                                  app/src-tauri (Rust)            |
  no network)|   shows text, highlights spans,                   +- session secrets (memory)    |
             |   never receives secret values                    +- settings.json (settings)    |
-            |                                                   +- win/ clipboard, history,    |
-            |                                                      session lock, WebView2 flags|
+            |                                                   +- platform/windows/ clipboard,|
+            |                                                     history, lock, WebView2 flags|
             +--------------------------------------------------------------------------------+
                                   |                                         |
                         crates/redactor-wire  <-------------- crates/scrub (CLI)
@@ -96,8 +96,11 @@ serves `scrub --json`, so the UI's test fixtures are exactly what the app sends.
 ## The app shell (`app/src-tauri`)
 
 The platform-neutral modules (settings, session secrets, the engine bridge, hotkey rules, wipe rules, file
-decoding, clipboard logic over a trait) build and test on every platform. Only the Tauri shell and the
-Win32 code are Windows-only, so Linux CI needs no WebKit.
+decoding, clipboard logic over a trait) need no desktop. The shell (`app.rs`, `commands.rs`, `state.rs`,
+`tray.rs`) never names an operating system: it reaches the OS only through one `Platform` value built at
+start-up (`platform::native()`), and `tests/platform_boundary.rs` keeps it that way. The shell compiles and
+is tested on Windows, macOS and Linux CI (Linux needs the WebKitGTK packages). The app starts on Windows, on
+macOS 13 and later, and on Linux X11 sessions; on Wayland the binary says so and points to the `scrub` CLI.
 
 | Module | Role |
 |---|---|
@@ -106,19 +109,95 @@ Win32 code are Windows-only, so Linux CI needs no WebKit.
 | `bridge.rs` | Re-exports `redactor-wire`'s scan mapping. |
 | `engines.rs` | Keeps one engine per `stripInvisible` value for the current always-redact words and placeholder style, rebuilds in the background when they change, and shares one per-process session key. |
 | `session.rs` | Session secrets: boxed byte values, zeroed on drop, searched with `memchr::memmem` under a lock. There is no prebuilt automaton, whose internal copies of the values could not be wiped. |
-| `settings.rs` | `%APPDATA%\Redactor\settings.json`: validated on the way in, repaired on the way out, written atomically. |
+| `os.rs` | `Os` (`Windows`, `Mac`, `Linux`): a plain value the OS-dependent rules take (hotkey names and lists, the settings folder, the UI's shortcuts), so every OS's rules are tested on any OS. The platform layer says which one is running. |
+| `settings.rs` | `settings.json` in the OS's config folder: `%APPDATA%\Redactor` on Windows, `~/Library/Application Support/Redactor` on macOS, `$XDG_CONFIG_HOME/redactor` (or `~/.config/redactor`) on Linux; an unset, empty or relative variable means defaults, never a file in the working folder. Validated on the way in, repaired on the way out, written atomically. |
 | `wipe.rs` | Tracks whether there is anything worth wiping and when the app was last used. |
 | `clipscrub.rs` | Clipboard scrubbing over a `Clipboard` trait, so the rules are tested without a desktop. |
-| `hotkey.rs` | Parses and validates the global hotkey. |
+| `hotkey.rs` | Parses and validates the global hotkey for an `Os`: `Cmd` on macOS, `Super` on Linux, the Windows key unreadable on Windows. The rules and their messages are pinned by one case table (`tests/fixtures/hotkey_cases.json`) that the Rust tests and the UI's tests both read. |
 | `tray.rs` | The tray icon and menu. |
 | `textfile.rs` | Decodes opened files with `redactor-wire`'s decoder: UTF-8 or UTF-16, binary refused, 20 MiB cap. |
 | `browser_args.rs` | The WebView2 browser switches: wry's defaults, no non-proxied WebRTC UDP, no DNS prefetch, no background networking. |
-| `win/` | The only place `unsafe` is allowed: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. Each block has a `// SAFETY:` comment. |
+| `platform/` | The platform layer: traits `SystemClipboard` (on top of `clipscrub::Clipboard`, which also covers clipboard history), `LockWatcher`, `WebviewHardening` and `GlobalHotkey`, a `tray` flag, a `shield` flag, and `native()`. Four small hooks let the shell treat each OS its own way without naming it: `WebviewHardening::prepare` (the last step before the main window is built, for settings an OS only takes before the web view exists), `reopen` (this run-loop event is the OS asking for the window back), `tray_click_opens_menu` (a left click on the tray icon opens the menu, or the window) and `tray_notice` (the sentence shown once when closing hides the window). `hotkey_plugin.rs` implements the hotkey with Tauri's global-shortcut plugin. |
+| `platform/windows/` | The Windows implementation: the Win32 clipboard, WinRT clipboard history, session lock and sleep notifications, WebView2 hardening. One of the places `unsafe` is allowed (with `platform/macos/` and one call in `platform/linux/tray.rs`); each block has a `// SAFETY:` comment. |
+| `platform/macos/` | macOS. `clipboard.rs` is the general pasteboard (below). `lock.rs` wipes on `com.apple.screenIsLocked` (the only direct lock signal, undocumented, observed with "deliver immediately" so a background app still gets it), on displays going to sleep, on the Mac going to sleep and on the session being switched away. `webview.rs` builds the web view from our own configuration (below). `mod.rs` keeps the system's Dictation and Emoji items out of the Edit menu, answers the Dock click and a second launch with the window (`reopen`), and opens the menu on a click of the menu-bar icon. There is no screen-capture shield: since macOS 15.4 screen capture ignores the window flag it would set. |
+| `platform/linux/` | Linux. `session.rs` reads the session from `DISPLAY` and `WAYLAND_DISPLAY`. `x11/` is the app's own X11 clipboard client (below). `lock.rs` wipes on lock and sleep: logind's `PrepareForSleep` and `Lock`, the session's `LockedHint` (GNOME and KDE lock without the `Lock` signal), and `ActiveChanged` of five screen-saver interfaces; a missing bus is not an error. `tray.rs` says whether the desktop shows a tray (a StatusNotifier host is registered and the indicator library loads; the one `unsafe` call on Linux), because the tray library aborts where there is none; without a tray, closing the window quits. `webview.rs` hardens WebKitGTK: no WebRTC, media stream, page cache, WebGL, WebAudio, swipe navigation or default context menu. On an X11 session GDK is pinned to X11, so the window lives on the same server as the clipboard and the hotkey. The screen-capture shield does not exist on Linux (`Platform.shield` is false; the setting is forced off and the UI says why). |
+| `platform/unsupported.rs` | The placeholder for an OS that is none of the three: `native()` returns the reason and the binary points to the `scrub` CLI. No CI job builds it. |
 
-The window is built in code, not from `tauri.conf.json`: frameless with a custom title bar, WebView2 private
-mode, browser extensions off, navigation limited to the app's own origin, new windows denied, developer
-tools only in debug builds. `win/webview.rs` switches off autofill, password autosave, browser accelerator
-keys, the default context menu and swipe navigation.
+Every clipboard implementation passes one contract, `tests/support/clipboard_contract.rs` (text round trip, a copy marked private is left alone, an empty clipboard or an image reads as empty, oversized text never reaches the window, a stale sequence blocks the write, scrub in place rewrites only when there are findings). An in-memory fake runs it on every OS (`tests/fake_clipboard_contract.rs`); each real clipboard runs it on its own desktop (`tests/win_clipboard.rs` on Windows, with the clipboard history check on top; `tests/x11_clipboard.rs` on a throwaway X server, against `xclip` and against helper processes that hint, lie about their size, stay silent or exit half way; `tests/macos_clipboard.rs` on GitHub's macOS runners, against `pbcopy`/`pbpaste` and a second process that copies during our reads and writes).
+
+### Start-up answers
+
+`platform::native()` returns the `Platform` or the reason there is none, and `main` prints that reason and
+exits with code 2. There is one sentence per case, each pointing to the `scrub` CLI: a Wayland session (not
+yet), no display at all, and an X server that cannot be reached or has no XFIXES extension.
+
+### The X11 clipboard (`platform/linux/x11/`)
+
+On X11 there is no clipboard store: the text stays in the application that copied it, and whoever pastes
+asks that application for it. Redactor speaks this protocol itself (`x11rb`), on its own connection, because
+the rules of the contract above need control a plugin does not give.
+
+- **Two kinds of threads, one connection.** A worker thread is the only one that waits for events. It counts
+  every change of the `CLIPBOARD` owner (XFIXES reports a new owner, an owner whose window is destroyed and an
+  owner that exits), answers applications that paste our text (`serve.rs`), and hands the answers of the one
+  clipboard operation in progress to the thread that asked for it.
+- **The sequence number is ours.** X11 has none, so it is the count of owner changes. Reading it sends a
+  "ping" first (an empty write to a property of our own window). The server reports events in the order
+  things happened, so when the ping comes back every earlier owner change has been counted.
+- **Compare-and-set under a server grab.** `write_if_unchanged` grabs the server, pings, compares the count
+  with the caller's number and only then takes the selection. While the grab lasts the server handles no
+  other client, so no copy can land between the comparison and the write. Two tests put another
+  application's copy on its way before and during the write and require that copy to survive.
+- **The other side is not trusted** (`read.rs`). A copy whose `x-kde-passwordManagerHint` says `secret`, or
+  cannot be read, is left alone. The size of the text is asked for before a byte is copied; text over 20 MiB
+  is refused, also when the owner announced less and sends more. Every answer has one second, a whole read
+  ten. A transfer in pieces that turns out too large is not abandoned half way (an owner that serves one
+  transfer at a time would answer nobody afterwards): its pieces are deleted on the server, unread.
+- **Serving.** `TARGETS`, `MULTIPLE` (how clipboard managers save), `TIMESTAMP` and the two UTF-8 text
+  targets. Text up to 256 KiB is answered in one property, larger text in pieces from a snapshot taken at
+  request time; at most 8 such transfers run at once, and one whose requestor goes away or stops asking is
+  dropped. When another application copies, our text is dropped.
+- **On exit** the clipboard would be empty. If the desktop runs a clipboard manager, it is asked to take the
+  text over (`SAVE_TARGETS`) and gets one second to do so.
+- X11 has no clipboard history to clean; a clipboard manager's own history is out of reach.
+
+### The macOS clipboard (`platform/macos/clipboard.rs`)
+
+macOS keeps copied text in a pasteboard server, so unlike X11 nothing has to be served. The pasteboard has
+no "open" session and no compare-and-set. Its change count moves by one each time an app takes it over, so
+the count is the sequence number. Every call fetches the pasteboard itself, may come from any thread, and
+holds one process-wide lock.
+
+- **Reading.** A copy marked `org.nspasteboard.ConcealedType` (password managers) or
+  `org.nspasteboard.TransientType` (an app that will put the old content back in a moment) is left alone.
+  Text is read as UTF-8, or as UTF-16 when that is all the copy offers; more than 20 MiB is refused before it
+  is decoded. The count is read before and after: if it moved, a newer copy (maybe a password manager's)
+  landed while the types were checked, and the read is thrown away and started again.
+- **The guarded write.** `write_if_unchanged` compares the count with the caller's number, takes the
+  pasteboard over, and requires the count that step returns to be exactly one higher; after the text is
+  written the count must still be that. If any check fails, another app copied in between: the write
+  reports an error, and if AppKit put our text on top of that newer copy anyway, our text is cleared away
+  again. The other copy is then lost (the clipboard is empty), never replaced by ours after an error.
+- **What the checks cannot see.** macOS hands a copy to the pasteboard server a moment after the call
+  returns, in every app. So a copy another app makes within about a millisecond of ours can still end up
+  under our text while every check passed: the clipboard then holds the safe text of the earlier copy, and
+  the newer copy is gone. It is never a secret that ends up on top. CI forces this race 2000 times per
+  runner; the rate measured is at most 9 in 2000, and the test fails above 2 % or on any case after an error.
+- macOS has no clipboard history an app can reach (`historyCleaned` is always false), and quitting leaves
+  the text in the pasteboard, so there is nothing to hand over on exit.
+
+The window is built in code, not from `tauri.conf.json`: a custom title bar, private web data,
+browser extensions off, navigation limited to the app's own origin, new windows denied, developer tools
+only in debug builds. The page blocks the right-click menu itself (`lib/harden.ts`) on every OS.
+
+- **Windows:** frameless, WebView2 private mode. `platform/windows/webview.rs` switches off autofill,
+  password autosave, browser accelerator keys, the default context menu and swipe navigation.
+- **macOS:** the system's traffic-light buttons over our title bar (the UI leaves room for them and hides
+  its own caption buttons). Some settings only exist before a `WKWebView` does, so `platform/macos/webview.rs`
+  hands Tauri our own configuration: a data store that keeps nothing on disk, Writing Tools and inline
+  predictions off (where the macOS version has them). It also switches off pop-up windows,
+  the fraudulent-site lookup, element full screen, back-forward gestures, magnification and link previews.
+- **Linux:** see `platform/linux/webview.rs` above.
 
 ## The UI (`app/ui`)
 
@@ -159,7 +238,9 @@ strings that never quote text.
 
 - The UI never receives a secret value from Rust, and Rust never logs or stores scanned text.
 - The window can reach only the app's own backend (CSP `connect-src ipc: http://ipc.localhost`).
-- `unsafe` is forbidden in the engine, the wire crate and the CLI, and confined to `app/src-tauri/src/win/`.
+- `unsafe` is forbidden in the engine, the wire crate and the CLI, and confined to
+  `app/src-tauri/src/platform/windows/`, `platform/macos/` and one library-loading call in
+  `platform/linux/tray.rs`.
 - Dependencies are pinned (`=` for Tauri and its plugins, exact versions in `package.json`), lockfiles are
   committed, and CI runs `cargo deny` for licenses and advisories.
 
@@ -167,9 +248,12 @@ The full analysis is in [THREAT_MODEL.md](THREAT_MODEL.md).
 
 ## Build and release
 
-- **CI** (`.github/workflows/ci.yml`): format, clippy with warnings denied, the Rust tests (Linux and
-  Windows, including the corpus gates), `cargo deny`, UI typecheck, lint, unit tests and the Playwright
-  suite against the mock backend. Workflows run with read-only permissions and actions are pinned by commit.
+- **CI** (`.github/workflows/ci.yml`): format, clippy with warnings denied, the Rust tests (Linux, Windows
+  and macOS, including the corpus gates), `cargo deny`, UI typecheck, lint, unit tests and the Playwright
+  suite against the mock backend. Two desktop jobs run the real app: on X11 under Xvfb, and on macOS 26
+  (Apple silicon) and macOS 15 (Intel), where the pasteboard tests, the desktop checks, the built app's
+  smoke run and the Playwright suite in WebKit run. Workflows run with read-only permissions and actions are
+  pinned by commit.
 - **Release** (`.github/workflows/release.yml`): a `v*` tag on `main` builds everything on GitHub's runners
   and nowhere else, with the runner's checkout path remapped out of the binaries. It produces the NSIS
   installer, the portable zip, `scrub` for four targets, `SHA256SUMS`, and build provenance attestations,

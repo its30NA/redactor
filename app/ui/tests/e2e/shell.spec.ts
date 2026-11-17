@@ -217,7 +217,8 @@ test.describe('motion', () => {
     expect(new Set(props)).toEqual(new Set(['transform', 'opacity']));
   });
 
-  test('idle_main_thread_is_calm', async ({ page, problems: _ }) => {
+  test('idle_main_thread_is_calm', async ({ page, browserName, problems: _ }) => {
+    test.skip(browserName !== 'chromium', 'reads Chromium-only CDP metrics');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await openApp(page);
     await page.evaluate(() => (document.documentElement.dataset.window = 'active'));

@@ -9,43 +9,51 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_notification::NotificationExt;
 
+use crate::cli;
 use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
-use crate::hotkey::{Hotkey, Key};
+use crate::hotkey::{self, Hotkey};
+use crate::pending::{Take, PENDING_FOR};
+use crate::platform::{self, HotkeyMode};
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
 use crate::tray;
-use crate::win;
 use crate::wipe::WipeReason;
 
 pub const MAIN: &str = "main";
 
-pub fn run() {
-    let settings_file = SettingsFile::in_appdata();
+/// Starts the app. Returns only when this desktop is not supported, before any window or
+/// Tauri call; otherwise the process ends inside the event loop.
+pub fn run() -> Result<(), platform::Unavailable> {
+    let platform = platform::native()?;
+    let settings_file = SettingsFile::for_os(platform.os);
     let settings = settings_file
         .as_ref()
         .map(SettingsFile::load)
-        .unwrap_or_default();
-    let shared: Shared = Arc::new(AppState::new(settings, settings_file));
+        .unwrap_or_default()
+        .without_unsupported(platform.shield);
+    let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform));
+    let reopen = shared.platform.reopen;
 
     let app = tauri::Builder::default()
-        // Must come first: a second launch focuses this window and exits.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main(app);
+        // Must come first: a second launch focuses this window, or cleans the clipboard when
+        // it carries `--scrub-clipboard`, and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if cli::scrub_requested(&args) {
+                hotkey_pressed(app);
+            } else {
+                show_main(app);
+            }
         }))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        let app = app.clone();
-                        std::thread::spawn(move || {
-                            let r = scrub_clipboard_now(&app);
-                            notify(&app, &r.notice());
-                        });
+                        hotkey_pressed(app);
                     }
                 })
                 .build(),
@@ -70,44 +78,56 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            let settings = state::state(&handle).settings();
+            let st = state::state(&handle);
+            let settings = st.settings();
             create_main_window(&handle, &settings)?;
-            tray::build(&handle, settings.content_protection)?;
-            if let Ok(hk) = Hotkey::parse(&settings.hotkey) {
-                // Another app may hold the key; the app still runs, and Settings can pick
-                // another one.
-                let _ = handle.global_shortcut().register(shortcut(&hk));
+            if st.platform.tray {
+                let shield = st.platform.shield.then_some(settings.content_protection);
+                tray::build(&handle, shield, st.platform.tray_click_opens_menu)?;
+            }
+            if st.platform.hotkey.mode() == HotkeyMode::Portal {
+                start_hotkey_in_background(&handle);
+            } else {
+                st.platform.hotkey.listen(&handle, Arc::new(hotkey_pressed));
+                if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
+                    // Another app may hold the key; the app still runs, and Settings can pick
+                    // another one.
+                    let _ = st.platform.hotkey.register(&handle, &hk);
+                }
             }
             start_idle_timer(handle.clone());
             let lock_handle = handle.clone();
-            win::lock::spawn(move |reason| {
+            st.platform.lock.spawn(Box::new(move |reason| {
                 let st = state::state(&lock_handle);
                 if st.settings().wipe_on_lock && st.wiper.has_content() {
                     state::wipe(&lock_handle, reason);
                 }
-            });
+            }));
             // Build the engine now, off the UI thread, so the first scan is fast.
             let warm = state::state(&handle);
             std::thread::spawn(move || {
                 warm.engines.get(true);
             });
+            if cli::scrub_requested(&args()) {
+                hotkey_pressed(&handle);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
             if window.label() != MAIN {
                 return;
             }
+            if let WindowEvent::Focused(true) = event {
+                scrub_if_pending(window.app_handle());
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
                 let st = state::state(app);
-                if st.settings().tray_mode {
+                if st.settings().tray_mode && st.platform.tray {
                     api.prevent_close();
                     let _ = window.hide();
                     if !st.tray_notice_shown.swap(true, Ordering::SeqCst) {
-                        notify(
-                            app,
-                            "Redactor is still running in the tray. Quit it from the tray menu.",
-                        );
+                        notify(app, st.platform.tray_notice);
                     }
                 } else {
                     quit(app);
@@ -117,30 +137,66 @@ pub fn run() {
         .build(tauri::generate_context!())
         .unwrap_or_else(|_| std::process::abort());
 
-    app.run(|app, event| {
+    app.run(move |app, event| {
+        if reopen(&event) {
+            show_main(app);
+        }
         if let RunEvent::Exit = event {
+            let st = state::state(app);
+            // Text the user copied from us stays pasteable after we are gone.
+            st.platform.clipboard.keep_after_exit();
             // Zeroize the session secrets on the way out.
-            state::state(app).wiper.wipe();
+            st.wiper.wipe();
         }
     });
+    Ok(())
+}
+
+/// The hotkey's start where the desktop binds it: that can take long (a person may be reading
+/// the desktop's dialog), so it runs on a thread of its own, never on the main thread. It holds
+/// the settings lock throughout, taken before `setup` goes on, so a settings change waits for
+/// it and the key it binds is the one the settings name.
+fn start_hotkey_in_background(app: &AppHandle) {
+    let app = app.clone();
+    let (held, lock_taken) = std::sync::mpsc::channel::<()>();
+    let started = std::thread::Builder::new()
+        .name("hotkey-start".into())
+        .spawn(move || {
+            let st = state::state(&app);
+            let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
+            let _ = held.send(());
+            st.platform.hotkey.listen(&app, Arc::new(hotkey_pressed));
+            if let Ok(hk) = Hotkey::parse(&st.settings().hotkey, st.platform.os) {
+                // The desktop may refuse the key; the app still runs, and Settings can ask for
+                // another one.
+                let _ = st.platform.hotkey.register(&app, &hk);
+            }
+        });
+    if started.is_ok() {
+        // Nothing else holds the lock while `setup` runs: this waits only for the thread to start.
+        let _ = lock_taken.recv();
+    }
 }
 
 fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<WebviewWindow> {
-    let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    let st = state::state(app);
+    // Where the OS cannot hide the window, it is never marked as hidden.
+    let protected = st.platform.shield && settings.content_protection;
+    let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Redactor")
         .inner_size(1280.0, 800.0)
         .min_inner_size(960.0, 640.0)
         .center()
         .decorations(false)
-        .content_protected(settings.content_protection)
+        .content_protected(protected)
         .incognito(true)
         .browser_extensions_enabled(false)
         .additional_browser_args(crate::browser_args::BROWSER_ARGS)
         .devtools(cfg!(debug_assertions))
         .on_navigation(allowed_origin)
-        .on_new_window(|_url, _features| NewWindowResponse::Deny)
-        .build()?;
-    win::webview::harden(&window);
+        .on_new_window(|_url, _features| NewWindowResponse::Deny);
+    let window = st.platform.webview.prepare(builder).build()?;
+    st.platform.webview.harden(&window);
     Ok(window)
 }
 
@@ -163,7 +219,9 @@ pub fn show_main(app: &AppHandle) {
 }
 
 pub fn quit(app: &AppHandle) {
-    state::state(app).wiper.wipe();
+    let st = state::state(app);
+    st.platform.clipboard.keep_after_exit();
+    st.wiper.wipe();
     app.exit(0);
 }
 
@@ -176,14 +234,76 @@ pub fn notify(app: &AppHandle, body: &str) {
         .show();
 }
 
+/// This process's arguments. One that is not valid Unicode is kept lossily (it is never the
+/// flag), where `std::env::args` would panic.
+fn args() -> Vec<String> {
+    std::env::args_os()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// A hotkey press, the tray's scrub item or `--scrub-clipboard`. Where the clipboard needs the
+/// window in front and it is not, the window comes back and the scrub waits for focus, up to
+/// [`PENDING_FOR`]. Otherwise the clipboard is scrubbed now, off the calling thread.
+pub fn hotkey_pressed(app: &AppHandle) {
+    let st = state::state(app);
+    if st.platform.clipboard.needs_focus() && !main_is_focused(app) {
+        // Armed before the window is asked for, so the focus-in can never come first.
+        let armed = st.pending.arm(Instant::now());
+        show_main(app);
+        notify(app, "Bring Redactor to the front to clean the clipboard");
+        // The window may never come to the front: the user still hears that nothing ran.
+        let app = app.clone();
+        let _ = std::thread::Builder::new()
+            .name("pending-expiry".into())
+            .spawn(move || {
+                std::thread::sleep(PENDING_FOR);
+                if state::state(&app).pending.expire(armed, Instant::now()) {
+                    notify(&app, NOT_CLEANED);
+                }
+            });
+    } else {
+        // A focus-in still queued from an earlier press must not scrub a second time.
+        st.pending.clear();
+        scrub_and_notify(app);
+    }
+}
+
+/// A press waited for the window in vain.
+const NOT_CLEANED: &str = "Not cleaned: Redactor's window did not come to the front";
+
+/// The main window came to the front: runs the scrub a hotkey press left waiting.
+fn scrub_if_pending(app: &AppHandle) {
+    match state::state(app).pending.take_on_focus(Instant::now()) {
+        Take::Run => scrub_and_notify(app),
+        Take::Expired => notify(app, NOT_CLEANED),
+        Take::Nothing => {}
+    }
+}
+
+fn main_is_focused(app: &AppHandle) -> bool {
+    app.get_webview_window(MAIN)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false)
+}
+
+/// Scrubs the clipboard on a new thread and shows the result as a notification.
+fn scrub_and_notify(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let r = scrub_clipboard_now(&app);
+        notify(&app, &r.notice());
+    });
+}
+
 /// Scrubs the clipboard with the current settings and tells the UI.
-pub fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
+fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
     let st = state::state(app);
     let _one_at_a_time = st.scrub_lock.lock().unwrap_or_else(|e| e.into_inner());
     let s = st.settings();
     let engine = st.engines.get(s.strip_invisible);
     let r = clipscrub::scrub(
-        &win::clipboard::WinClipboard,
+        &*st.platform.clipboard,
         &engine,
         s.sensitivity,
         s.pii,
@@ -204,106 +324,10 @@ fn start_idle_timer(app: AppHandle) {
     });
 }
 
-pub fn shortcut(hk: &Hotkey) -> Shortcut {
-    let mut mods = Modifiers::empty();
-    if hk.ctrl {
-        mods |= Modifiers::CONTROL;
-    }
-    if hk.shift {
-        mods |= Modifiers::SHIFT;
-    }
-    if hk.alt {
-        mods |= Modifiers::ALT;
-    }
-    Shortcut::new(Some(mods), code(hk.key))
-}
-
-fn code(k: Key) -> Code {
-    const LETTERS: [Code; 26] = [
-        Code::KeyA,
-        Code::KeyB,
-        Code::KeyC,
-        Code::KeyD,
-        Code::KeyE,
-        Code::KeyF,
-        Code::KeyG,
-        Code::KeyH,
-        Code::KeyI,
-        Code::KeyJ,
-        Code::KeyK,
-        Code::KeyL,
-        Code::KeyM,
-        Code::KeyN,
-        Code::KeyO,
-        Code::KeyP,
-        Code::KeyQ,
-        Code::KeyR,
-        Code::KeyS,
-        Code::KeyT,
-        Code::KeyU,
-        Code::KeyV,
-        Code::KeyW,
-        Code::KeyX,
-        Code::KeyY,
-        Code::KeyZ,
-    ];
-    const DIGITS: [Code; 10] = [
-        Code::Digit0,
-        Code::Digit1,
-        Code::Digit2,
-        Code::Digit3,
-        Code::Digit4,
-        Code::Digit5,
-        Code::Digit6,
-        Code::Digit7,
-        Code::Digit8,
-        Code::Digit9,
-    ];
-    const FKEYS: [Code; 24] = [
-        Code::F1,
-        Code::F2,
-        Code::F3,
-        Code::F4,
-        Code::F5,
-        Code::F6,
-        Code::F7,
-        Code::F8,
-        Code::F9,
-        Code::F10,
-        Code::F11,
-        Code::F12,
-        Code::F13,
-        Code::F14,
-        Code::F15,
-        Code::F16,
-        Code::F17,
-        Code::F18,
-        Code::F19,
-        Code::F20,
-        Code::F21,
-        Code::F22,
-        Code::F23,
-        Code::F24,
-    ];
-    match k {
-        Key::Letter(c) => LETTERS[(c as u8 - b'A') as usize],
-        Key::Digit(d) => DIGITS[d as usize],
-        Key::F(n) => FKEYS[(n - 1) as usize],
-        Key::Space => Code::Space,
-        Key::Insert => Code::Insert,
-        Key::Delete => Code::Delete,
-        Key::Home => Code::Home,
-        Key::End => Code::End,
-        Key::PageUp => Code::PageUp,
-        Key::PageDown => Code::PageDown,
-        Key::Backspace => Code::Backspace,
-        Key::Enter => Code::Enter,
-        Key::Tab => Code::Tab,
-    }
-}
-
 /// Validates, applies and stores new settings. The hotkey changes first: if another app holds
-/// the new key, the old one stays registered and nothing else changes.
+/// the new key, the old one stays registered and nothing else changes. Where the desktop binds
+/// the key (the portal) and refuses the new one, nothing else changes either, and no hotkey is
+/// set until another one is picked.
 pub fn apply_settings(app: &AppHandle, incoming: Settings) -> Result<Settings, String> {
     change_settings(app, |_| incoming)
 }
@@ -319,26 +343,33 @@ fn change_settings(
     let st = state::state(app);
     let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
     let prev = st.settings();
-    let next = change(&prev).validated().map_err(|e| e.to_string())?;
+    let os = st.platform.os;
+    let next = change(&prev)
+        .validated(os)
+        .map_err(|e| e.to_string())?
+        .without_unsupported(st.platform.shield);
 
     if next.hotkey != prev.hotkey {
-        let new_hk = Hotkey::parse(&next.hotkey).map_err(|e| e.to_string())?;
-        let gs = app.global_shortcut();
-        let old = Hotkey::parse(&prev.hotkey).ok().map(|h| shortcut(&h));
-        if let Some(old) = old {
-            let _ = gs.unregister(old);
-        }
-        if gs.register(shortcut(&new_hk)).is_err() {
-            if let Some(old) = old {
-                let _ = gs.register(old);
+        let new_hk = Hotkey::parse(&next.hotkey, os).map_err(|e| e.to_string())?;
+        let old = Hotkey::parse(&prev.hotkey, os).ok();
+        let register = |h: &Hotkey| st.platform.hotkey.register(app, h).is_ok();
+        let unregister = |h: &Hotkey| st.platform.hotkey.unregister(app, h);
+        if st.platform.hotkey.mode() == HotkeyMode::Portal {
+            // A refusal leaves no key: the old one ended with its session when it was unbound.
+            if !hotkey::rebind(old.as_ref(), &new_hk, register, unregister) {
+                return Err(format!(
+                    "Your desktop did not accept {}. No hotkey is set now; pick another in Settings.",
+                    next.hotkey
+                ));
             }
+        } else if !hotkey::replace_registration(old.as_ref(), &new_hk, register, unregister) {
             return Err(format!(
                 "Another app already uses {}. Kept {}.",
                 next.hotkey, prev.hotkey
             ));
         }
     }
-    if next.content_protection != prev.content_protection {
+    if st.platform.shield && next.content_protection != prev.content_protection {
         if let Some(w) = app.get_webview_window(MAIN) {
             let _ = w.set_content_protected(next.content_protection);
         }

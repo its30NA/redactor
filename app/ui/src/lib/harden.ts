@@ -7,6 +7,15 @@
  */
 export const WEBRTC_GLOBALS = ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel'] as const;
 
+/**
+ * No right-click menu anywhere in the window, on every system. WKWebView has no setting for
+ * it (its menu offers Look Up, Share and Services, which hand the selection to other apps), so
+ * the page cancels the event itself.
+ */
+export function blockContextMenu(target: EventTarget = globalThis): void {
+  target.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
 export function removeWebRtc(target: object = globalThis): void {
   const t = target as Record<string, unknown>;
   for (const name of WEBRTC_GLOBALS) {

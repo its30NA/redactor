@@ -76,18 +76,22 @@ jobs:
           exit 1
       - name: Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # The app crate needs WebKitGTK on Linux; its tests run in `app-windows` below, and this
+      # job already requires the whole CI run (Linux and macOS app jobs included) to be green.
       - name: Tests (Rust workspace)
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude redactor-app --locked
       # The same dependency policy as CI, re-run here so an advisory published since the last
       # CI run stops the release.
       - name: Install cargo-deny
         run: cargo install --locked --version 0.20.2 cargo-deny
       - name: Dependency policy (Windows graph, includes the Tauri shell)
         run: cargo deny check
-      - name: Dependency policy (Linux, scrub)
-        run: cargo deny --exclude redactor-app --target x86_64-unknown-linux-gnu check
-      - name: Dependency policy (macOS, scrub)
-        run: cargo deny --exclude redactor-app --target aarch64-apple-darwin check
+      - name: Dependency policy (macOS, includes the Tauri shell)
+        run: |
+          cargo deny --target aarch64-apple-darwin check
+          cargo deny --target x86_64-apple-darwin check
+      - name: Dependency policy (Linux, includes the Tauri shell)
+        run: cargo deny --target x86_64-unknown-linux-gnu check
 
   app-windows:
     name: Windows app

@@ -2400,7 +2400,9 @@ fn quoted_value(text: &str, p: usize) -> Option<(Option<Range<usize>>, usize, bo
                 return Some((None, i + 1, false));
             }
             b'\\' if q != b'`' => i += 2,
+            // It ends where `line_end` does: before `\r\n`, not inside it.
             b'\n' => return Some((None, i, false)),
+            b'\r' if b.get(i + 1) == Some(&b'\n') => return Some((None, i, false)),
             c if c == q => {
                 let v = (i > p + 1).then_some(p + 1..i);
                 return Some((v, i + 1, true));

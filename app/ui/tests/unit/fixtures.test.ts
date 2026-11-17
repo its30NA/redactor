@@ -33,6 +33,20 @@ describe('fixtures', () => {
     expect(Object.keys(FIXTURES).map((k) => `${k}.json`).sort()).toEqual([...files].sort());
   });
 
+  test('app_info: the hotkey mode and the focus flag may be absent (Windows, macOS)', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo(base, 'i')).toEqual([]);
+    for (const hotkey of ['keys', 'portal', 'command']) {
+      expect(schema.appInfo({ ...base, hotkey, clipboardNeedsFocus: true }, 'i')).toEqual([]);
+    }
+    expect(schema.appInfo({ ...base, hotkey: 'other' }, 'i')).toEqual([
+      'i.hotkey: expected one of keys | portal | command, got other',
+    ]);
+    expect(schema.appInfo({ ...base, clipboardNeedsFocus: 'yes' }, 'i')).toEqual([
+      'i.clipboardNeedsFocus: expected boolean',
+    ]);
+  });
+
   test('validators reject a finding that carries a value field', () => {
     const scan = FIXTURES['scan-demo'] as ScanResponse;
     const leaky = { ...scan.findings[0], value: 'x' };

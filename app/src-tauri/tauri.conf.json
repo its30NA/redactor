@@ -49,6 +49,10 @@
         "installMode": "currentUser",
         "startMenuFolder": "Redactor"
       }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "13.0"
     }
   }
 }

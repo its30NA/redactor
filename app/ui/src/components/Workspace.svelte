@@ -8,10 +8,13 @@
   import InputPane from './InputPane.svelte';
   import OutputPane from './OutputPane.svelte';
   import ScanSeam from './ScanSeam.svelte';
+  import { keyOsFrom } from '../lib/keys';
   import { workspace } from '../lib/workspace.svelte';
   import type { AppInfo } from '../lib/types';
 
   let { info }: { info: AppInfo | null } = $props();
+  // Windows keys until app_info answers.
+  const os = $derived(keyOsFrom(info?.platform ?? ''));
 
   const narrow = new MediaQuery('(max-width: 1179px)', false);
   const short = new MediaQuery('(max-height: 700px)', false);
@@ -20,9 +23,9 @@
 </script>
 
 <div class="workspace" class:collapsed>
-  <InputPane compact={short.current} />
+  <InputPane compact={short.current} {os} />
   <ScanSeam busy={workspace.busy} active={workspace.ready} />
-  <OutputPane />
+  <OutputPane {os} />
   <FindingsRail {info} {collapsed} oncollapse={(c) => (userCollapsed = c)} />
 </div>
 

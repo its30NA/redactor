@@ -28,8 +28,10 @@ test.describe('shortcuts', () => {
     await openApp(page);
     await pasted(page);
     await page.getByTestId('input-editor').locator('.cm-content').click();
-    await page.keyboard.press('Control+End');
-    await page.keyboard.press('Control+v');
+    // Inside the editor a paste is the browser's own paste event, so the host's keys apply:
+    // Cmd+End and Cmd+V on a Mac (where Ctrl+V is "page down").
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.press('ControlOrMeta+v');
     await expect(page.getByTestId('input-count')).toContainText(`${(demoInput().length * 2).toLocaleString('en')} chars`);
   });
 
@@ -130,7 +132,7 @@ test.describe('scheduling and size', () => {
     await expect.poll(async () => (await scans(page)).length).toBe(1);
     // Type while the first scan is still running: its response no longer matches the text.
     await page.getByTestId('input-editor').locator('.cm-content').click();
-    await page.keyboard.press('Control+End');
+    await page.keyboard.press('ControlOrMeta+End'); // the host's key: Cmd+End on a Mac
     await page.keyboard.type('!');
     // The second scan starts only when the first has come back; by then it must be dropped.
     await expect.poll(async () => (await scans(page)).length, { timeout: 5000 }).toBe(2);

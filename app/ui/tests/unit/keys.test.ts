@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'vitest';
-import { actionFor, hotkeyFrom, hotkeyProblem, SHORTCUTS, type KeyContext, type KeyLike } from '../../src/lib/keys';
+import cases from '../../../src-tauri/tests/fixtures/hotkey_cases.json';
+import {
+  actionFor,
+  hotkeyFrom,
+  hotkeyProblem,
+  keyOsFrom,
+  keysFor,
+  SHORTCUTS,
+  type KeyContext,
+  type KeyLike,
+  type KeyOs,
+} from '../../src/lib/keys';
 
 const key = (combo: string, extra: Partial<KeyLike> = {}): KeyLike => {
   const parts = combo.split('+');
@@ -16,7 +27,7 @@ const key = (combo: string, extra: Partial<KeyLike> = {}): KeyLike => {
   };
 };
 
-const free: KeyContext = { inTextField: false, overlayOpen: false };
+const free: KeyContext = { inTextField: false, overlayOpen: false, os: 'windows' };
 
 describe('keyboard map', () => {
   test('every shortcut maps to its action', () => {
@@ -51,7 +62,7 @@ describe('keyboard map', () => {
         'wipe',
       ].sort(),
     );
-    expect(SHORTCUTS.find((s) => s.action === 'copySafe')?.keys).toEqual(['Ctrl', 'Shift', 'C']);
+    expect(keysFor('copySafe', 'windows')).toEqual(['Ctrl', 'Shift', 'C']);
   });
 
   test('near misses do nothing', () => {
@@ -69,13 +80,13 @@ describe('keyboard map', () => {
   });
 
   test('inside a native text field, Ctrl+V is the field’s own paste', () => {
-    const ctx: KeyContext = { inTextField: true, overlayOpen: true };
+    const ctx: KeyContext = { inTextField: true, overlayOpen: true, os: 'windows' };
     expect(actionFor(key('Ctrl+v'), ctx)).toBeNull();
     expect(actionFor(key('Ctrl+k'), ctx)).toBe('palette');
   });
 
   test('while a sheet, dialog or the palette is open only palette, wipe and escape pass', () => {
-    const ctx: KeyContext = { inTextField: false, overlayOpen: true };
+    const ctx: KeyContext = { inTextField: false, overlayOpen: true, os: 'windows' };
     expect(actionFor(key('Ctrl+o'), ctx)).toBeNull();
     expect(actionFor(key('Ctrl+2'), ctx)).toBeNull();
     expect(actionFor(key('Ctrl+Shift+c'), ctx)).toBeNull();
@@ -91,28 +102,63 @@ describe('keyboard map', () => {
 
 describe('global hotkey capture', () => {
   test('formats a pressed combination the way the shell parses it', () => {
-    expect(hotkeyFrom(key('Ctrl+Alt+r'))).toBe('Ctrl+Alt+R');
-    expect(hotkeyFrom(key('Ctrl+Shift+Alt+9'))).toBe('Ctrl+Shift+Alt+9');
-    expect(hotkeyFrom(key('Ctrl+Alt+F8', { code: 'F8' }))).toBe('Ctrl+Alt+F8');
-    expect(hotkeyFrom(key('Ctrl+Alt+ ', { code: 'Space' }))).toBe('Ctrl+Alt+Space');
+    expect(hotkeyFrom(key('Ctrl+Alt+r'), 'windows')).toBe('Ctrl+Alt+R');
+    expect(hotkeyFrom(key('Ctrl+Shift+Alt+9'), 'windows')).toBe('Ctrl+Shift+Alt+9');
+    expect(hotkeyFrom(key('Ctrl+Alt+F8', { code: 'F8' }), 'windows')).toBe('Ctrl+Alt+F8');
+    expect(hotkeyFrom(key('Ctrl+Alt+ ', { code: 'Space' }), 'windows')).toBe('Ctrl+Alt+Space');
     // Letters and digits follow the physical key, so Shift or the layout do not rename them.
-    expect(hotkeyFrom({ ...key('Ctrl+Alt+z'), key: 'y', code: 'KeyZ' })).toBe('Ctrl+Alt+Z');
+    expect(hotkeyFrom({ ...key('Ctrl+Alt+z'), key: 'y', code: 'KeyZ' }, 'windows')).toBe('Ctrl+Alt+Z');
   });
 
   test('modifier-only presses are still being typed', () => {
-    expect(hotkeyFrom(key('Ctrl+Control', { code: 'ControlLeft' }))).toBeNull();
-    expect(hotkeyFrom(key('Ctrl+Alt+Alt', { code: 'AltLeft' }))).toBeNull();
+    expect(hotkeyFrom(key('Ctrl+Control', { code: 'ControlLeft' }), 'windows')).toBeNull();
+    expect(hotkeyFrom(key('Ctrl+Alt+Alt', { code: 'AltLeft' }), 'windows')).toBeNull();
   });
 
   test('refuses weak and reserved combinations', () => {
-    expect(hotkeyProblem('Ctrl+Alt+R')).toBeNull();
-    expect(hotkeyProblem('Ctrl+Shift+F9')).toBeNull();
-    expect(hotkeyProblem('R')).toMatch(/two modifier/);
-    expect(hotkeyProblem('Ctrl+R')).toMatch(/two modifier/);
-    expect(hotkeyProblem('Ctrl+Alt+Space')).toMatch(/reserved/);
-    expect(hotkeyProblem('Ctrl+Alt+A')).toMatch(/reserved/);
-    expect(hotkeyProblem('Ctrl+Shift+C')).toMatch(/Redactor/);
-    expect(hotkeyProblem('Ctrl+Shift+X')).toMatch(/Redactor/);
-    expect(hotkeyProblem('Ctrl+Alt+Delete')).toMatch(/Windows/);
+    expect(hotkeyProblem('Ctrl+Alt+R', 'windows')).toBeNull();
+    expect(hotkeyProblem('Ctrl+Shift+F9', 'windows')).toBeNull();
+    expect(hotkeyProblem('R', 'windows')).toMatch(/two modifier/);
+    expect(hotkeyProblem('Ctrl+R', 'windows')).toMatch(/two modifier/);
+    expect(hotkeyProblem('Ctrl+Alt+Space', 'windows')).toMatch(/reserved/);
+    expect(hotkeyProblem('Ctrl+Alt+A', 'windows')).toMatch(/reserved/);
+    expect(hotkeyProblem('Ctrl+Shift+C', 'windows')).toMatch(/Redactor/);
+    expect(hotkeyProblem('Ctrl+Shift+X', 'windows')).toMatch(/Redactor/);
+    expect(hotkeyProblem('Ctrl+Alt+Delete', 'windows')).toMatch(/Windows/);
+  });
+});
+
+describe('per OS', () => {
+  type Case = { os: KeyOs; combo: string; expect: string; rust_only?: boolean };
+
+  test('every case in the shared hotkey table', () => {
+    const rows = (cases as Case[]).filter((c) => !c.rust_only);
+    expect(rows.length).toBeGreaterThan(40);
+    for (const c of rows) {
+      const want = c.expect === c.combo ? null : c.expect;
+      expect(hotkeyProblem(c.combo, c.os), `${c.os} ${c.combo}`).toBe(want);
+    }
+  });
+
+  test('macOS shortcuts use Cmd', () => {
+    const mac: KeyContext = { inTextField: false, overlayOpen: false, os: 'macos' };
+    expect(actionFor(key('k', { metaKey: true }), mac)).toBe('palette');
+    expect(actionFor(key('Ctrl+k'), mac)).toBeNull();
+    expect(keysFor('copySafe', 'macos')).toEqual(['Cmd', 'Shift', 'C']);
+    expect(keysFor('copySafe', 'windows')).toEqual(['Ctrl', 'Shift', 'C']);
+  });
+
+  test('hotkey capture names Cmd on macOS and Super on Linux', () => {
+    expect(hotkeyFrom(key('Shift+r', { metaKey: true }), 'macos')).toBe('Shift+Cmd+R');
+    expect(hotkeyFrom(key('Shift+r', { metaKey: true }), 'linux')).toBe('Shift+Super+R');
+    // On Windows the Windows key is the system's: it is left out, as before.
+    expect(hotkeyFrom(key('Ctrl+Alt+r', { metaKey: true }), 'windows')).toBe('Ctrl+Alt+R');
+  });
+
+  test('an unknown platform keeps the Windows rules', () => {
+    expect(keyOsFrom('unsupported')).toBe('windows');
+    expect(keyOsFrom('windows-x86_64')).toBe('windows');
+    expect(keyOsFrom('macos')).toBe('macos');
+    expect(keyOsFrom('linux')).toBe('linux');
   });
 });

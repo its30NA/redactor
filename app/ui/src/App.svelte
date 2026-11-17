@@ -30,7 +30,8 @@
   import Workspace from './components/Workspace.svelte';
   import { appInfo, onEvent } from './lib/api';
   import { appearance, applyAppearance } from './lib/appearance.svelte';
-  import { actionFor, keysFor, type Action } from './lib/keys';
+  import { actionFor, keyOsFrom, keysFor, type Action } from './lib/keys';
+  import { shieldNote } from './lib/platform';
   import { session } from './lib/session.svelte';
   import { settings } from './lib/settings.svelte';
   import { toasts } from './lib/toast.svelte';
@@ -38,6 +39,8 @@
   import type { AppInfo, Sensitivity, ThemeSetting } from './lib/types';
 
   let info = $state<AppInfo | null>(null);
+  // Windows rules until app_info answers, so nothing changes on Windows.
+  const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
   let settingsOpen = $state(false);
   let rememberedOpen = $state(false);
   let addingSecret = $state(false);
@@ -66,7 +69,7 @@
         // Like Ctrl+Shift+X: a sheet or dialog may hold a typed secret.
         closeOverlays();
         session.set([]);
-        workspace.wipe(reason);
+        workspace.wipe(reason, keyOs);
       }),
       onEvent('session-changed', (items) => session.set(items)),
       onEvent('settings-changed', (s) => (settings.value = s)),
@@ -120,10 +123,14 @@
   const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en')} ${n === 1 ? one : many}`;
 
   const pill = $derived.by<{ tone: 'ok' | 'busy' | 'warn' | 'alert'; segments: PillSegment[]; announce?: string }>(() => {
-    const shield: PillSegment = settings.value.contentProtection
-      ? { text: 'Shield on', icon: ShieldCheck }
-      : { text: 'Shield off', icon: ShieldOff };
-    const off = !settings.value.contentProtection;
+    // No shield segment (and no warning about it) where the desktop cannot hide the window.
+    const noShield = shieldNote(info, keyOs) !== null;
+    const shield: PillSegment[] = noShield
+      ? []
+      : settings.value.contentProtection
+        ? [{ text: 'Shield on', icon: ShieldCheck }]
+        : [{ text: 'Shield off', icon: ShieldOff }];
+    const off = !noShield && !settings.value.contentProtection;
     const res = workspace.response;
     if (workspace.tooLarge) return { tone: 'warn', segments: [{ text: 'Offline' }, { text: 'Too large to scan' }] };
     if (workspace.hasText && (workspace.busy || workspace.stale || !res))
@@ -139,7 +146,7 @@
         announce: `Offline. ${n ? `${plural(n, 'secret')} neutralized` : 'Nothing sensitive'}, ${verified}.${off ? ' Shield off.' : ''}`,
       };
     }
-    return { tone: off ? 'warn' : 'ok', segments: [{ text: 'Offline' }, shield] };
+    return { tone: off ? 'warn' : 'ok', segments: [{ text: 'Offline' }, ...shield] };
   });
 
   // ── Keyboard ──────────────────────────────────────────────────────
@@ -194,7 +201,7 @@
     const t = e.target instanceof HTMLElement ? e.target : null;
     const inTextField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || !!t.closest('.cm-content'));
     if (e.defaultPrevented) return;
-    const action = actionFor(e, { inTextField, overlayOpen: overlayOpen() });
+    const action = actionFor(e, { inTextField, overlayOpen: overlayOpen(), os: keyOs });
     if (!action || action === 'escape') return;
     e.preventDefault();
     run(action);
@@ -215,16 +222,16 @@
   const setPii = (pii: boolean) => workspace.rescanAfter(settings.update({ pii }));
 
   const commands = $derived<Command[]>([
-    { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste'), hint: 'clipboard', run: () => run('paste') },
-    { id: 'copy', label: 'Copy safe text', icon: Copy, keys: keysFor('copySafe'), disabled: !workspace.ready, run: () => run('copySafe') },
-    { id: 'open', label: 'Open a text file', icon: FolderOpen, keys: keysFor('open'), hint: 'file load', run: () => run('open') },
-    { id: 'save', label: 'Save a safe copy', icon: Save, keys: keysFor('save'), hint: 'file export', disabled: !workspace.ready, run: () => run('save') },
-    { id: 'wipe', label: 'Wipe both panes', icon: Eraser, keys: keysFor('wipe'), hint: 'clear erase', run: () => run('wipe') },
+    { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste', keyOs), hint: 'clipboard', run: () => run('paste') },
+    { id: 'copy', label: 'Copy safe text', icon: Copy, keys: keysFor('copySafe', keyOs), disabled: !workspace.ready, run: () => run('copySafe') },
+    { id: 'open', label: 'Open a text file', icon: FolderOpen, keys: keysFor('open', keyOs), hint: 'file load', run: () => run('open') },
+    { id: 'save', label: 'Save a safe copy', icon: Save, keys: keysFor('save', keyOs), hint: 'file export', disabled: !workspace.ready, run: () => run('save') },
+    { id: 'wipe', label: 'Wipe both panes', icon: Eraser, keys: keysFor('wipe', keyOs), hint: 'clear erase', run: () => run('wipe') },
     ...(['relaxed', 'balanced', 'paranoid'] as const).map((level) => ({
       id: `sens-${level}`,
       label: `Sensitivity: ${level[0]?.toUpperCase()}${level.slice(1)}`,
       icon: Gauge,
-      keys: keysFor(`sensitivity:${level}`),
+      keys: keysFor(`sensitivity:${level}`, keyOs),
       hint: settings.value.sensitivity === level ? 'current' : undefined,
       run: () => setSensitivity(level),
     })),
@@ -262,7 +269,7 @@
 <Aurora />
 
 <div class="app" data-ready={settings.loaded ? '' : undefined}>
-  <TitleBar>
+  <TitleBar os={keyOs}>
     {#snippet status()}
       <StatusPill tone={pill.tone} segments={pill.segments} announce={pill.announce} />
     {/snippet}
@@ -306,6 +313,7 @@
 
   <div class="dock-wrap">
     <Dock
+      os={keyOs}
       bind:sensitivity={settings.value.sensitivity}
       bind:pii={settings.value.pii}
       onsensitivity={(sensitivity) => workspace.rescanAfter(settings.update({ sensitivity }))}
@@ -320,9 +328,9 @@
 <Toast />
 
 <SettingsSheet bind:open={settingsOpen} {info} />
-<RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} />
+<RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
-<FirstRun bind:open={firstRunOpen} />
+<FirstRun bind:open={firstRunOpen} shield={shieldNote(info, keyOs) === null} os={keyOs} {info} />
 
 <style>
   .app {
