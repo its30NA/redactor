@@ -146,7 +146,17 @@ export interface AppInfo {
   tray: boolean;
   /** The window can be hidden from screenshots and screen sharing. */
   shield: boolean;
+  /** How a hotkey press reaches the app. Absent (Windows, macOS) means `keys`. */
+  hotkey?: HotkeyMode;
+  /** The clipboard works only while the window is in front. Absent means false. */
+  clipboardNeedsFocus?: boolean;
 }
+
+/**
+ * `keys`: the app registers the key from Settings. `portal`: the desktop binds it and may ask
+ * the user. `command`: the app holds no key; a desktop shortcut runs `redactor --scrub-clipboard`.
+ */
+export type HotkeyMode = 'keys' | 'portal' | 'command';
 
 export interface OpenedFile {
   name: string;

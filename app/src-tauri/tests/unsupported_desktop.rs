@@ -23,10 +23,18 @@ fn no_display_points_to_the_cli_and_exits_2() {
 }
 
 #[test]
-fn wayland_is_refused_by_name() {
-    let out = run_app(&[("WAYLAND_DISPLAY", "wayland-test")]);
+fn an_unreachable_wayland_compositor_is_refused() {
+    // An empty runtime folder of its own: no socket by that name can exist, so the app never
+    // reaches the desktop this runs on.
+    let runtime = std::env::temp_dir().join(format!("redactor-no-wayland-{}", std::process::id()));
+    std::fs::create_dir_all(&runtime).unwrap();
+    let out = run_app(&[
+        ("XDG_RUNTIME_DIR", runtime.to_str().unwrap()),
+        ("WAYLAND_DISPLAY", "wayland-test"),
+    ]);
+    let _ = std::fs::remove_dir(&runtime);
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("Wayland"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Wayland compositor"));
     assert!(out.stdout.is_empty());
 }
 

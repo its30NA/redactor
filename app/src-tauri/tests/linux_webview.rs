@@ -5,8 +5,10 @@
 //! `DISPLAY` points at it too. Only `tools/ci/x11-tests.sh` sets both, on its own Xvfb.
 #![cfg(target_os = "linux")]
 
+#[path = "support/webkit_settings.rs"]
+mod webkit_settings;
+
 use redactor_app::platform::linux::webview::harden_settings;
-use webkit2gtk::glib::{self, prelude::ObjectExt};
 use webkit2gtk::{Settings, SettingsExt};
 
 /// Initialises GTK on the test display, never on the desktop this runs from.
@@ -21,12 +23,6 @@ fn init_gtk() {
     gtk::init().expect("GTK on the test display");
 }
 
-/// True when this WebKitGTK marks the setting `name` deprecated (it then ignores it).
-fn retired(s: &Settings, name: &str) -> bool {
-    s.find_property(name)
-        .is_none_or(|p| p.flags().contains(glib::ParamFlags::DEPRECATED))
-}
-
 #[test]
 #[ignore = "needs a throwaway X display: run tools/ci/x11-tests.sh"]
 fn settings_are_hardened() {
@@ -37,30 +33,5 @@ fn settings_are_hardened() {
 
     harden_settings(&s);
 
-    // Newer WebKitGTK (2.52 here) marks these two deprecated: it no longer prefetches DNS, and it
-    // ignores the auditing setting. Where they still work, they are off.
-    if !retired(&s, "enable-dns-prefetching") {
-        assert!(!s.enables_dns_prefetching(), "DNS prefetching");
-    }
-    if !retired(&s, "enable-hyperlink-auditing") {
-        assert!(!s.enables_hyperlink_auditing(), "hyperlink auditing");
-    }
-    assert!(!s.enables_webrtc(), "WebRTC");
-    assert!(!s.enables_media_stream(), "media stream");
-    assert!(!s.enables_page_cache(), "page cache");
-    assert!(!s.enables_webgl(), "WebGL");
-    assert!(!s.enables_webaudio(), "WebAudio");
-    assert!(
-        !s.enables_back_forward_navigation_gestures(),
-        "back/forward gestures"
-    );
-    assert!(
-        !s.is_javascript_can_open_windows_automatically(),
-        "windows opened by script"
-    );
-    assert_eq!(
-        s.enables_developer_extras(),
-        cfg!(debug_assertions),
-        "developer extras only in debug builds"
-    );
+    webkit_settings::assert_hardened(&s);
 }

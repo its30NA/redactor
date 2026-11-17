@@ -3,7 +3,7 @@
  * Windows texts are the ones the app had before the port, byte for byte.
  */
 import type { KeyOs } from './keys';
-import type { AppInfo } from './types';
+import type { AppInfo, HotkeyMode } from './types';
 
 const pick = (os: KeyOs, windows: string, linux: string, macos: string): string =>
   os === 'macos' ? macos : os === 'linux' ? linux : windows;
@@ -66,3 +66,27 @@ export const shieldNote = (info: Pick<AppInfo, 'shield'> | null, os: KeyOs): str
 /** Why "Keep running in the tray" is off and cannot be turned on, or null when there is a tray. */
 export const trayNote = (info: Pick<AppInfo, 'tray'> | null): string | null =>
   info?.tray === false ? 'This desktop shows no tray, so closing the window quits Redactor.' : null;
+
+/** How a hotkey press reaches the app; `keys` where app_info does not say (Windows, macOS) or has not answered. */
+export const hotkeyMode = (info: Pick<AppInfo, 'hotkey'> | null): HotkeyMode => info?.hotkey ?? 'keys';
+
+/** What the desktop shortcut runs where the app cannot hold a key itself. */
+export const SCRUB_COMMAND = 'redactor --scrub-clipboard';
+
+/** How the hotkey works on this desktop, or null where the app registers the key itself. */
+export const hotkeyNote = (info: Pick<AppInfo, 'hotkey'> | null): string | null => {
+  switch (hotkeyMode(info)) {
+    case 'portal':
+      return 'Your desktop may ask you to confirm this key, or let you pick another in its own keyboard settings.';
+    case 'command':
+      return 'This desktop does not let apps set a hotkey. Add a shortcut in its keyboard settings that runs:';
+    default:
+      return null;
+  }
+};
+
+/** Why the hotkey brings the window forward, or null where the clipboard works in the background. */
+export const focusNote = (info: Pick<AppInfo, 'clipboardNeedsFocus'> | null): string | null =>
+  info?.clipboardNeedsFocus === true
+    ? 'On this desktop Redactor can reach the clipboard only while its window is in front. The hotkey brings it forward first.'
+    : null;

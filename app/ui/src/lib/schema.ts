@@ -2,9 +2,10 @@
  * Runtime validators for the IPC contract in `types.ts`.
  *
  * Objects are checked with an exact key set: a missing key and an unknown key are both errors,
- * so a field like `value` sneaking into a Finding fails loudly. Each object shape is typed
- * against its interface (`{ [K in keyof T]-?: Check }`), so adding a field to `types.ts`
- * without adding it here fails the typecheck.
+ * so a field like `value` sneaking into a Finding fails loudly; only a key whose check is
+ * wrapped in `optional` may be missing. Each object shape is typed against its interface
+ * (`{ [K in keyof T]-?: Check }`), so adding a field to `types.ts` without adding it here fails
+ * the typecheck.
  */
 import {
   MAX_ALWAYS_REDACT,
@@ -12,6 +13,7 @@ import {
   type AppInfo,
   type ClipboardScrub,
   type Finding,
+  type HotkeyMode,
   type LabelCount,
   type OutputSpan,
   type ScanRequest,
@@ -38,6 +40,16 @@ export const oneOf =
   <T extends string | number>(...values: readonly T[]): Check =>
   (v, p) =>
     values.includes(v as T) ? ok : [`${p}: expected one of ${values.join(' | ')}, got ${String(v)}`];
+
+/** The checks a missing key is fine for. */
+const optionalChecks = new WeakSet<Check>();
+
+/** The key may be missing; when present, `inner` checks it. */
+export const optional = (inner: Check): Check => {
+  const check: Check = (v, p) => inner(v, p);
+  optionalChecks.add(check);
+  return check;
+};
 
 export const nullable =
   (inner: Check): Check =>
@@ -66,8 +78,8 @@ export function object<T>(shape: { [K in keyof T]-?: Check }): Check {
     const rec = v as Record<string, unknown>;
     const errors: string[] = [];
     for (const k of keys) {
-      if (!(k in rec)) errors.push(`${p}.${k}: missing`);
-      else errors.push(...shape[k](rec[k], `${p}.${k}`));
+      if (k in rec) errors.push(...shape[k](rec[k], `${p}.${k}`));
+      else if (!optionalChecks.has(shape[k])) errors.push(`${p}.${k}: missing`);
     }
     for (const k of Object.keys(rec)) {
       if (!keys.includes(k as keyof T & string)) errors.push(`${p}.${k}: unknown key`);
@@ -190,6 +202,8 @@ export const appInfo = object<AppInfo>({
   platform: str,
   tray: bool,
   shield: bool,
+  hotkey: optional(oneOf<HotkeyMode>('keys', 'portal', 'command')),
+  clipboardNeedsFocus: optional(bool),
 });
 
 /** Throws with every problem listed when `value` does not match `check`. */

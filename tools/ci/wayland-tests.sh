@@ -35,6 +35,7 @@ tests=(
   wayland_clipboard
   wayland_focused
   wayland_portal
+  wayland_webview
 )
 
 # The test that needs a bus without a portal; it runs alone, before the mock starts.

@@ -18,7 +18,7 @@ use crate::commands;
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
 use crate::pending::Take;
-use crate::platform;
+use crate::platform::{self, HotkeyMode};
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
 use crate::tray;
@@ -85,11 +85,15 @@ pub fn run() -> Result<(), platform::Unavailable> {
                 let shield = st.platform.shield.then_some(settings.content_protection);
                 tray::build(&handle, shield, st.platform.tray_click_opens_menu)?;
             }
-            st.platform.hotkey.listen(&handle, Arc::new(hotkey_pressed));
-            if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
-                // Another app may hold the key; the app still runs, and Settings can pick
-                // another one.
-                let _ = st.platform.hotkey.register(&handle, &hk);
+            if st.platform.hotkey.mode() == HotkeyMode::Portal {
+                start_hotkey_in_background(&handle);
+            } else {
+                st.platform.hotkey.listen(&handle, Arc::new(hotkey_pressed));
+                if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
+                    // Another app may hold the key; the app still runs, and Settings can pick
+                    // another one.
+                    let _ = st.platform.hotkey.register(&handle, &hk);
+                }
             }
             start_idle_timer(handle.clone());
             let lock_handle = handle.clone();
@@ -146,6 +150,32 @@ pub fn run() -> Result<(), platform::Unavailable> {
         }
     });
     Ok(())
+}
+
+/// The hotkey's start where the desktop binds it: that can take long (a person may be reading
+/// the desktop's dialog), so it runs on a thread of its own, never on the main thread. It holds
+/// the settings lock throughout, taken before `setup` goes on, so a settings change waits for
+/// it and the key it binds is the one the settings name.
+fn start_hotkey_in_background(app: &AppHandle) {
+    let app = app.clone();
+    let (held, lock_taken) = std::sync::mpsc::channel::<()>();
+    let started = std::thread::Builder::new()
+        .name("hotkey-start".into())
+        .spawn(move || {
+            let st = state::state(&app);
+            let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
+            let _ = held.send(());
+            st.platform.hotkey.listen(&app, Arc::new(hotkey_pressed));
+            if let Ok(hk) = Hotkey::parse(&st.settings().hotkey, st.platform.os) {
+                // The desktop may refuse the key; the app still runs, and Settings can ask for
+                // another one.
+                let _ = st.platform.hotkey.register(&app, &hk);
+            }
+        });
+    if started.is_ok() {
+        // Nothing else holds the lock while `setup` runs: this waits only for the thread to start.
+        let _ = lock_taken.recv();
+    }
 }
 
 fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<WebviewWindow> {

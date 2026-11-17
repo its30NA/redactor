@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import type { KeyOs } from '../../src/lib/keys';
 import {
+  focusNote,
+  hotkeyMode,
+  hotkeyNote,
   lockDesc,
   lockShort,
   lockTitle,
@@ -13,6 +16,7 @@ import {
   trayTitle,
   trayWipeNotice,
   wipeNotice,
+  SCRUB_COMMAND,
 } from '../../src/lib/platform';
 import type { AppInfo } from '../../src/lib/types';
 
@@ -106,4 +110,37 @@ describe('trayNote', () => {
   test('says what closing does without a tray', () =>
     expect(trayNote(info({ tray: false }))).toBe('This desktop shows no tray, so closing the window quits Redactor.'));
   test('no note before app_info answers', () => expect(trayNote(null)).toBeNull());
+});
+
+describe('hotkeyMode', () => {
+  test('missing field is keys (Windows and macOS)', () => expect(hotkeyMode(info())).toBe('keys'));
+  test('before app_info answers it is keys', () => expect(hotkeyMode(null)).toBe('keys'));
+  for (const m of ['keys', 'portal', 'command'] as const) {
+    test(`reads ${m}`, () => expect(hotkeyMode(info({ hotkey: m }))).toBe(m));
+  }
+});
+
+describe('hotkeyNote', () => {
+  test('keys: no note', () => expect(hotkeyNote(info({ hotkey: 'keys' }))).toBeNull());
+  test('missing field: no note', () => expect(hotkeyNote(info())).toBeNull());
+  test('before app_info answers: no note', () => expect(hotkeyNote(null)).toBeNull());
+  test('portal: the desktop may ask', () =>
+    expect(hotkeyNote(info({ hotkey: 'portal' }))).toBe(
+      'Your desktop may ask you to confirm this key, or let you pick another in its own keyboard settings.',
+    ));
+  test('command: add a desktop shortcut', () =>
+    expect(hotkeyNote(info({ hotkey: 'command' }))).toBe(
+      'This desktop does not let apps set a hotkey. Add a shortcut in its keyboard settings that runs:',
+    ));
+  test('the command the shortcut runs', () => expect(SCRUB_COMMAND).toBe('redactor --scrub-clipboard'));
+});
+
+describe('focusNote', () => {
+  test('needs focus: says so', () =>
+    expect(focusNote(info({ clipboardNeedsFocus: true }))).toBe(
+      'On this desktop Redactor can reach the clipboard only while its window is in front. The hotkey brings it forward first.',
+    ));
+  test('no need: no note', () => expect(focusNote(info({ clipboardNeedsFocus: false }))).toBeNull());
+  test('missing field: no note', () => expect(focusNote(info())).toBeNull());
+  test('before app_info answers: no note', () => expect(focusNote(null)).toBeNull());
 });
