@@ -17,7 +17,9 @@
 # unless MOCK_PORTAL=none. The mock needs python3-gi for /usr/bin/python3; the Plasma run starts
 # no mock.
 #
-# Fails unless every listed test binary reports "0 failed" and at least one test passed.
+# Fails unless every listed test binary reports "0 failed" and at least one test passed. With
+# WAYLAND_TESTS_EXPECT=<n> (the CI jobs) it also fails unless exactly n tests passed in them (the
+# no-portal pass not counted), so a test that went missing fails the run.
 # Lines the tests print as "OBSERVED ..." (what this compositor does where that is not a pass or
 # fail, such as the measured write race) are collected at the end, and in the job summary on
 # GitHub.
@@ -64,21 +66,24 @@ case "$compositor" in
     ;;
 esac
 
-# KWin offers data-control, so the app never uses the focused-window clipboard there, and it
-# keeps the virtual keyboard those tests need from ordinary clients. The Plasma run proves the
-# data-control path only.
+# The Plasma run proves the data-control path only: it runs `wayland_clipboard` and nothing
+# else. The skips are said in the log and in the job summary.
 if [ "$compositor" = kwin ] && [ "${#run[@]}" -eq 0 ]; then
-  kept=()
   for t in "${tests[@]}"; do
-    if [ "$t" = wayland_focused ]; then
-      echo "wayland-tests: skipping wayland_focused on kwin (data-control is used there, not the focused-window clipboard)"
-    elif [ "$t" = wayland_portal ]; then
-      echo "wayland-tests: skipping wayland_portal on kwin (the mock portal does not depend on the compositor)"
-    else
-      kept+=("$t")
-    fi
+    case "$t" in
+      wayland_clipboard) continue ;;
+      # KWin offers data-control, so the app never uses the focused-window clipboard there, and
+      # it keeps the virtual keyboard those tests need from ordinary clients.
+      wayland_focused) why="data-control is used there, not the focused-window clipboard" ;;
+      wayland_portal) why="the mock portal does not depend on the compositor" ;;
+      wayland_webview) why="the WebKit settings do not depend on the compositor" ;;
+      *) why="the Plasma run lists wayland_clipboard only" ;;
+    esac
+    line="wayland-tests: skipping $t on kwin ($why)"
+    echo "$line"
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then echo "- $line" >>"$GITHUB_STEP_SUMMARY"; fi
   done
-  tests=("${kept[@]}")
+  tests=(wayland_clipboard)
 fi
 
 # Everything the script and the tests start, so a missing package is named here and not as a
@@ -242,6 +247,11 @@ if [ "$status" -ne 0 ] || [ "$binaries" -ne "${#tests[@]}" ] || [ "$green" -ne "
   echo "wayland-tests: FAILED (cargo exit $status, $green of ${#tests[@]} test binaries green)" >&2
   show_log compositor "$work/compositor.log" >&2
   show_log portal "$work/portal.log" >&2
+  exit 1
+fi
+expect=${WAYLAND_TESTS_EXPECT:-}
+if [ -n "$expect" ] && [ "$passed" != "$expect" ]; then
+  echo "wayland-tests: FAILED ($passed tests passed, $expect expected: a test went missing or was added without updating the count)" >&2
   exit 1
 fi
 extra=

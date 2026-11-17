@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""A minimal W3C WebDriver client for the Linux app smoke (tools/ci/linux-smoke.sh).
+"""A minimal W3C WebDriver client for the Linux app smokes (tools/ci/linux-smoke.sh and
+tools/ci/wayland-smoke.sh).
 
 Standard library only. tauri-driver keeps the session between calls, so each call is one
 short step and the shell script reads the outcome from the exit code and one line on stdout:
 
   webdriver.py session <app>                       print the session id (polls up to --timeout)
   webdriver.py title <sid>                         print the document title
+  webdriver.py click <sid> <css>                   click the element
+  webdriver.py show <sid> <css>                    scroll the element into the middle of the view
   webdriver.py type <sid> <css> <text>             click the element, then send the text
   webdriver.py visible <sid> <css>                 wait until the element is displayed
   webdriver.py text <sid> <css> <prefix|exact> <s> wait until the element's text matches
@@ -95,6 +98,19 @@ def cmd_title(a):
     return True, call("GET", "/session/%s/title" % a.sid)
 
 
+def cmd_click(a):
+    el = find(a.sid, a.css)
+    call("POST", "/session/%s/element/%s/click" % (a.sid, el), {})
+    return True, "clicked"
+
+
+def cmd_show(a):
+    el = find(a.sid, a.css)
+    script = "arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});"
+    call("POST", "/session/%s/execute/sync" % a.sid, {"script": script, "args": [{ELEMENT: el}]})
+    return True, "shown"
+
+
 def cmd_type(a):
     el = find(a.sid, a.css)
     call("POST", "/session/%s/element/%s/click" % (a.sid, el), {})
@@ -140,6 +156,14 @@ def main():
         s = sub.add_parser(name)
         s.add_argument("sid")
         s.set_defaults(fn=fn)
+    s = sub.add_parser("click")
+    s.add_argument("sid")
+    s.add_argument("css")
+    s.set_defaults(fn=cmd_click)
+    s = sub.add_parser("show")
+    s.add_argument("sid")
+    s.add_argument("css")
+    s.set_defaults(fn=cmd_show)
     s = sub.add_parser("type")
     s.add_argument("sid")
     s.add_argument("css")

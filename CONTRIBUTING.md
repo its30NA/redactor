@@ -67,6 +67,53 @@ itself. `tools/ci/linux-smoke.sh <app binary>` starts the built app there and ch
 hotkey scrubs the clipboard, clean text is left alone, the window closes or hides to the tray as the desktop
 allows); `--self-test` checks the script's own set-up without an app.
 
+### Wayland desktop tests
+
+The Wayland tests (`app/src-tauri/tests/wayland_*.rs`) need a compositor and a D-Bus bus. They are ignored
+by default and refuse to run unless `REDACTOR_TEST_WAYLAND` names the socket of the compositor the script
+started. **Do not set it by hand and never run the tests on your real desktop:** they take over the
+clipboard. Under WSL the inherited `WAYLAND_DISPLAY` is WSLg, which is your Windows clipboard.
+
+```bash
+sudo apt-get install -y sway grim wl-clipboard python3-gi gir1.2-glib-2.0 dbus jq webkit2gtk-driver
+tools/ci/wayland-tests.sh
+```
+
+- The script starts headless sway (`tools/ci/sway.conf`: no Xwayland, no bar), a private session bus with
+  no services on it, and its own `XDG_RUNTIME_DIR`, so nothing reaches the desktop you started it from. It
+  runs the test binaries one at a time and fails unless every one reports `0 failed` and at least one
+  passed; with `WAYLAND_TESTS_EXPECT=<n>` (as CI sets it) it also fails unless exactly n tests passed, so a
+  test that went missing is noticed. Tests wait with a deadline and are never retried.
+- `python3-gi` is needed for `/usr/bin/python3` (the system one): the portal mock
+  (`tools/ci/mock_portal.py`) uses it. A pyenv or conda `python3` has no `gi`; the scripts call
+  `/usr/bin/python3` on purpose.
+- The portal tests run in two passes: `no_portal_means_command_mode` alone first (no portal on the bus, must
+  report exactly 1 passed), then all tests with the mock running.
+- Lines the tests print as `OBSERVED ...` (what a compositor does where there is no pass or fail, such as
+  the measured write race) are collected at the end of the run and in the GitHub job summary. Read them
+  when a number looks different from last time.
+- `tools/ci/wayland-tests.sh --run <command...>` runs a command in that same environment, from the
+  repository root (with the mock portal, unless `MOCK_PORTAL=none`): to start the built app on headless sway
+  by hand. `grim` takes screenshots of that compositor.
+
+`tools/ci/wayland-smoke.sh <app binary>` checks the built app end to end on headless sway (W1-W7: a native
+Wayland window, `--scrub-clipboard` cleans a copy and leaves a password manager's copy alone, the clipboard
+that works only while the window is in front, Settings without a portal, quit). It runs itself inside
+`wayland-tests.sh --run` with no portal, and first builds two development helpers in
+`app/src-tauri/examples` (they are not part of the app): `wayland_offer`, a copy marked as a password
+manager's, and `wayland_keyboard`, a keyboard for the seat, because headless sway has none and without one
+no window gets focus. `REDACTOR_WAYLAND_FOCUSED=1` makes the app use the window clipboard even where the
+compositor offers data-control; it is a test switch and can only take a capability away. The Settings check
+goes through WebDriver, so the smoke also needs `tauri-driver` (`cargo install tauri-driver --locked
+--version 2.1.0`). Screenshots and logs go to `smoke-out/`.
+
+KDE Plasma (KWin, with the data-control protocol `ext_data_control_v1` that sway does not offer) is tested
+in a Fedora 42 container (needs Docker): `REDACTOR_WAYLAND_COMPOSITOR=kwin` makes `wayland-tests.sh` start
+`kwin_wayland --virtual` instead of sway and run `wayland_clipboard` only.
+
+Two things the machines cannot test: the real GNOME and KDE shortcut dialogs, and the window clipboard with
+a real desktop's focus rules. Those are tested by hand, on a real desktop of that kind.
+
 ### macOS desktop tests
 
 The macOS tests run on GitHub's macOS runners (macOS 26 on Apple silicon and macOS 15 on Intel, job
