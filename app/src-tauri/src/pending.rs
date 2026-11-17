@@ -3,8 +3,11 @@
 //! Where the clipboard can be read only while Redactor's window is in front, a hotkey press
 //! shows the window and arms a pending scrub. The next time the window gains focus the scrub
 //! runs, once; after [`PENDING_FOR`] it has expired instead, so it never runs on a clipboard
-//! the user has moved on from.
+//! the user has moved on from. A timer expires it at [`PENDING_FOR`] even when the window never
+//! comes to the front, so the user hears that it did not run; whichever comes first takes it,
+//! so there is one notice and never a late scrub.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -22,10 +25,18 @@ pub enum Take {
     Nothing,
 }
 
-/// The time of the last hotkey press still waiting for focus, if any.
+/// One arming of the pending scrub: when, and which (a later arming is another one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Armed {
+    at: Instant,
+    id: u64,
+}
+
+/// The last hotkey press still waiting for focus, if any.
 #[derive(Debug, Default)]
 pub struct PendingScrub {
-    armed_at: Mutex<Option<Instant>>,
+    armed: Mutex<Option<Armed>>,
+    next_id: AtomicU64,
 }
 
 impl PendingScrub {
@@ -34,9 +45,14 @@ impl PendingScrub {
     }
 
     /// A press while the window is not in front. A second press restarts the wait; it never
-    /// adds a second scrub.
-    pub fn arm(&self, now: Instant) {
-        *self.lock() = Some(now);
+    /// adds a second scrub. Returns this arming, for [`PendingScrub::expire`].
+    pub fn arm(&self, now: Instant) -> Armed {
+        let armed = Armed {
+            at: now,
+            id: self.next_id.fetch_add(1, Ordering::Relaxed),
+        };
+        *self.lock() = Some(armed);
+        armed
     }
 
     /// A scrub ran without waiting: the one still pending is dropped, so one press never
@@ -49,13 +65,27 @@ impl PendingScrub {
     pub fn take_on_focus(&self, now: Instant) -> Take {
         match self.lock().take() {
             None => Take::Nothing,
-            Some(armed) if now.saturating_duration_since(armed) < PENDING_FOR => Take::Run,
+            Some(armed) if now.saturating_duration_since(armed.at) < PENDING_FOR => Take::Run,
             Some(_) => Take::Expired,
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Instant>> {
-        self.armed_at.lock().unwrap_or_else(|e| e.into_inner())
+    /// The timer of `armed` is up: takes the pending scrub if it is still that arming and has
+    /// waited [`PENDING_FOR`]. True: it expired now, tell the user. False: a focus, a scrub or
+    /// a later press dealt with it already.
+    pub fn expire(&self, armed: Armed, now: Instant) -> bool {
+        let mut slot = self.lock();
+        let due = now.saturating_duration_since(armed.at) >= PENDING_FOR;
+        if due && *slot == Some(armed) {
+            *slot = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Armed>> {
+        self.armed.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -104,6 +134,54 @@ mod tests {
         p.arm(t);
         p.clear();
         assert_eq!(p.take_on_focus(t + Duration::from_secs(1)), Take::Nothing);
+    }
+
+    #[test]
+    fn the_timer_expires_an_unanswered_press_once() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        let armed = p.arm(t);
+        assert!(!p.expire(armed, t + Duration::from_secs(29)), "not due yet");
+        assert!(p.expire(armed, t + PENDING_FOR));
+        assert!(!p.expire(armed, t + PENDING_FOR), "one notice");
+        // A focus after the timer: no late scrub, no second notice.
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(31)), Take::Nothing);
+    }
+
+    #[test]
+    fn the_timer_of_an_older_press_stays_quiet() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        let first = p.arm(t);
+        let second = p.arm(t + Duration::from_secs(20));
+        assert!(
+            !p.expire(first, t + PENDING_FOR),
+            "the second press restarted the wait"
+        );
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(40)), Take::Run);
+        assert!(
+            !p.expire(second, t + Duration::from_secs(50)),
+            "the scrub ran"
+        );
+    }
+
+    #[test]
+    fn the_timer_stays_quiet_after_a_focus_or_a_scrub() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        let armed = p.arm(t);
+        assert_eq!(p.take_on_focus(t + PENDING_FOR), Take::Expired);
+        assert!(
+            !p.expire(armed, t + PENDING_FOR),
+            "the focus told the user already"
+        );
+
+        let armed = p.arm(t);
+        p.clear();
+        assert!(
+            !p.expire(armed, t + PENDING_FOR),
+            "a scrub ran without waiting"
+        );
     }
 
     #[test]

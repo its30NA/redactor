@@ -17,7 +17,7 @@ use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
-use crate::pending::Take;
+use crate::pending::{Take, PENDING_FOR};
 use crate::platform::{self, HotkeyMode};
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
@@ -243,15 +243,25 @@ fn args() -> Vec<String> {
 }
 
 /// A hotkey press, the tray's scrub item or `--scrub-clipboard`. Where the clipboard needs the
-/// window in front and it is not, the window comes back and the scrub waits for focus.
-/// Otherwise the clipboard is scrubbed now, off the calling thread.
+/// window in front and it is not, the window comes back and the scrub waits for focus, up to
+/// [`PENDING_FOR`]. Otherwise the clipboard is scrubbed now, off the calling thread.
 pub fn hotkey_pressed(app: &AppHandle) {
     let st = state::state(app);
     if st.platform.clipboard.needs_focus() && !main_is_focused(app) {
         // Armed before the window is asked for, so the focus-in can never come first.
-        st.pending.arm(Instant::now());
+        let armed = st.pending.arm(Instant::now());
         show_main(app);
         notify(app, "Bring Redactor to the front to clean the clipboard");
+        // The window may never come to the front: the user still hears that nothing ran.
+        let app = app.clone();
+        let _ = std::thread::Builder::new()
+            .name("pending-expiry".into())
+            .spawn(move || {
+                std::thread::sleep(PENDING_FOR);
+                if state::state(&app).pending.expire(armed, Instant::now()) {
+                    notify(&app, NOT_CLEANED);
+                }
+            });
     } else {
         // A focus-in still queued from an earlier press must not scrub a second time.
         st.pending.clear();
@@ -259,14 +269,14 @@ pub fn hotkey_pressed(app: &AppHandle) {
     }
 }
 
+/// A press waited for the window in vain.
+const NOT_CLEANED: &str = "Not cleaned: Redactor's window did not come to the front";
+
 /// The main window came to the front: runs the scrub a hotkey press left waiting.
 fn scrub_if_pending(app: &AppHandle) {
     match state::state(app).pending.take_on_focus(Instant::now()) {
         Take::Run => scrub_and_notify(app),
-        Take::Expired => notify(
-            app,
-            "Not cleaned: Redactor's window did not come to the front",
-        ),
+        Take::Expired => notify(app, NOT_CLEANED),
         Take::Nothing => {}
     }
 }
