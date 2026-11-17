@@ -39,6 +39,12 @@ impl PendingScrub {
         *self.lock() = Some(now);
     }
 
+    /// A scrub ran without waiting: the one still pending is dropped, so one press never
+    /// scrubs twice.
+    pub fn clear(&self) {
+        *self.lock() = None;
+    }
+
     /// The window came to the front: takes the pending scrub, if any.
     pub fn take_on_focus(&self, now: Instant) -> Take {
         match self.lock().take() {
@@ -89,6 +95,15 @@ mod tests {
         p.arm(t + Duration::from_secs(20));
         assert_eq!(p.take_on_focus(t + Duration::from_secs(40)), Take::Run);
         assert_eq!(p.take_on_focus(t + Duration::from_secs(41)), Take::Nothing);
+    }
+
+    #[test]
+    fn clear_drops_a_pending_arm() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        p.arm(t);
+        p.clear();
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(1)), Take::Nothing);
     }
 
     #[test]

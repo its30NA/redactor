@@ -223,6 +223,8 @@ pub fn hotkey_pressed(app: &AppHandle) {
         show_main(app);
         notify(app, "Bring Redactor to the front to clean the clipboard");
     } else {
+        // A focus-in still queued from an earlier press must not scrub a second time.
+        st.pending.clear();
         scrub_and_notify(app);
     }
 }
