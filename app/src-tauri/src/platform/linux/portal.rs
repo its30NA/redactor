@@ -14,7 +14,7 @@
 //! Where there is no portal, the app uses `CommandHotkey` instead (`portal_version` decides).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
@@ -136,6 +136,8 @@ fn next_token() -> String {
 struct Shared {
     /// The calls waiting for their `Response`, by request path.
     waiting: Mutex<HashMap<String, mpsc::Sender<Response>>>,
+    /// The reading thread has ended (the connection broke): no `Response` comes any more.
+    dead: AtomicBool,
     /// The session whose `Activated` counts.
     active: Mutex<Option<OwnedObjectPath>>,
     /// To the thread that runs the press callback: a slow press never holds up a `Response`.
@@ -194,11 +196,7 @@ impl PortalHotkey {
             let shared = shared.clone();
             std::thread::Builder::new()
                 .name("portal-hotkey".into())
-                .spawn(move || {
-                    for msg in messages.map_while(Result::ok) {
-                        dispatch(&shared, &msg);
-                    }
-                })
+                .spawn(move || read_until_broken(&shared, messages))
                 .map_err(|e| zbus::Error::Failure(e.to_string()))?;
         }
         Ok(PortalHotkey {
@@ -337,22 +335,29 @@ impl PortalHotkey {
         let rule = format!(
             "type='signal',sender='{PORTAL}',path='{path}',interface='{REQUEST}',member='Response'"
         );
-        let (tx, rx) = mpsc::channel();
-        lock(&self.shared.waiting).insert(path.clone(), tx);
+        let rx = self.shared.wait_for(&path)?;
         let answer = (|| {
             add_match(&self.bus, &rule).ok()?;
             let handle: OwnedObjectPath = call(&token).ok()?.body().deserialize().ok()?;
             if handle.as_str() != path {
                 return None;
             }
-            let answer = rx.recv_timeout(timeout).ok();
-            if answer.is_none() {
-                // Ends the desktop's dialog, if one is still open.
-                let _ =
-                    self.bus
-                        .call_method(Some(PORTAL), path.as_str(), Some(REQUEST), "Close", &());
+            match rx.recv_timeout(timeout) {
+                Ok(answer) => Some(answer),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Ends the desktop's dialog, if one is still open.
+                    let _ = self.bus.call_method(
+                        Some(PORTAL),
+                        path.as_str(),
+                        Some(REQUEST),
+                        "Close",
+                        &(),
+                    );
+                    None
+                }
+                // The reading thread has ended: the connection is broken.
+                Err(mpsc::RecvTimeoutError::Disconnected) => None,
             }
-            answer
         })();
         lock(&self.shared.waiting).remove(&path);
         let _ = remove_match(&self.bus, &rule);
@@ -377,6 +382,31 @@ impl GlobalHotkey for PortalHotkey {
         let app = app.clone();
         self.start(Arc::new(move || on_press(&app)));
     }
+}
+
+impl Shared {
+    /// Where the `Response` to the request at `path` will arrive. `None` once the reading thread
+    /// has ended: nothing would arrive. Inserted and cleared under the same lock, so a call
+    /// that registers as the reader ends still hears of it at once.
+    fn wait_for(&self, path: &str) -> Option<mpsc::Receiver<Response>> {
+        let mut waiting = lock(&self.waiting);
+        if self.dead.load(Ordering::SeqCst) {
+            return None;
+        }
+        let (tx, rx) = mpsc::channel();
+        waiting.insert(path.to_string(), tx);
+        Some(rx)
+    }
+}
+
+/// The reading thread: hands on every message until the connection breaks, then wakes every
+/// call still waiting (their senders are dropped) and turns new ones away.
+fn read_until_broken(shared: &Shared, messages: impl IntoIterator<Item = zbus::Result<Message>>) {
+    for msg in messages.into_iter().map_while(Result::ok) {
+        dispatch(shared, &msg);
+    }
+    shared.dead.store(true, Ordering::SeqCst);
+    lock(&shared.waiting).clear();
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -475,6 +505,19 @@ mod tests {
         assert_eq!(preferred_trigger(&k), "CTRL+Page_Up");
         let k = hk(true, false, false, false, Key::PageDown);
         assert_eq!(preferred_trigger(&k), "CTRL+Page_Down");
+    }
+
+    #[test]
+    fn a_broken_connection_wakes_the_waiting_calls() {
+        let shared = Shared::default();
+        let waiting = shared.wait_for("/a").expect("the reader is alive");
+        let broken = std::iter::once(Err(zbus::Error::Failure("gone".into())));
+        read_until_broken(&shared, broken);
+        assert!(matches!(
+            waiting.recv_timeout(Duration::from_secs(5)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        assert!(shared.wait_for("/b").is_none(), "nothing would arrive");
     }
 
     #[test]
