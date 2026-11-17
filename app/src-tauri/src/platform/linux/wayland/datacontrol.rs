@@ -31,9 +31,9 @@ use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 use zeroize::Zeroizing;
 
-use super::lost;
 use super::pipe::{read_bounded, write_bounded};
 use super::protocol::{Device, Events, Manager, Offer, Source, SourceData};
+use super::{hint_value_is_secret, lost, HINT_BYTES, PASSWORD_HINT, TEXT_MIMES};
 use crate::bridge::MAX_INPUT_BYTES;
 use crate::clipscrub::{text_from_utf8, ClipError, ClipText, Clipboard};
 use crate::platform::SystemClipboard;
@@ -46,21 +46,8 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(1);
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long the password-manager hint may take.
 const HINT_TIMEOUT: Duration = Duration::from_secs(1);
-/// A password-manager hint is a short word; a longer value counts as unreadable.
-const HINT_BYTES: usize = 64;
 /// How long a paste of our text may take before we stop writing.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// The text types, in the order a read prefers them. A write offers all of them.
-const TEXT_MIMES: [&str; 5] = [
-    "text/plain;charset=utf-8",
-    "UTF8_STRING",
-    "text/plain",
-    "STRING",
-    "TEXT",
-];
-/// Set to `secret` by KeePassXC, Bitwarden and others.
-const PASSWORD_HINT: &str = "x-kde-passwordManagerHint";
 
 /// What the worker and the calling threads share.
 struct Shared {
@@ -273,13 +260,7 @@ fn hint_is_secret(hint: Result<std::io::PipeReader, ClipError>) -> bool {
     let Ok(Some(value)) = read_bounded(reader, HINT_BYTES, HINT_TIMEOUT, HINT_TIMEOUT) else {
         return true;
     };
-    let blank = |b: &u8| b.is_ascii_whitespace() || *b == 0;
-    let start = value.iter().position(|b| !blank(b)).unwrap_or(value.len());
-    let end = value
-        .iter()
-        .rposition(|b| !blank(b))
-        .map_or(start, |i| i + 1);
-    &value[start..end] == b"secret"
+    hint_value_is_secret(&value)
 }
 
 /// Our own text, read as another app would get it: up to the first NUL, within the limit.

@@ -26,6 +26,7 @@ cd "$(dirname "$0")/../.."
 # One line per test binary.
 tests=(
   wayland_clipboard
+  wayland_focused
 )
 
 run=()

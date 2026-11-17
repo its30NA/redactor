@@ -3125,6 +3125,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-wlr",
+ "wayland-scanner",
  "webkit2gtk",
  "webview2-com",
  "windows",
