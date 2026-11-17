@@ -9,6 +9,8 @@ const PORTAL_NOTE =
   'Your desktop may ask you to confirm this key, or let you pick another in its own keyboard settings.';
 const COMMAND_NOTE = 'This desktop does not let apps set a hotkey. Add a shortcut in its keyboard settings that runs:';
 const COMMAND = 'redactor --scrub-clipboard';
+const FIRST_RUN_COMMAND_LINE =
+  "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).";
 const FOCUS_NOTE =
   'On this desktop Redactor can reach the clipboard only while its window is in front. The hotkey brings it forward first.';
 
@@ -58,5 +60,18 @@ test.describe('Wayland', () => {
     await expect(sheet.getByTestId('hotkey-note')).toHaveCount(0);
     await expect(sheet.getByTestId('focus-note')).toHaveCount(0);
     await expect(sheet.getByTestId('copy-command')).toHaveCount(0);
+  });
+
+  test('the_first_run_card_shows_no_keycaps_where_the_desktop_runs_a_command', async ({ page, problems: _ }) => {
+    await openApp(page, '?firstrun&os=linux&hotkey=command');
+    const card = page.getByTestId('first-run');
+    await expect(card).toBeVisible();
+    await expect(card.getByTestId('hotkey-command-line')).toHaveText(FIRST_RUN_COMMAND_LINE);
+    await expect(card.locator('kbd')).toHaveCount(0);
+    // A portal desktop may honour the key, so the keycaps stay.
+    await openApp(page, '?firstrun&os=linux&hotkey=portal');
+    const portal = page.getByTestId('first-run');
+    await expect(portal.locator('kbd').first()).toBeVisible();
+    await expect(portal.getByTestId('hotkey-command-line')).toHaveCount(0);
   });
 });

@@ -85,6 +85,12 @@ export const hotkeyNote = (info: Pick<AppInfo, 'hotkey'> | null): string | null 
   }
 };
 
+/** The welcome card's line where the key does nothing and the desktop runs the command instead, or null where the keycaps are shown. */
+export const hotkeyCommandLine = (info: Pick<AppInfo, 'hotkey'> | null): string | null =>
+  hotkeyMode(info) === 'command'
+    ? "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings)."
+    : null;
+
 /** Why the hotkey brings the window forward, or null where the clipboard works in the background. */
 export const focusNote = (info: Pick<AppInfo, 'clipboardNeedsFocus'> | null): string | null =>
   info?.clipboardNeedsFocus === true

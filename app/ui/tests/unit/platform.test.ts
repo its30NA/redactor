@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { KeyOs } from '../../src/lib/keys';
 import {
   focusNote,
+  hotkeyCommandLine,
   hotkeyMode,
   hotkeyNote,
   lockDesc,
@@ -143,4 +144,17 @@ describe('focusNote', () => {
   test('no need: no note', () => expect(focusNote(info({ clipboardNeedsFocus: false }))).toBeNull());
   test('missing field: no note', () => expect(focusNote(info())).toBeNull());
   test('before app_info answers: no note', () => expect(focusNote(null)).toBeNull());
+});
+
+describe('hotkeyCommandLine', () => {
+  test('command: the welcome card points to the desktop settings', () =>
+    expect(hotkeyCommandLine(info({ hotkey: 'command' }))).toBe(
+      "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).",
+    ));
+  test('keys, portal, missing and before app_info: null (the keycaps stay)', () => {
+    expect(hotkeyCommandLine(info({ hotkey: 'keys' }))).toBeNull();
+    expect(hotkeyCommandLine(info({ hotkey: 'portal' }))).toBeNull();
+    expect(hotkeyCommandLine(info())).toBeNull();
+    expect(hotkeyCommandLine(null)).toBeNull();
+  });
 });

@@ -12,7 +12,8 @@
   import Kbd from './Kbd.svelte';
   import Mark from './Mark.svelte';
   import type { KeyOs } from '../lib/keys';
-  import { thisComputer } from '../lib/platform';
+  import type { AppInfo } from '../lib/types';
+  import { hotkeyCommandLine, thisComputer } from '../lib/platform';
   import { settings } from '../lib/settings.svelte';
 
   // `shield`: false where the desktop cannot hide a window from screenshots (Linux, macOS).
@@ -20,7 +21,11 @@
     open = $bindable(false),
     shield = true,
     os = 'windows',
-  }: { open: boolean; shield?: boolean; os?: KeyOs } = $props();
+    info = null,
+  }: { open: boolean; shield?: boolean; os?: KeyOs; info?: Pick<AppInfo, 'hotkey'> | null } = $props();
+
+  // Where the desktop runs a command instead of a key, there are no keycaps to show.
+  const commandLine = $derived(hotkeyCommandLine(info));
 
   const seen = () => void settings.update({ firstRunDone: true });
 
@@ -49,8 +54,13 @@
       <li>
         <span class="icon cyan" aria-hidden="true"><Keyboard size={16} strokeWidth={1.9} /></span>
         <div>
-          <p class="title">Scrub from anywhere <Kbd keys={settings.value.hotkey.split('+')} /></p>
-          <p class="desc">Cleans the clipboard in place, without opening this window.</p>
+          {#if commandLine}
+            <p class="title">Scrub from anywhere</p>
+            <p class="desc" data-testid="hotkey-command-line">{commandLine}</p>
+          {:else}
+            <p class="title">Scrub from anywhere <Kbd keys={settings.value.hotkey.split('+')} /></p>
+            <p class="desc">Cleans the clipboard in place, without opening this window.</p>
+          {/if}
         </div>
       </li>
       {#if shield}

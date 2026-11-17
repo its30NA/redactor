@@ -330,7 +330,7 @@
 <SettingsSheet bind:open={settingsOpen} {info} />
 <RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
-<FirstRun bind:open={firstRunOpen} shield={shieldNote(info, keyOs) === null} os={keyOs} />
+<FirstRun bind:open={firstRunOpen} shield={shieldNote(info, keyOs) === null} os={keyOs} {info} />
 
 <style>
   .app {
