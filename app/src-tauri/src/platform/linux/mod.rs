@@ -3,6 +3,7 @@
 pub mod lock;
 pub mod session;
 pub mod tray;
+pub mod wayland;
 pub mod webview;
 pub mod x11;
 

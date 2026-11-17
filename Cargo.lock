@@ -3112,6 +3112,7 @@ dependencies = [
  "objc2-web-kit",
  "redactor-core",
  "redactor-wire",
+ "rustix",
  "serde",
  "serde_json",
  "tauri",
