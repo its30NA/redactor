@@ -14,7 +14,7 @@
 //! grab on Wayland: [`Clipboard::write_if_unchanged`] makes its source, then the worker compares
 //! the count at a sync's answer and sets the selection right there. A copy that reaches the
 //! compositor between that answer and our `set_selection` (one wake-up of the worker) is
-//! overwritten: a Known limit, bounded by `tests/wayland_clipboard.rs`.
+//! overwritten: a Known limit, measured by `tests/wayland_clipboard.rs` (`write_race_is_bounded`).
 
 use std::io::pipe;
 use std::os::fd::{AsFd, OwnedFd};

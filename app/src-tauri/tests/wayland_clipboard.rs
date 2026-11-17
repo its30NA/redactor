@@ -207,17 +207,19 @@ fn large_cleaned_text_reaches_wl_paste() {
     assert!(pasted == text, "the pasted text differs");
 }
 
-/// Wayland has no server grab: `write_if_unchanged` compares at a round trip and then sets, and
-/// a copy that reaches the compositor inside that round trip is overwritten (a Known limit).
-/// Here another app's copy is sent right before each write, based on a sequence number from
-/// before that copy. Always: no write fails, and after `Ok(false)` ours never lands. Measured:
-/// ours on top of the newer copy after `Ok(true)` (`lost`).
+/// A measurement of the write race. Wayland has no server grab: `write_if_unchanged` compares
+/// at a round trip and then sets, and a copy that reaches the compositor inside that round trip
+/// is overwritten (a Known limit). Here another app's copy is sent right before each write,
+/// based on a sequence number from before that copy. Always checked: no write fails, and after
+/// `Ok(false)` ours never lands. Measured (the OBSERVED lines): how many writes went through
+/// (`wrote`) and how often ours ended on top of the newer copy after `Ok(true)` (`lost`).
 ///
-/// How often `lost` happens depends on the compositor's scheduling (it handles our sync before
-/// the copy that was sent first), so the bound is 10 %, not a tight one: seen at most 2.25 % on
-/// sway with the compare-and-set on the worker. It still catches both regressions: comparing and
-/// setting from the calling thread (the plain order) lost 14-19 %, and no comparison at all
-/// would lose nearly every round.
+/// Whether writes go through at all depends on the compositor's scheduling (whether it handles
+/// our sync before the copy that was sent first). In CI the race window was not reached: sway 1.9
+/// and KWin 6.6 on the GitHub runners gave wrote=0 left-alone=2000, so the 10 % bound on `lost`
+/// did not bite there. It bites only where writes land: local sway runs saw up to 2.25 % lost
+/// with the compare-and-set on the worker, while comparing and setting from the calling thread
+/// (the plain order) lost 14-19 %, and no comparison at all would lose nearly every round.
 #[test]
 #[ignore = "needs a throwaway Wayland compositor: tools/ci/wayland-tests.sh"]
 fn write_race_is_bounded() {
