@@ -24,6 +24,8 @@ mod virtual_keyboard;
 #[allow(dead_code)]
 #[path = "support/wayland_other.rs"]
 mod wayland_other;
+#[path = "support/wayland_session.rs"]
+mod wayland_session;
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -38,7 +40,8 @@ use redactor_app::clipscrub::{ClipText, Clipboard};
 use redactor_app::platform::linux::wayland::FocusedClipboard;
 use redactor_app::platform::SystemClipboard;
 use virtual_keyboard::VirtualKeyboard;
-use wayland_other::{compositor, WaylandOther};
+use wayland_other::WaylandOther;
+use wayland_session::compositor;
 
 /// How long a window gets to become active, or to lose focus.
 const FOCUS_DEADLINE: Duration = Duration::from_secs(5);

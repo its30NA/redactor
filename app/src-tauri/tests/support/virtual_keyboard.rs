@@ -8,7 +8,8 @@
 //! It presses one key, and only on request: [`VirtualKeyboard::tap`], a Shift press and
 //! release, the user's next input in the window that has the focus.
 //!
-//! The including test file must name this module `virtual_keyboard`.
+//! The including test file must name this module `virtual_keyboard`, and include
+//! `support/wayland_session.rs` as `wayland_session`.
 
 use std::io::Write;
 use std::os::fd::AsFd;
@@ -69,7 +70,7 @@ pub struct VirtualKeyboard {
 impl VirtualKeyboard {
     /// Adds a keyboard to the compositor's seat and waits until the compositor has it.
     pub fn new() -> VirtualKeyboard {
-        crate::wayland_other::compositor();
+        crate::wayland_session::compositor();
         let conn = Connection::connect_to_env().expect("connect to the test compositor");
         let (globals, mut queue) = registry_queue_init::<Quiet>(&conn).unwrap();
         let qh = queue.handle();

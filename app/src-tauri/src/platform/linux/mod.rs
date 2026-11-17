@@ -1,6 +1,8 @@
 //! Linux: the session decides what the app can use (X11 now, Wayland in phase 1-2d).
 
+pub mod command_hotkey;
 pub mod lock;
+pub mod portal;
 pub mod session;
 pub mod tray;
 pub mod wayland;

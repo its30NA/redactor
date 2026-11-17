@@ -12,6 +12,8 @@
 mod contract;
 #[path = "support/wayland_other.rs"]
 mod wayland_other;
+#[path = "support/wayland_session.rs"]
+mod wayland_session;
 
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -21,7 +23,8 @@ use redactor_app::bridge::MAX_INPUT_BYTES;
 use redactor_app::clipscrub::{ClipText, Clipboard};
 use redactor_app::platform::linux::wayland::{self, DataControlClipboard, DataControlKind};
 use redactor_app::platform::SystemClipboard;
-use wayland_other::{compositor, WaylandOther, HINT, TEXT_MIMES};
+use wayland_other::{WaylandOther, HINT, TEXT_MIMES};
+use wayland_session::compositor;
 
 /// The app's clipboard and another app, both on the test compositor.
 fn desktop() -> (DataControlClipboard, WaylandOther) {
