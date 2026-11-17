@@ -7,7 +7,9 @@ use std::process::{Command, Output};
 /// The app binary with no desktop session in its environment, plus `vars`.
 fn run_app(vars: &[(&str, &str)]) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_redactor-app"));
-    cmd.env_remove("DISPLAY").env_remove("WAYLAND_DISPLAY");
+    cmd.env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .env_remove("WAYLAND_SOCKET");
     for (k, v) in vars {
         cmd.env(k, v);
     }
