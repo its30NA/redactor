@@ -104,8 +104,10 @@ that works only while the window is in front, Settings without a portal, quit). 
 manager's, and `wayland_keyboard`, a keyboard for the seat, because headless sway has none and without one
 no window gets focus. `REDACTOR_WAYLAND_FOCUSED=1` makes the app use the window clipboard even where the
 compositor offers data-control; it is a test switch and can only take a capability away. The Settings check
-goes through WebDriver, so the smoke also needs `tauri-driver` (`cargo install tauri-driver --locked
---version 2.1.0`). Screenshots and logs go to `smoke-out/`.
+(W6) goes through WebDriver, which cannot open a session in the app's incognito web context, so W6 fails
+with WebDriver on. CI runs the smoke with `SMOKE_WEBDRIVER=0`, where W6 is reported as SKIP (not tested at
+L3) and the rest must pass. With WebDriver on, the smoke also needs `webkit2gtk-driver` and `tauri-driver`
+(`cargo install tauri-driver --locked --version 2.1.0`). Screenshots and logs go to `smoke-out/`.
 
 KDE Plasma (KWin, with the data-control protocol `ext_data_control_v1` that sway does not offer) is tested
 in a Fedora 42 container (needs Docker): `REDACTOR_WAYLAND_COMPOSITOR=kwin` makes `wayland-tests.sh` start
