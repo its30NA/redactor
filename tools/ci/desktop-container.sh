@@ -36,7 +36,7 @@ host() {
 inner() {
   local pkgs=(kwin-wayland xdg-desktop-portal xdg-desktop-portal-kde kglobalacceld
     xorg-x11-server-Xwayland mesa-dri-drivers wayland-utils wl-clipboard xclip
-    python3-dbusmock dbus-daemon dbus-tools shadow-utils util-linux findutils)
+    python3-dbusmock python3-gobject dbus-daemon dbus-tools shadow-utils util-linux findutils)
   if ! dnf -y -q install --setopt=install_weak_deps=False "${pkgs[@]}" >/tmp/dnf.log 2>&1; then
     show_log dnf /tmp/dnf.log
     echo "desktop-container: dnf install failed" >&2

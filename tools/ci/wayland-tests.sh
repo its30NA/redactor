@@ -27,6 +27,12 @@
 # `wayland-tests.sh --run <command...>` runs the command in the same environment instead of the
 # tests (from the repository root, with the same compositor, bus and clean-up) and exits with its
 # status: for starting the app by hand or a smoke test on the throwaway compositor.
+#
+# Without cargo (the Plasma container): `wayland-tests.sh --build <dir>` on the host builds the
+# test binaries this run needs (the same REDACTOR_WAYLAND_COMPOSITOR picks them) and copies them
+# into <dir> under their test names; then WAYLAND_TEST_BINARIES=<dir> makes the run start those
+# binaries instead of `cargo test`. wayland_clipboard and wayland_portal link only glibc;
+# wayland_focused also needs GTK 3 where it runs.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 # shellcheck source=tools/ci/lib.sh
@@ -44,7 +50,14 @@ tests=(
 no_portal_test=no_portal_means_command_mode
 
 run=()
-if [ "${1:-}" = "--run" ]; then
+build=
+if [ "${1:-}" = "--build" ]; then
+  if [ "$#" -ne 2 ]; then
+    echo "wayland-tests: --build needs one folder" >&2
+    exit 2
+  fi
+  build=$2
+elif [ "${1:-}" = "--run" ]; then
   shift
   if [ "$#" -eq 0 ]; then
     echo "wayland-tests: --run needs a command" >&2
@@ -52,7 +65,7 @@ if [ "${1:-}" = "--run" ]; then
   fi
   run=("$@")
 elif [ "$#" -ne 0 ]; then
-  echo "usage: wayland-tests.sh [--run <command...>]" >&2
+  echo "usage: wayland-tests.sh [--run <command...> | --build <dir>]" >&2
   exit 2
 fi
 
@@ -84,6 +97,38 @@ if [ "$compositor" = kwin ] && [ "${#run[@]}" -eq 0 ]; then
     if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then echo "- $line" >>"$GITHUB_STEP_SUMMARY"; fi
   done
   tests=(wayland_clipboard)
+fi
+
+# --build: the test binaries of this run, for a later run without cargo.
+if [ -n "$build" ]; then
+  mkdir -p "$build"
+  args=()
+  for t in "${tests[@]}"; do args+=(--test "$t"); done
+  cargo test -p redactor-app --locked "${args[@]}" --no-run --message-format=json-render-diagnostics \
+    >"$build/cargo.json"
+  for t in "${tests[@]}"; do
+    exe=$(grep -F '"kind":["test"]' "$build/cargo.json" | grep -F "\"name\":\"$t\"" |
+      sed -nE 's/.*"executable":"([^"]+)".*/\1/p' | head -n 1)
+    if [ -z "$exe" ]; then
+      echo "wayland-tests: cargo built no test binary named $t" >&2
+      exit 1
+    fi
+    cp -f "$exe" "$build/$t"
+    echo "wayland-tests: $build/$t"
+  done
+  rm -f "$build/cargo.json"
+  exit 0
+fi
+
+# WAYLAND_TEST_BINARIES: prebuilt test binaries (from --build) instead of cargo.
+bins=${WAYLAND_TEST_BINARIES:-}
+if [ -n "$bins" ]; then
+  for t in "${tests[@]}"; do
+    if [ ! -x "$bins/$t" ]; then
+      echo "wayland-tests: $bins/$t is missing (build it with wayland-tests.sh --build $bins)" >&2
+      exit 2
+    fi
+  done
 fi
 
 # Everything the script and the tests start, so a missing package is named here and not as a
@@ -179,6 +224,27 @@ export REDACTOR_WAYLAND_COMPOSITOR="$compositor"
 # GTK and the accessibility bus never reach for the real session.
 export GDK_BACKEND=wayland NO_AT_BRIDGE=1
 
+# run_tests <test...> -- <harness args...>: the tests through cargo, or the binaries in
+# WAYLAND_TEST_BINARIES one after the other; fails when any of them failed.
+run_tests() {
+  local names=() t status=0
+  while [ "$1" != -- ]; do
+    names+=("$1")
+    shift
+  done
+  shift
+  if [ -z "$bins" ]; then
+    local args=()
+    for t in "${names[@]}"; do args+=(--test "$t"); done
+    cargo test -p redactor-app --locked "${args[@]}" -- "$@"
+    return
+  fi
+  for t in "${names[@]}"; do
+    "$bins/$t" "$@" || status=$?
+  done
+  return "$status"
+}
+
 # start_portal: the mock portal on the private bus, until it owns its name.
 start_portal() {
   "$python" tools/ci/mock_portal.py >"$work/portal.log" 2>&1 &
@@ -204,7 +270,7 @@ unset MOCK_PORTAL
 skip=()
 if [ "$portal" = yes ]; then
   set +e
-  MOCK_PORTAL=none cargo test -p redactor-app --locked --test wayland_portal -- \
+  MOCK_PORTAL=none run_tests wayland_portal -- \
     --ignored --exact "$no_portal_test" --test-threads=1 --show-output 2>&1 | tee "$work/none.log"
   status=${PIPESTATUS[0]}
   set -e
@@ -217,11 +283,9 @@ if [ "$portal" = yes ]; then
   skip=(--skip "$no_portal_test")
 fi
 
-args=()
-for t in "${tests[@]}"; do args+=(--test "$t"); done
 set +e
 # --show-output: what a passing test printed (the OBSERVED lines) is shown after the run.
-cargo test -p redactor-app --locked "${args[@]}" -- --ignored "${skip[@]}" --test-threads=1 --show-output 2>&1 |
+run_tests "${tests[@]}" -- --ignored "${skip[@]}" --test-threads=1 --show-output 2>&1 |
   tee "$work/out.log"
 status=${PIPESTATUS[0]}
 set -e
