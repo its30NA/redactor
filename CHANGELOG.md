@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-17
+
+### Fixed
+
+- Detection: a value that opens a quote and never closes it, at the end of a line with Windows line endings
+  (`\r\n`), made the engine panic. The quoted value now ends before the `\r\n`.
+  Found by the property tests; present since 2.0.0.
+
 ### Added
 
 - A "Known misses" table in the threat model: shapes that 2.1.0 keeps on purpose or cannot detect, each
@@ -187,6 +195,7 @@ Rust.
   before it is copied.
 - The engine, the wire crate and `scrub` forbid `unsafe` code.
 
-[Unreleased]: https://github.com/its30NA/redactor/compare/v2.1.0...main
+[Unreleased]: https://github.com/its30NA/redactor/compare/v2.1.1...main
+[2.1.1]: https://github.com/its30NA/redactor/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/its30NA/redactor/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/its30NA/redactor/releases/tag/v2.0.0
