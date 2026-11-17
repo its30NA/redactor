@@ -99,6 +99,8 @@ enum Serve {
     Silent,
     /// Writes these bytes and closes the pipe, whatever was asked.
     ShortThenClose(Vec<u8>),
+    /// Writes these bytes one at a time, with a pause after each.
+    Trickle(Arc<[u8]>),
 }
 
 /// The user data of a source of ours.
@@ -250,6 +252,11 @@ impl WaylandOther {
         self.copy(Serve::ShortThenClose(bytes.to_vec()), &TEXT_MIMES);
     }
 
+    /// A text copy that answers every paste with `text`, one byte per write.
+    pub fn copy_trickle(&self, text: &str) {
+        self.copy(Serve::Trickle(Arc::from(text.as_bytes())), &TEXT_MIMES);
+    }
+
     /// A text copy that is still on its way when this returns.
     pub fn start_copy(&self, text: &str) {
         let bytes: Arc<[u8]> = Arc::from(text.as_bytes());
@@ -368,6 +375,18 @@ impl Dispatch<ZwlrDataControlSourceV1, SourceData> for State {
                 }
                 Serve::ShortThenClose(bytes) => write_out(fd, Arc::from(bytes.as_slice())),
                 Serve::Silent => state.shared.held.lock().unwrap().push(fd),
+                Serve::Trickle(bytes) => {
+                    let bytes = Arc::clone(bytes);
+                    std::thread::spawn(move || {
+                        let mut pipe = File::from(fd);
+                        for byte in bytes.iter() {
+                            if pipe.write_all(std::slice::from_ref(byte)).is_err() {
+                                return;
+                            }
+                            std::thread::sleep(Duration::from_micros(100));
+                        }
+                    });
+                }
                 Serve::Endless => {
                     std::thread::spawn(move || {
                         let mut pipe = File::from(fd);

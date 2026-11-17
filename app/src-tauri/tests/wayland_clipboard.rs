@@ -115,6 +115,21 @@ fn sender_closing_early_is_text_so_far_or_error() {
     assert_eq!(read_text(&cb), Some(short));
 }
 
+/// A sender that writes one byte at a time: the read collects the whole text (and holds no more
+/// memory than the text needs; `pipe.rs` pins that).
+#[test]
+#[ignore = "needs a throwaway Wayland compositor: tools/ci/wayland-tests.sh"]
+fn trickling_sender_reads_whole() {
+    compositor();
+    let (cb, other) = desktop();
+    let mut text = String::new();
+    while text.len() < 3000 {
+        text.push_str(&format!("a slow sender {} ", unique()));
+    }
+    other.copy_trickle(&text);
+    assert_eq!(read_text(&cb), Some(text));
+}
+
 /// Only the value `secret` marks a password-manager copy.
 #[test]
 #[ignore = "needs a throwaway Wayland compositor: tools/ci/wayland-tests.sh"]
