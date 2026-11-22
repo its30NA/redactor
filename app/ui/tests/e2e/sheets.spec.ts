@@ -219,6 +219,12 @@ test.describe('clipboard-scrubbed event', () => {
     await expect(unverified).toHaveClass(/warning/);
   });
 
+  test('a scrub asked for at start reaches the window', async ({ page, problems: _ }) => {
+    // `--scrub-clipboard` started the app: the result must not come before the page listens.
+    await openApp(page, '?scrub&clipboard=empty');
+    await expect(page.locator('.toast', { hasText: 'Nothing to scrub' })).toBeVisible();
+  });
+
   test('a scrub that expired waiting for the window offers Clean now', async ({ page, problems: _ }) => {
     await openApp(page);
     await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-waiting', { press: 1 }));

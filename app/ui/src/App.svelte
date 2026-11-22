@@ -60,9 +60,6 @@
   onMount(() => {
     void settings.load();
     void session.load();
-    appInfo()
-      .then((i) => (info = i))
-      .catch(() => {});
 
     const unlisten = [
       onEvent('wipe', ({ reason }) => {
@@ -75,6 +72,13 @@
       onEvent('settings-changed', (s) => (settings.value = s)),
       ...listenForClipboardScrubs(),
     ];
+    // Asked for once the events are heard: the shell holds a `--scrub-clipboard` it started with
+    // until this first app_info, so the scrub's notices reach the window.
+    void Promise.allSettled(unlisten).then(() =>
+      appInfo()
+        .then((i) => (info = i))
+        .catch(() => {}),
+    );
 
     // Decorative loops rest while the window is in the background.
     const root = document.documentElement;

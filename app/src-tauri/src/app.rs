@@ -110,7 +110,7 @@ pub fn run() -> Result<(), platform::Unavailable> {
                 warm.engines.get(true);
             });
             if cli::scrub_requested(&args()) {
-                hotkey_pressed(&handle);
+                hold_start_scrub(&handle);
             }
             Ok(())
         })
@@ -271,6 +271,30 @@ pub fn hotkey_pressed(app: &AppHandle) {
         // A focus-in still queued from an earlier press must not scrub a second time.
         st.pending.clear();
         scrub_and_notify(app);
+    }
+}
+
+/// How long a `--scrub-clipboard` the app started with waits for the page at most.
+const START_SCRUB_WAIT: Duration = Duration::from_secs(10);
+
+/// `--scrub-clipboard` started the app. The page cannot hear the scrub's events before it
+/// listens, so the scrub waits for its first `app_info` (asked for once it listens), or
+/// [`START_SCRUB_WAIT`] if the page never asks.
+fn hold_start_scrub(app: &AppHandle) {
+    state::state(app).start_scrub.store(true, Ordering::SeqCst);
+    let handle = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("start-scrub".into())
+        .spawn(move || {
+            std::thread::sleep(START_SCRUB_WAIT);
+            run_start_scrub(&handle);
+        });
+}
+
+/// Runs the held `--scrub-clipboard`, once: the page listens now, or it waited long enough.
+pub fn run_start_scrub(app: &AppHandle) {
+    if state::state(app).start_scrub.swap(false, Ordering::SeqCst) {
+        hotkey_pressed(app);
     }
 }
 

@@ -49,6 +49,8 @@ export interface MockOptions {
   hotkey?: 'portal' | 'command';
   /** With `os`: the clipboard works only while the window is in front. */
   clipboardNeedsFocus?: boolean;
+  /** Started with `--scrub-clipboard`: the scrub runs at the page's first app_info. */
+  scrubOnStart?: boolean;
 }
 
 export interface MockBackend {
@@ -292,6 +294,25 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
     ...session.map((s) => ({ value: s.value, label: s.meta.label, word: false })),
     ...settings.alwaysRedact.map((w) => ({ value: w, label: 'Always redact', word: true })),
   ];
+  let scrubOnStart = opts.scrubOnStart ?? false;
+
+  /**
+   * Like the shell: redacted text replaces the clipboard, and the result comes as the
+   * clipboard-scrubbed event, with the number of this press.
+   */
+  const scrubNow = async (): Promise<void> => {
+    const text = clipboard ?? '';
+    const press = ++presses;
+    let result: ScrubResult = { status: 'empty', removed: 0, byLabel: [], historyCleaned: false, press };
+    if (text !== '') {
+      const { sensitivity, pii, stripInvisible } = settings;
+      const r = await scanFor({ text, sensitivity, pii, stripInvisible, keep: [], manual: [] }, known());
+      const removed = r.findings.length;
+      if (removed > 0) clipboard = r.output;
+      result = removed > 0 ? { ...result, status: 'cleaned', removed, byLabel: r.stats.byLabel } : { ...result, status: 'clean' };
+    }
+    void emit('clipboard-scrubbed', result);
+  };
 
   mockWindows('main');
   mockIPC(
@@ -338,6 +359,12 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
           backend.settings = settings;
           return settings;
         case COMMANDS.appInfo:
+          // Like the shell: a scrub asked for at start (`--scrub-clipboard`) runs at the page's
+          // first app_info, which the page asks for once it listens for the scrub's events.
+          if (scrubOnStart) {
+            scrubOnStart = false;
+            void scrubNow();
+          }
           return opts.os
             ? {
                 ...fixture('app-info'),
@@ -347,22 +374,10 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
                 ...(opts.clipboardNeedsFocus ? { clipboardNeedsFocus: true } : {}),
               }
             : fixture('app-info');
-        case COMMANDS.scrubClipboard: {
-          // Like the shell: redacted text replaces the clipboard, and the result comes as the
-          // clipboard-scrubbed event, not as the answer, with the number of this press.
-          const text = clipboard ?? '';
-          const press = ++presses;
-          let result: ScrubResult = { status: 'empty', removed: 0, byLabel: [], historyCleaned: false, press };
-          if (text !== '') {
-            const { sensitivity, pii, stripInvisible } = settings;
-            const r = await scanFor({ text, sensitivity, pii, stripInvisible, keep: [], manual: [] }, known());
-            const removed = r.findings.length;
-            if (removed > 0) clipboard = r.output;
-            result = removed > 0 ? { ...result, status: 'cleaned', removed, byLabel: r.stats.byLabel } : { ...result, status: 'clean' };
-          }
-          void emit('clipboard-scrubbed', result);
+        case COMMANDS.scrubClipboard:
+          // The result comes as the event, not as the answer.
+          await scrubNow();
           return null;
-        }
         case 'plugin:window|minimize':
         case 'plugin:window|close':
           return null;

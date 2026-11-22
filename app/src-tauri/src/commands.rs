@@ -247,18 +247,23 @@ pub struct AppInfo {
     clipboard_needs_focus: bool,
 }
 
+/// The page asks for this once it listens for the shell's events, so it also runs a
+/// `--scrub-clipboard` the app started with.
 #[tauri::command]
-pub async fn app_info(state: State<'_, Shared>) -> Res<AppInfo> {
+pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> {
     let st = state.inner().clone();
-    blocking(move || AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
-        engine_version: redactor_core::ENGINE_VERSION,
-        rule_count: st.engines.rule_count(),
-        platform: st.platform.name,
-        tray: st.platform.tray,
-        shield: st.platform.shield,
-        hotkey: st.platform.hotkey.mode(),
-        clipboard_needs_focus: st.platform.clipboard.needs_focus(),
+    blocking(move || {
+        app::run_start_scrub(&app);
+        AppInfo {
+            version: env!("CARGO_PKG_VERSION"),
+            engine_version: redactor_core::ENGINE_VERSION,
+            rule_count: st.engines.rule_count(),
+            platform: st.platform.name,
+            tray: st.platform.tray,
+            shield: st.platform.shield,
+            hotkey: st.platform.hotkey.mode(),
+            clipboard_needs_focus: st.platform.clipboard.needs_focus(),
+        }
     })
     .await
 }

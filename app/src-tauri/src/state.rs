@@ -25,6 +25,8 @@ pub struct AppState {
     /// Scrub presses so far (hotkey, tray, flag, "Clean now"): the events carry a press's number,
     /// so the window lets a result end only the wait of a press it covers.
     pub presses: AtomicU64,
+    /// `--scrub-clipboard` started the app, and the scrub waits for the page to listen.
+    pub start_scrub: AtomicBool,
     /// Held across a whole settings change (read, apply, store), so two changes never interleave.
     pub settings_change: Mutex<()>,
     /// A hotkey press waiting for the window to come to the front.
@@ -49,6 +51,7 @@ impl AppState {
             tray_notice_shown: AtomicBool::new(false),
             scrubs: ScrubQueue::default(),
             presses: AtomicU64::new(0),
+            start_scrub: AtomicBool::new(false),
             settings_change: Mutex::new(()),
             pending: PendingScrub::new(),
             platform,
