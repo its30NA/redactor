@@ -88,9 +88,28 @@ impl PendingScrub {
         !std::mem::replace(&mut st.timer_running, true)
     }
 
-    /// The timer thread behind a true [`PendingScrub::arm`] could not start.
-    pub fn timer_failed(&self) {
-        self.lock().timer_running = false;
+    /// The timer thread behind a true [`PendingScrub::arm`] could not start. No timer will tell
+    /// the user, so the press expires now, as if the timer had run out; the next press tries a
+    /// timer again. True: a press was still waiting, so tell the user now, as on
+    /// [`Timer::Expired`].
+    pub fn timer_failed(&self, now: Instant) -> bool {
+        let mut st = self.lock();
+        st.timer_running = false;
+        if let Slot::Armed(_) = st.slot {
+            st.slot = Slot::ExpiredUnseen(now);
+            return true;
+        }
+        false
+    }
+
+    /// The timer thread's handle on the pending scrub, made first thing in the thread. If the
+    /// thread ends before a step said `Expired` or `Done` (it panicked), dropping it frees the
+    /// next press to start a timer.
+    pub fn timer(&self) -> ExpiryTimer<'_> {
+        ExpiryTimer {
+            pending: self,
+            ended: false,
+        }
     }
 
     /// A scrub ran without waiting: the one still pending is dropped, so one press never
@@ -133,6 +152,31 @@ impl PendingScrub {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// The running expiry timer, from [`PendingScrub::timer`].
+#[derive(Debug)]
+pub struct ExpiryTimer<'a> {
+    pending: &'a PendingScrub,
+    /// A step said `Expired` or `Done`: the flag is reset, and a later press may own it now.
+    ended: bool,
+}
+
+impl ExpiryTimer<'_> {
+    /// [`PendingScrub::timer_step`], remembering when the timer is done.
+    pub fn step(&mut self, now: Instant) -> Timer {
+        let next = self.pending.timer_step(now);
+        self.ended = !matches!(next, Timer::Sleep(_));
+        next
+    }
+}
+
+impl Drop for ExpiryTimer<'_> {
+    fn drop(&mut self) {
+        if !self.ended {
+            self.pending.lock().timer_running = false;
+        }
     }
 }
 
@@ -323,8 +367,62 @@ mod tests {
         let p = PendingScrub::new();
         let t = Instant::now();
         assert!(p.arm(t));
-        p.timer_failed();
+        p.timer_failed(t);
         assert!(p.arm(t + S(1)));
+    }
+
+    #[test]
+    fn a_timer_that_could_not_start_expires_the_press_at_once() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        assert!(p.arm(t));
+        assert!(p.timer_failed(t), "no timer will say it: tell the user now");
+        // No late scrub: the window says once that it did not run.
+        assert_eq!(p.take_on_focus(t + S(1)), Take::Expired);
+        assert_eq!(p.take_on_focus(t + S(2)), Take::Nothing);
+    }
+
+    #[test]
+    fn a_timer_that_could_not_start_after_a_focus_says_nothing() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        assert!(p.arm(t));
+        assert_eq!(p.take_on_focus(t), Take::Run);
+        assert!(!p.timer_failed(t), "the scrub ran");
+        assert_eq!(p.take_on_focus(t + S(1)), Take::Nothing);
+    }
+
+    #[test]
+    fn a_timer_that_panics_frees_the_next_press() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        assert!(p.arm(t));
+        let died = std::thread::scope(|s| {
+            s.spawn(|| {
+                let mut timer = p.timer();
+                assert_eq!(timer.step(t + S(1)), Timer::Sleep(S(29)));
+                panic!("the timer thread dies");
+            })
+            .join()
+        });
+        assert!(died.is_err());
+        assert!(p.arm(t + S(2)), "the timer is gone: a new press needs one");
+    }
+
+    #[test]
+    fn a_timer_that_ends_normally_leaves_the_next_timer_alone() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        assert!(p.arm(t));
+        let mut first = p.timer();
+        assert_eq!(first.step(t + PENDING_FOR), Timer::Expired);
+        assert!(
+            p.arm(t + S(31)),
+            "a new press after the notice starts a timer"
+        );
+        // The first thread ends after its notice, while the second timer runs.
+        drop(first);
+        assert!(!p.arm(t + S(32)), "still one timer");
     }
 
     #[test]

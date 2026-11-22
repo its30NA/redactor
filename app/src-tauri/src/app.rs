@@ -254,8 +254,9 @@ pub fn hotkey_pressed(app: &AppHandle) {
         // its result must not come before the notice it replaces.
         commands::emit_scrub_waiting(app);
         // Armed before the window is asked for, so the focus-in can never come first.
-        if st.pending.arm(Instant::now()) {
-            spawn_expiry_timer(app);
+        if st.pending.arm(Instant::now()) && !spawn_expiry_timer(app) {
+            // No timer: the press expired at once and the user was told; nothing waits.
+            return;
         }
         // A focus-in between the check above and the arm found nothing to run: run it now.
         if main_is_focused(app) {
@@ -274,24 +275,34 @@ pub fn hotkey_pressed(app: &AppHandle) {
 /// The one thread that tells the user a press waited for the window in vain. The window may
 /// never come to the front, and a desktop may drop the notification, so it also tells the window
 /// (it may be on screen, just not in front); the next focus does not notify a second time.
-fn spawn_expiry_timer(app: &AppHandle) {
+/// False: the thread could not start, so the press expired at once and the user was told.
+fn spawn_expiry_timer(app: &AppHandle) -> bool {
     let handle = app.clone();
     let spawned = std::thread::Builder::new()
         .name("pending-expiry".into())
-        .spawn(move || loop {
-            match state::state(&handle).pending.timer_step(Instant::now()) {
-                Timer::Sleep(left) => std::thread::sleep(left),
-                Timer::Expired => {
-                    notify(&handle, NOT_CLEANED);
-                    commands::emit_scrub_expired(&handle);
-                    break;
+        .spawn(move || {
+            let st = state::state(&handle);
+            let mut timer = st.pending.timer();
+            loop {
+                match timer.step(Instant::now()) {
+                    Timer::Sleep(left) => std::thread::sleep(left),
+                    Timer::Expired => {
+                        notify(&handle, NOT_CLEANED);
+                        commands::emit_scrub_expired(&handle);
+                        break;
+                    }
+                    Timer::Done => break,
                 }
-                Timer::Done => break,
             }
         });
-    if spawned.is_err() {
-        state::state(app).pending.timer_failed();
+    if spawned.is_ok() {
+        return true;
     }
+    if state::state(app).pending.timer_failed(Instant::now()) {
+        notify(app, NOT_CLEANED);
+        commands::emit_scrub_expired(app);
+    }
+    false
 }
 
 /// A press waited for the window in vain.
