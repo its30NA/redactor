@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [2.1.1] - 2026-11-17
+## [2.1.1] - 2026-11-22
 
 ### Fixed
 
@@ -20,6 +20,12 @@ All notable changes to this project are documented here. The format follows
   measured at Balanced and Paranoid, with the workaround.
 - A roadmap (`docs/ROADMAP.md`): the macOS and Linux app, fixes for the known misses, and an optional
   local-model judge under research.
+
+### Security
+
+- Dependencies: `url` 2.5.9 and `form_urlencoded` 1.2.3 (RUSTSEC-2026-0592: a stack overflow in
+  `Url::origin()` on nested `blob:` URLs). The crate comes in through the Tauri shell; Redactor's own code
+  does not call `Url::origin()`.
 
 ## [2.1.0] - 2026-11-11
 
