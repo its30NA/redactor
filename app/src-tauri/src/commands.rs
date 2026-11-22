@@ -272,17 +272,67 @@ pub async fn scrub_clipboard(app: AppHandle, state: State<'_, Shared>) -> Res<()
     blocking(move || app::hotkey_pressed(&app)).await
 }
 
+/// The `clipboard-scrubbed` event: the result and the latest press it covers (the scrub read the
+/// clipboard after it). The window ends only the wait of a press the result covers.
+#[derive(Clone, Serialize)]
+struct Scrubbed<'a> {
+    #[serde(flatten)]
+    result: &'a ClipboardScrub,
+    press: u64,
+}
+
+/// The `clipboard-scrub-waiting` event: the press that waits for the window.
+#[derive(Clone, Serialize)]
+struct Waiting {
+    press: u64,
+}
+
 /// Emits the scrub result to the UI (it shows a toast).
-pub fn emit_scrub(app: &AppHandle, r: &ClipboardScrub) {
-    let _ = app.emit("clipboard-scrubbed", r);
+pub fn emit_scrub(app: &AppHandle, r: &ClipboardScrub, press: u64) {
+    let _ = app.emit("clipboard-scrubbed", Scrubbed { result: r, press });
 }
 
 /// Tells the UI that a scrub waits for the window to come to the front.
-pub fn emit_scrub_waiting(app: &AppHandle) {
-    let _ = app.emit("clipboard-scrub-waiting", ());
+pub fn emit_scrub_waiting(app: &AppHandle, press: u64) {
+    let _ = app.emit("clipboard-scrub-waiting", Waiting { press });
 }
 
 /// Tells the UI that a scrub waited for the window in vain and did not run.
 pub fn emit_scrub_expired(app: &AppHandle) {
     let _ = app.emit("clipboard-scrub-expired", ());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clipscrub::ClipStatus;
+
+    #[test]
+    fn the_scrub_events_carry_the_press_beside_the_result() {
+        let r = ClipboardScrub {
+            status: ClipStatus::Clean,
+            removed: 0,
+            by_label: Vec::new(),
+            history_cleaned: false,
+        };
+        let v = serde_json::to_value(Scrubbed {
+            result: &r,
+            press: 7,
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "status": "clean",
+                "removed": 0,
+                "byLabel": [],
+                "historyCleaned": false,
+                "press": 7,
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(Waiting { press: 7 }).unwrap(),
+            serde_json::json!({ "press": 7 })
+        );
+    }
 }

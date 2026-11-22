@@ -3,22 +3,26 @@
  * The window's toasts for a hotkey, tray or `--scrub-clipboard` scrub: the result, the wait for
  * the window, and the scrub that expired before the window came to the front.
  */
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { listenForClipboardScrubs } from '../../src/lib/clipboard-notices';
 import { installMockBackend, type MockBackend } from '../../src/lib/mock/ipc';
 import { toasts } from '../../src/lib/toast.svelte';
-import type { ClipboardScrub, ClipboardStatus } from '../../src/lib/types';
+import type { ClipboardStatus, ScrubResult } from '../../src/lib/types';
 
 let backend: MockBackend;
 let unlisten: UnlistenFn[];
 
-const result = (status: ClipboardStatus, removed = 0): ClipboardScrub => ({
+/** A result; `press` is the latest press its scrub covers. */
+const result = (status: ClipboardStatus, removed = 0, press = 1): ScrubResult => ({
   status,
   removed,
   byLabel: [],
   historyCleaned: false,
+  press,
 });
+
+const WAITING = "Waiting for Redactor's window to clean the clipboard…";
 
 const titles = () => toasts.items.map((t) => t.title);
 
@@ -88,10 +92,10 @@ describe('scrub results', () => {
 
 describe('a scrub that waits for the window', () => {
   test('the wait shows until the result replaces it', async () => {
-    await backend.emit('clipboard-scrub-waiting', null);
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
     expect(toasts.items).toHaveLength(1);
     expect(toasts.items[0]).toMatchObject({
-      title: "Waiting for Redactor's window to clean the clipboard…",
+      title: WAITING,
       duration: 0,
     });
     await backend.emit('clipboard-scrubbed', result('clean'));
@@ -99,7 +103,7 @@ describe('a scrub that waits for the window', () => {
   });
 
   test('an expired wait stays until dismissed and offers Clean now', async () => {
-    await backend.emit('clipboard-scrub-waiting', null);
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
     await backend.emit('clipboard-scrub-expired', null);
     expect(toasts.items).toHaveLength(1);
     expect(toasts.items[0]).toMatchObject({
@@ -121,12 +125,12 @@ describe('a scrub that waits for the window', () => {
 
   test('a new press replaces an expired notice', async () => {
     await backend.emit('clipboard-scrub-expired', null);
-    await backend.emit('clipboard-scrub-waiting', null);
-    expect(titles()).toEqual(["Waiting for Redactor's window to clean the clipboard…"]);
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
+    expect(titles()).toEqual([WAITING]);
   });
 
   test('an expiry told twice (the timer, then the next focus) stays one toast', async () => {
-    await backend.emit('clipboard-scrub-waiting', null);
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
     await backend.emit('clipboard-scrub-expired', null);
     await backend.emit('clipboard-scrub-expired', null);
     expect(titles()).toEqual(['Not cleaned']);
@@ -155,27 +159,48 @@ describe('a scrub that waits for the window', () => {
 
   test('an expiry after a new wait replaced the notice shows again', async () => {
     await backend.emit('clipboard-scrub-expired', null);
-    await backend.emit('clipboard-scrub-waiting', null);
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
     await backend.emit('clipboard-scrub-expired', null);
     expect(titles()).toEqual(['Not cleaned']);
   });
 });
 
 describe('a waiting notice that comes too late', () => {
-  afterEach(() => vi.useRealTimers());
-
-  test('cannot overwrite the result that just arrived', async () => {
-    vi.useFakeTimers();
-    await backend.emit('clipboard-scrubbed', result('clean'));
-    await backend.emit('clipboard-scrub-waiting', null);
+  test('cannot overwrite the result that covers its press', async () => {
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 2));
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
     expect(titles()).toEqual(['Clipboard is clean']);
   });
 
-  test('a press a moment later than the last result still waits', async () => {
-    vi.useFakeTimers();
-    await backend.emit('clipboard-scrubbed', result('clean'));
-    vi.advanceTimersByTime(2000);
-    await backend.emit('clipboard-scrub-waiting', null);
-    expect(titles()).toContain("Waiting for Redactor's window to clean the clipboard…");
+  test('a press after the last result still waits, however soon', async () => {
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    expect(titles()).toEqual(['Clipboard is clean', WAITING]);
+  });
+});
+
+describe('a result of an earlier scrub', () => {
+  test('leaves the wait for a later press on screen', async () => {
+    // A slow scrub of clipboard A runs; the user copies B and presses again.
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
+    expect(titles()).toEqual([WAITING, 'Clipboard is clean']);
+    // B's own scrub ends the wait.
+    await backend.emit('clipboard-scrubbed', result('cleaned', 1, 2));
+    expect(titles()).toEqual(['Clipboard is clean', 'Clipboard scrubbed']);
+  });
+
+  test('leaves the expiry of a later press on screen', async () => {
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    await backend.emit('clipboard-scrub-expired', null);
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
+    expect(titles()).toEqual(['Not cleaned', 'Clipboard is clean']);
+  });
+
+  test('a scrub that covers later presses too ends the wait', async () => {
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 3));
+    expect(titles()).toEqual(['Clipboard is clean']);
   });
 });

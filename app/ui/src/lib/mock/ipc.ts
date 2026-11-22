@@ -17,11 +17,11 @@ import {
   MIN_SESSION_SECRET,
   type AppEventName,
   type AppEvents,
-  type ClipboardScrub,
   type Finding,
   type OutputSpan,
   type ScanRequest,
   type ScanResponse,
+  type ScrubResult,
   type SessionSecret,
   type Settings,
 } from '../types';
@@ -272,6 +272,8 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
   let scansFail = false;
   let settingsDelay = 0;
   let nextId = 100;
+  /** Scrub presses so far: the shell counts them from 1. */
+  let presses = 0;
   const calls: MockCall[] = [];
 
   const list = (): SessionSecret[] => session.map((s) => s.meta);
@@ -347,9 +349,10 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
             : fixture('app-info');
         case COMMANDS.scrubClipboard: {
           // Like the shell: redacted text replaces the clipboard, and the result comes as the
-          // clipboard-scrubbed event, not as the answer.
+          // clipboard-scrubbed event, not as the answer, with the number of this press.
           const text = clipboard ?? '';
-          let result: ClipboardScrub = { status: 'empty', removed: 0, byLabel: [], historyCleaned: false };
+          const press = ++presses;
+          let result: ScrubResult = { status: 'empty', removed: 0, byLabel: [], historyCleaned: false, press };
           if (text !== '') {
             const { sensitivity, pii, stripInvisible } = settings;
             const r = await scanFor({ text, sensitivity, pii, stripInvisible, keep: [], manual: [] }, known());

@@ -168,7 +168,7 @@ pub enum ClipStatus {
     Error,
 }
 
-/// The result of a hotkey or tray scrub, and the `clipboard-scrubbed` event payload.
+/// The result of a hotkey or tray scrub, sent to the UI in the `clipboard-scrubbed` event.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardScrub {

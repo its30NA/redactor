@@ -249,10 +249,12 @@ fn args() -> Vec<String> {
 /// scrubbed now, off the calling thread.
 pub fn hotkey_pressed(app: &AppHandle) {
     let st = state::state(app);
+    // Numbered before any scrub can start for it, so the scrub that covers it reads this number.
+    let press = st.presses.fetch_add(1, Ordering::SeqCst) + 1;
     if st.platform.clipboard.needs_focus() && !main_is_focused(app) {
         // The waiting notice first: a fast focus can run the scrub as soon as it is armed, and
         // its result must not come before the notice it replaces.
-        commands::emit_scrub_waiting(app);
+        commands::emit_scrub_waiting(app, press);
         // Armed before the window is asked for, so the focus-in can never come first.
         if st.pending.arm(When::now()) && !spawn_expiry_timer(app) {
             // No timer: the press expired at once and the user was told; nothing waits.
@@ -354,6 +356,8 @@ fn scrub_and_notify(app: &AppHandle) {
 /// Scrubs the clipboard with the current settings and tells the UI. Called one at a time.
 fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
     let st = state::state(app);
+    // Every press so far came before the clipboard is read: this scrub covers them.
+    let press = st.presses.load(Ordering::SeqCst);
     let s = st.settings();
     let engine = st.engines.get(s.strip_invisible);
     let r = clipscrub::scrub(
@@ -363,7 +367,7 @@ fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
         s.pii,
         s.strip_invisible,
     );
-    commands::emit_scrub(app, &r);
+    commands::emit_scrub(app, &r, press);
     r
 }
 

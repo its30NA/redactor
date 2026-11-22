@@ -47,6 +47,14 @@ describe('fixtures', () => {
     ]);
   });
 
+  test('the scrub events carry the press they belong to', () => {
+    const scrub = FIXTURES['clipboard-cleaned'];
+    expect(schema.scrubResult({ ...scrub, press: 3 }, 'r')).toEqual([]);
+    expect(schema.scrubResult(scrub, 'r')).toEqual(['r.press: missing']);
+    expect(schema.scrubWaiting({ press: 3 }, 'w')).toEqual([]);
+    expect(schema.scrubWaiting(null, 'w')).not.toEqual([]);
+  });
+
   test('validators reject a finding that carries a value field', () => {
     const scan = FIXTURES['scan-demo'] as ScanResponse;
     const leaky = { ...scan.findings[0], value: 'x' };

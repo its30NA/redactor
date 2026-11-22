@@ -96,6 +96,19 @@ export interface ClipboardScrub {
 }
 
 /**
+ * The `clipboard-scrubbed` event: a scrub's result and the latest press it covers (it read the
+ * clipboard after that press). The shell counts presses (hotkey, tray, flag, "Clean now") from 1.
+ */
+export interface ScrubResult extends ClipboardScrub {
+  press: number;
+}
+
+/** The `clipboard-scrub-waiting` event: the press that waits for the window. */
+export interface ScrubWaiting {
+  press: number;
+}
+
+/**
  * A secret remembered for this session only (lead's contract change of 2026-11-06, replacing
  * the persistent "My secrets" store). Held in the shell's memory, wiped on quit, lock and idle.
  * The value never crosses back to the UI: only its label, not even its length.
@@ -167,9 +180,9 @@ export type WipeReason = 'idle' | 'lock' | 'sleep' | 'tray';
 
 /** Events emitted by Rust to the UI, keyed by event name. */
 export interface AppEvents {
-  'clipboard-scrubbed': ClipboardScrub;
+  'clipboard-scrubbed': ScrubResult;
   /** A hotkey scrub waits for the window to come to the front (the clipboard needs focus). */
-  'clipboard-scrub-waiting': null;
+  'clipboard-scrub-waiting': ScrubWaiting;
   /** That scrub waited in vain and did not run. */
   'clipboard-scrub-expired': null;
   /** Also clears the session secrets. */

@@ -7,10 +7,16 @@
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { onEvent, scrubClipboard } from './api';
 import { toasts, type ToastAction } from './toast.svelte';
-import type { ClipboardScrub } from './types';
+import type { ScrubResult, ScrubWaiting } from './types';
 
 /** The wait or expiry toast on screen, if any: a newer press or result replaces it. */
 let pending: number | null = null;
+
+/**
+ * The press that toast belongs to (an expiry belongs to the press that waited). Only a result
+ * that covers it ends it: a slow scrub of an earlier clipboard leaves the wait for a later press.
+ */
+let pendingPress = 0;
 
 /**
  * The last expiry toast shown. The shell tells an expiry twice (at the timer, then at the next
@@ -20,14 +26,12 @@ let pending: number | null = null;
 let expired: number | null = null;
 
 /**
- * How long after a result a waiting notice is too late to be news. The shell emits the notice
- * before it arms the scrub, so a result cannot normally come first; if events are reordered all
- * the same, the result wins and no wait toast is left on screen with nothing to replace it.
+ * The latest press a result covered. A waiting notice for it or an earlier press is no news: the
+ * shell emits the notice before it arms the scrub, so a result cannot normally come first; if
+ * events are reordered all the same, the result wins and no wait toast is left on screen with
+ * nothing to replace it.
  */
-const LATE_WAITING_MS = 1000;
-
-/** When the last result arrived (`Date.now()`), 0 for none yet. */
-let lastResultAt = 0;
+let covered = 0;
 
 function replacePending(id: number | null): void {
   if (pending !== null) toasts.dismiss(pending);
@@ -42,9 +46,9 @@ const cleanNow: ToastAction = {
 
 const secrets = (n: number) => `${n} ${n === 1 ? 'secret' : 'secrets'} removed`;
 
-function showResult(s: ClipboardScrub): void {
-  replacePending(null);
-  lastResultAt = Date.now();
+function showResult(s: ScrubResult): void {
+  covered = Math.max(covered, s.press);
+  if (s.press >= pendingPress) replacePending(null);
   const history = s.historyCleaned ? ' · history cleaned' : '';
   switch (s.status) {
     case 'cleaned':
@@ -82,9 +86,10 @@ function showResult(s: ClipboardScrub): void {
   }
 }
 
-function showWaiting(): void {
-  if (Date.now() - lastResultAt < LATE_WAITING_MS) return;
+function showWaiting({ press }: ScrubWaiting): void {
+  if (press <= covered) return;
   replacePending(toasts.show({ tone: 'info', title: "Waiting for Redactor's window to clean the clipboard…", duration: 0 }));
+  pendingPress = press;
 }
 
 function showExpired(): void {
@@ -102,8 +107,9 @@ function showExpired(): void {
 /** Subscribes to the shell's scrub events. Resolves to the unsubscribe functions. */
 export function listenForClipboardScrubs(): Promise<UnlistenFn>[] {
   pending = null;
+  pendingPress = 0;
   expired = null;
-  lastResultAt = 0;
+  covered = 0;
   return [
     onEvent('clipboard-scrubbed', showResult),
     onEvent('clipboard-scrub-waiting', showWaiting),

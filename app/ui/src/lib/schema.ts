@@ -19,6 +19,8 @@ import {
   type ScanRequest,
   type ScanResponse,
   type ScanStats,
+  type ScrubResult,
+  type ScrubWaiting,
   type SessionSecret,
   type Settings,
   type Tier,
@@ -152,12 +154,20 @@ export const scanResponse = object<ScanResponse>({
   stats: scanStats,
 });
 
-export const clipboardScrub = object<ClipboardScrub>({
+const clipboardScrubShape = {
   status: oneOf('cleaned', 'unverified', 'clean', 'empty', 'protected', 'tooLarge', 'error'),
   removed: uint,
   byLabel: arrayOf(labelCount),
   historyCleaned: bool,
-});
+};
+
+export const clipboardScrub = object<ClipboardScrub>(clipboardScrubShape);
+
+/** The `clipboard-scrubbed` event: the result and the latest press it covers. */
+export const scrubResult = object<ScrubResult>({ ...clipboardScrubShape, press: uint });
+
+/** The `clipboard-scrub-waiting` event. */
+export const scrubWaiting = object<ScrubWaiting>({ press: uint });
 
 /** A session secret: id, label and time only; never the value, not even its length. */
 export const sessionSecret = object<SessionSecret>({

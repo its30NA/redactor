@@ -1,6 +1,6 @@
 //! Everything the shell keeps while it runs. Memory only, apart from the settings file.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -22,6 +22,9 @@ pub struct AppState {
     pub tray_notice_shown: AtomicBool,
     /// Serializes clipboard scrubs and lets at most one wait (the hotkey can repeat).
     pub scrubs: ScrubQueue,
+    /// Scrub presses so far (hotkey, tray, flag, "Clean now"): the events carry a press's number,
+    /// so the window lets a result end only the wait of a press it covers.
+    pub presses: AtomicU64,
     /// Held across a whole settings change (read, apply, store), so two changes never interleave.
     pub settings_change: Mutex<()>,
     /// A hotkey press waiting for the window to come to the front.
@@ -45,6 +48,7 @@ impl AppState {
             settings_file,
             tray_notice_shown: AtomicBool::new(false),
             scrubs: ScrubQueue::default(),
+            presses: AtomicU64::new(0),
             settings_change: Mutex::new(()),
             pending: PendingScrub::new(),
             platform,
