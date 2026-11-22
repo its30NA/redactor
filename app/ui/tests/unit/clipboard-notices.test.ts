@@ -44,6 +44,23 @@ describe('scrub results', () => {
     });
   });
 
+  test('a failed scrub stays until dismissed and offers Clean now', async () => {
+    await backend.emit('clipboard-scrubbed', result('error'));
+    const notice = toasts.items.at(-1)!;
+    expect(notice.duration).toBe(0);
+    expect(notice.action?.label).toBe('Clean now');
+    toasts.act(notice.id);
+    expect(backend.calls.at(-1)?.cmd).toBe('scrub_clipboard');
+    expect(toasts.items.some((t) => t.id === notice.id)).toBe(false);
+  });
+
+  test('a clipboard too large to scrub has no retry and leaves on its own', async () => {
+    await backend.emit('clipboard-scrubbed', result('tooLarge'));
+    const notice = toasts.items.at(-1)!;
+    expect(notice.duration).toBeGreaterThan(0);
+    expect(notice.action).toBeUndefined();
+  });
+
   test('an empty clipboard says there was no text', async () => {
     await backend.emit('clipboard-scrubbed', result('empty'));
     expect(toasts.items.at(-1)).toMatchObject({
@@ -111,6 +128,34 @@ describe('a scrub that waits for the window', () => {
   test('an expiry told twice (the timer, then the next focus) stays one toast', async () => {
     await backend.emit('clipboard-scrub-waiting', null);
     await backend.emit('clipboard-scrub-expired', null);
+    await backend.emit('clipboard-scrub-expired', null);
+    expect(titles()).toEqual(['Not cleaned']);
+  });
+
+  test('a second expiry leaves the notice on screen untouched', async () => {
+    await backend.emit('clipboard-scrub-expired', null);
+    const first = toasts.items[0]!.id;
+    await backend.emit('clipboard-scrub-expired', null);
+    expect(toasts.items.map((t) => t.id)).toEqual([first]);
+  });
+
+  test('an expiry after the notice was dismissed shows again', async () => {
+    await backend.emit('clipboard-scrub-expired', null);
+    toasts.dismiss(toasts.items[0]!.id);
+    await backend.emit('clipboard-scrub-expired', null);
+    expect(titles()).toEqual(['Not cleaned']);
+  });
+
+  test('an expiry after a result replaced the notice shows again', async () => {
+    await backend.emit('clipboard-scrub-expired', null);
+    await backend.emit('clipboard-scrubbed', result('clean'));
+    await backend.emit('clipboard-scrub-expired', null);
+    expect(titles()).toEqual(['Clipboard is clean', 'Not cleaned']);
+  });
+
+  test('an expiry after a new wait replaced the notice shows again', async () => {
+    await backend.emit('clipboard-scrub-expired', null);
+    await backend.emit('clipboard-scrub-waiting', null);
     await backend.emit('clipboard-scrub-expired', null);
     expect(titles()).toEqual(['Not cleaned']);
   });

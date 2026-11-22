@@ -2,15 +2,22 @@
  * The window's toasts for a hotkey, tray or `--scrub-clipboard` scrub. Where the clipboard needs
  * the window in front, a press first waits for it: the wait shows until the result or the expiry
  * replaces it. An expiry stays until dismissed (the desktop may drop its notification) and offers
- * "Clean now", an explicit scrub of whatever the clipboard holds then.
+ * "Clean now", an explicit scrub of whatever the clipboard holds then; so does a failed scrub.
  */
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { onEvent, scrubClipboard } from './api';
-import { toasts } from './toast.svelte';
+import { toasts, type ToastAction } from './toast.svelte';
 import type { ClipboardScrub } from './types';
 
 /** The wait or expiry toast on screen, if any: a newer press or result replaces it. */
 let pending: number | null = null;
+
+/**
+ * The last expiry toast shown. The shell tells an expiry twice (at the timer, then at the next
+ * focus); while the first notice is still on screen the second is not news, and replacing the
+ * node could swallow the click on "Clean now" that brought the window to the front.
+ */
+let expired: number | null = null;
 
 /**
  * How long after a result a waiting notice is too late to be news. The shell emits the notice
@@ -26,6 +33,12 @@ function replacePending(id: number | null): void {
   if (pending !== null) toasts.dismiss(pending);
   pending = id;
 }
+
+/** An explicit scrub of whatever the clipboard holds now, for a scrub that did not happen. */
+const cleanNow: ToastAction = {
+  label: 'Clean now',
+  run: () => void scrubClipboard().catch(() => toasts.show({ tone: 'error', title: 'Clipboard not scrubbed' })),
+};
 
 const secrets = (n: number) => `${n} ${n === 1 ? 'secret' : 'secrets'} removed`;
 
@@ -57,10 +70,13 @@ function showResult(s: ClipboardScrub): void {
       toasts.show({ tone: 'warning', title: 'Left alone', detail: 'The clipboard text is larger than 20 MiB.' });
       break;
     case 'error':
+      // The clipboard is still raw: stay until dismissed (the desktop may drop its notification).
       toasts.show({
         tone: 'error',
         title: 'Clipboard not scrubbed',
         detail: 'It could not be read, or it changed during the scrub.',
+        duration: 0,
+        action: cleanNow,
       });
       break;
   }
@@ -72,23 +88,21 @@ function showWaiting(): void {
 }
 
 function showExpired(): void {
-  replacePending(
-    toasts.show({
-      tone: 'warning',
-      title: 'Not cleaned',
-      detail: "Redactor's window did not come to the front in time.",
-      duration: 0,
-      action: {
-        label: 'Clean now',
-        run: () => void scrubClipboard().catch(() => toasts.show({ tone: 'error', title: 'Clipboard not scrubbed' })),
-      },
-    }),
-  );
+  if (expired !== null && toasts.items.some((t) => t.id === expired)) return;
+  expired = toasts.show({
+    tone: 'warning',
+    title: 'Not cleaned',
+    detail: "Redactor's window did not come to the front in time.",
+    duration: 0,
+    action: cleanNow,
+  });
+  replacePending(expired);
 }
 
 /** Subscribes to the shell's scrub events. Resolves to the unsubscribe functions. */
 export function listenForClipboardScrubs(): Promise<UnlistenFn>[] {
   pending = null;
+  expired = null;
   lastResultAt = 0;
   return [
     onEvent('clipboard-scrubbed', showResult),
