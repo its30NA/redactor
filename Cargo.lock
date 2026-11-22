@@ -3097,7 +3097,7 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "redactor-app"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "block2",
  "core-graphics",
@@ -3136,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "redactor-core"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "aho-corasick",
  "blake3",
@@ -3151,7 +3151,7 @@ dependencies = [
 
 [[package]]
 name = "redactor-wire"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "memchr",
  "redactor-core",
@@ -3390,7 +3390,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "scrub"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "assert_cmd",
  "clap",

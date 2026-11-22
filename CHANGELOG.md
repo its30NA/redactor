@@ -6,13 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- A "Known misses" table in the threat model: shapes that 2.1.0 keeps on purpose or cannot detect, each
-  measured at Balanced and Paranoid, with the workaround.
-- A roadmap (`docs/ROADMAP.md`): the macOS and Linux app, fixes for the known misses, and an optional
-  local-model judge under research.
-
 ### Changed
 
 - The desktop shell reaches the operating system through one platform layer. No change in behaviour.
@@ -26,6 +19,27 @@ All notable changes to this project are documented here. The format follows
   DerivedData, a timestamped release folder) is no longer a Random String in Balanced. A path is judged by
   the names in it, not as one run with its slashes; a random name inside a path and a secret with slashes
   in it are found as before, and Paranoid reports what it reported.
+
+## [2.1.1] - 2026-11-22
+
+### Fixed
+
+- Detection: a value that opens a quote and never closes it, at the end of a line with Windows line endings
+  (`\r\n`), made the engine panic. The quoted value now ends before the `\r\n`.
+  Found by the property tests; present since 2.0.0.
+
+### Added
+
+- A "Known misses" table in the threat model: shapes that 2.1.0 keeps on purpose or cannot detect, each
+  measured at Balanced and Paranoid, with the workaround.
+- A roadmap (`docs/ROADMAP.md`): the macOS and Linux app, fixes for the known misses, and an optional
+  local-model judge under research.
+
+### Security
+
+- Dependencies: `url` 2.5.9 and `form_urlencoded` 1.2.3 (RUSTSEC-2026-0592: a stack overflow in
+  `Url::origin()` on nested `blob:` URLs). The crate comes in through the Tauri shell; Redactor's own code
+  does not call `Url::origin()`.
 
 ## [2.1.0] - 2026-11-11
 
@@ -201,6 +215,7 @@ Rust.
   before it is copied.
 - The engine, the wire crate and `scrub` forbid `unsafe` code.
 
-[Unreleased]: https://github.com/its30NA/redactor/compare/v2.1.0...main
+[Unreleased]: https://github.com/its30NA/redactor/compare/v2.1.1...main
+[2.1.1]: https://github.com/its30NA/redactor/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/its30NA/redactor/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/its30NA/redactor/releases/tag/v2.0.0
