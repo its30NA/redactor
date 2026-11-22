@@ -1300,7 +1300,7 @@ Applies to:
 - `fastrand` 2.5.0 (Apache-2.0 OR MIT) - https://github.com/smol-rs/fastrand
 - `flate2` 1.1.11 (MIT OR Apache-2.0) - https://github.com/rust-lang/flate2-rs
 - `fnv` 1.0.7 (Apache-2.0 / MIT) - https://github.com/servo/rust-fnv
-- `form_urlencoded` 1.2.2 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
+- `form_urlencoded` 1.2.3 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
 - `glob` 0.3.4 (MIT OR Apache-2.0) - https://github.com/rust-lang/glob
 - `global-hotkey` 0.8.0 (Apache-2.0 OR MIT) - https://github.com/tauri-apps/global-hotkey
 - `hashbrown` 0.12.3 (MIT OR Apache-2.0) - https://github.com/rust-lang/hashbrown
@@ -1342,7 +1342,7 @@ Applies to:
 - `tray-icon` 0.25.1 (MIT OR Apache-2.0) - https://github.com/tauri-apps/tray-icon
 - `unicode-normalization` 0.1.26 ((MIT OR Apache-2.0) AND Unicode-3.0) - https://github.com/unicode-rs/unicode-normalization
 - `unicode-segmentation` 1.13.3 (MIT OR Apache-2.0) - https://github.com/unicode-rs/unicode-segmentation
-- `url` 2.5.8 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
+- `url` 2.5.9 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
 - `uuid` 1.29.0 (Apache-2.0 OR MIT) - https://github.com/uuid-rs/uuid
 - `web_atoms` 0.2.6 (MIT OR Apache-2.0) - https://github.com/servo/html5ever
 - `window-vibrancy` 0.8.1 (Apache-2.0 OR MIT) - https://github.com/tauri-apps/tauri-plugin-vibrancy
@@ -5973,7 +5973,7 @@ the following restrictions:
 
 Applies to:
 
-- `form_urlencoded` 1.2.2 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
+- `form_urlencoded` 1.2.3 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
 
 ~~~text
 Copyright (c) 2013-2016 The rust-url developers
@@ -6960,7 +6960,7 @@ Applies to:
 
 - `idna` 1.1.0 (MIT OR Apache-2.0) - https://github.com/servo/rust-url/
 - `percent-encoding` 2.3.2 (MIT OR Apache-2.0) - https://github.com/servo/rust-url/
-- `url` 2.5.8 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
+- `url` 2.5.9 (MIT OR Apache-2.0) - https://github.com/servo/rust-url
 
 ~~~text
 Copyright (c) 2013-2025 The rust-url developers
