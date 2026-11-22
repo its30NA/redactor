@@ -330,19 +330,30 @@ fn main_is_focused(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// Scrubs the clipboard on a new thread and shows the result as a notification.
+/// Scrubs the clipboard on a new thread and shows the result as a notification. While a scrub
+/// waits to run already, it covers this call too: nothing more starts.
 fn scrub_and_notify(app: &AppHandle) {
-    let app = app.clone();
-    std::thread::spawn(move || {
-        let r = scrub_clipboard_now(&app);
-        notify(&app, &r.notice());
-    });
+    let st = state::state(app);
+    if !st.scrubs.enqueue() {
+        return;
+    }
+    let handle = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("clipboard-scrub".into())
+        .spawn(move || {
+            let r = state::state(&handle)
+                .scrubs
+                .run(|| scrub_clipboard_now(&handle));
+            notify(&handle, &r.notice());
+        });
+    if spawned.is_err() {
+        st.scrubs.not_started();
+    }
 }
 
-/// Scrubs the clipboard with the current settings and tells the UI.
+/// Scrubs the clipboard with the current settings and tells the UI. Called one at a time.
 fn scrub_clipboard_now(app: &AppHandle) -> ClipboardScrub {
     let st = state::state(app);
-    let _one_at_a_time = st.scrub_lock.lock().unwrap_or_else(|e| e.into_inner());
     let s = st.settings();
     let engine = st.engines.get(s.strip_invisible);
     let r = clipscrub::scrub(
