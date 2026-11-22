@@ -11,15 +11,56 @@
 //!
 //! Only one timer runs at a time, however often the press repeats (the window's "Clean now" is
 //! an IPC command a script could loop): it follows the latest press.
+//!
+//! The wait counts on two clocks, [`When`]: where the monotonic clock stands still while the
+//! computer sleeps (Linux), the wall clock still shows that a press from before a suspend is old.
 
+use std::ops::Add;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 /// How long an armed scrub waits for the window to come to the front.
 pub const PENDING_FOR: Duration = Duration::from_secs(30);
 
 /// How long after the timer expired a scrub the window still reports it on the next focus.
 pub const UNSEEN_FOR: Duration = Duration::from_secs(10 * 60);
+
+/// A moment on both clocks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct When {
+    /// Never jumps, but may stand still while the computer sleeps.
+    pub mono: Instant,
+    /// Runs on during a sleep, but may be set back or forward.
+    pub wall: SystemTime,
+}
+
+impl When {
+    pub fn now() -> When {
+        When {
+            mono: Instant::now(),
+            wall: SystemTime::now(),
+        }
+    }
+
+    /// How long ago `earlier` was: the longer of the two clocks, so a sleep counts. A wall clock
+    /// set back counts as no time.
+    fn since(self, earlier: When) -> Duration {
+        let mono = self.mono.saturating_duration_since(earlier.mono);
+        let wall = self.wall.duration_since(earlier.wall).unwrap_or_default();
+        mono.max(wall)
+    }
+}
+
+impl Add<Duration> for When {
+    type Output = When;
+
+    fn add(self, d: Duration) -> When {
+        When {
+            mono: self.mono + d,
+            wall: self.wall + d,
+        }
+    }
+}
 
 /// What a focus-in does with the pending scrub.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,9 +95,9 @@ enum Slot {
     #[default]
     Empty,
     /// A press at this time waits for the window.
-    Armed(Instant),
+    Armed(When),
     /// The timer expired a press at this time; the window has not said so yet.
-    ExpiredUnseen(Instant),
+    ExpiredUnseen(When),
 }
 
 #[derive(Debug, Default)]
@@ -82,7 +123,7 @@ impl PendingScrub {
     /// adds a second scrub, and an earlier expiry the window has not shown is dropped.
     /// True: no timer runs, the caller starts one ([`PendingScrub::timer_step`] in a loop).
     /// False: the running timer follows this press.
-    pub fn arm(&self, now: Instant) -> bool {
+    pub fn arm(&self, now: When) -> bool {
         let mut st = self.lock();
         st.slot = Slot::Armed(now);
         !std::mem::replace(&mut st.timer_running, true)
@@ -92,7 +133,7 @@ impl PendingScrub {
     /// the user, so the press expires now, as if the timer had run out; the next press tries a
     /// timer again. True: a press was still waiting, so tell the user now, as on
     /// [`Timer::Expired`].
-    pub fn timer_failed(&self, now: Instant) -> bool {
+    pub fn timer_failed(&self, now: When) -> bool {
         let mut st = self.lock();
         st.timer_running = false;
         if let Slot::Armed(_) = st.slot {
@@ -120,14 +161,12 @@ impl PendingScrub {
 
     /// The window came to the front: takes the pending scrub, or the expiry the window has not
     /// shown yet, if any.
-    pub fn take_on_focus(&self, now: Instant) -> Take {
+    pub fn take_on_focus(&self, now: When) -> Take {
         match std::mem::take(&mut self.lock().slot) {
             Slot::Empty => Take::Nothing,
-            Slot::Armed(at) if now.saturating_duration_since(at) < PENDING_FOR => Take::Run,
+            Slot::Armed(at) if now.since(at) < PENDING_FOR => Take::Run,
             Slot::Armed(_) => Take::Lapsed,
-            Slot::ExpiredUnseen(at) if now.saturating_duration_since(at) < UNSEEN_FOR => {
-                Take::Expired
-            }
+            Slot::ExpiredUnseen(at) if now.since(at) < UNSEEN_FOR => Take::Expired,
             Slot::ExpiredUnseen(_) => Take::Nothing,
         }
     }
@@ -135,10 +174,10 @@ impl PendingScrub {
     /// The expiry timer asks what to do: sleep on, tell the user (the pending scrub expired now;
     /// the next focus says so in the window too), or stop (a focus, a scrub or a later press
     /// dealt with it already). After `Expired` and `Done` no timer runs.
-    pub fn timer_step(&self, now: Instant) -> Timer {
+    pub fn timer_step(&self, now: When) -> Timer {
         let mut st = self.lock();
         if let Slot::Armed(at) = st.slot {
-            let waited = now.saturating_duration_since(at);
+            let waited = now.since(at);
             if let Some(left) = PENDING_FOR.checked_sub(waited).filter(|d| !d.is_zero()) {
                 return Timer::Sleep(left);
             }
@@ -165,7 +204,7 @@ pub struct ExpiryTimer<'a> {
 
 impl ExpiryTimer<'_> {
     /// [`PendingScrub::timer_step`], remembering when the timer is done.
-    pub fn step(&mut self, now: Instant) -> Timer {
+    pub fn step(&mut self, now: When) -> Timer {
         let next = self.pending.timer_step(now);
         self.ended = !matches!(next, Timer::Sleep(_));
         next
@@ -189,7 +228,7 @@ mod tests {
     #[test]
     fn pending_scrub_runs_once_on_focus() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         assert_eq!(p.take_on_focus(t + S(1)), Take::Run);
         assert_eq!(p.take_on_focus(t + S(2)), Take::Nothing);
@@ -197,7 +236,7 @@ mod tests {
 
     #[test]
     fn pending_scrub_lapses_after_30_s() {
-        let t = Instant::now();
+        let t = When::now();
         let p = PendingScrub::new();
         p.arm(t);
         assert_eq!(p.take_on_focus(t + S(30)), Take::Lapsed);
@@ -213,7 +252,7 @@ mod tests {
     #[test]
     fn second_press_rearms_not_doubles() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         p.arm(t + S(20));
         assert_eq!(p.take_on_focus(t + S(40)), Take::Run);
@@ -223,7 +262,7 @@ mod tests {
     #[test]
     fn clear_drops_a_pending_arm() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         p.clear();
         assert_eq!(p.take_on_focus(t + S(1)), Take::Nothing);
@@ -232,7 +271,7 @@ mod tests {
     #[test]
     fn the_timer_expires_an_unanswered_press_once() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         assert_eq!(p.timer_step(t + S(29)), Timer::Sleep(S(1)));
         assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Expired);
@@ -245,7 +284,7 @@ mod tests {
     #[test]
     fn focus_after_the_timer_expired_reports_once_in_the_window() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Expired);
         assert_eq!(p.take_on_focus(t + S(45)), Take::Expired);
@@ -255,7 +294,7 @@ mod tests {
     #[test]
     fn an_expiry_the_window_never_saw_ages_out() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Expired);
         let expired_at = t + PENDING_FOR;
@@ -270,7 +309,7 @@ mod tests {
         p.arm(t);
         assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Expired);
         assert_eq!(
-            p.take_on_focus(expired_at + UNSEEN_FOR - Duration::from_millis(1)),
+            p.take_on_focus(expired_at + (UNSEEN_FOR - Duration::from_millis(1))),
             Take::Expired
         );
     }
@@ -278,7 +317,7 @@ mod tests {
     #[test]
     fn a_new_press_clears_an_unseen_expiry() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Expired);
         p.arm(t + S(40));
@@ -289,7 +328,7 @@ mod tests {
     #[test]
     fn a_scrub_without_waiting_clears_an_unseen_expiry() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Expired);
         p.clear();
@@ -299,7 +338,7 @@ mod tests {
     #[test]
     fn a_second_press_restarts_the_timer_s_wait() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         p.arm(t + S(20));
         assert_eq!(
@@ -313,7 +352,7 @@ mod tests {
     #[test]
     fn the_timer_stays_quiet_after_a_focus_or_a_scrub() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         p.arm(t);
         assert_eq!(p.take_on_focus(t + PENDING_FOR), Take::Lapsed);
         assert_eq!(
@@ -334,7 +373,7 @@ mod tests {
     #[test]
     fn a_looping_caller_gets_one_timer_not_one_per_press() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         assert!(p.arm(t), "the first press needs a timer");
         for i in 1..50 {
             assert!(!p.arm(t + Duration::from_millis(i)), "one timer runs");
@@ -355,7 +394,7 @@ mod tests {
     #[test]
     fn a_timer_that_finds_nothing_stops_and_frees_the_next_press() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         assert!(p.arm(t));
         assert_eq!(p.take_on_focus(t + S(1)), Take::Run);
         assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Done);
@@ -365,7 +404,7 @@ mod tests {
     #[test]
     fn a_timer_that_could_not_start_frees_the_next_press() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         assert!(p.arm(t));
         p.timer_failed(t);
         assert!(p.arm(t + S(1)));
@@ -374,7 +413,7 @@ mod tests {
     #[test]
     fn a_timer_that_could_not_start_expires_the_press_at_once() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         assert!(p.arm(t));
         assert!(p.timer_failed(t), "no timer will say it: tell the user now");
         // No late scrub: the window says once that it did not run.
@@ -385,7 +424,7 @@ mod tests {
     #[test]
     fn a_timer_that_could_not_start_after_a_focus_says_nothing() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         assert!(p.arm(t));
         assert_eq!(p.take_on_focus(t), Take::Run);
         assert!(!p.timer_failed(t), "the scrub ran");
@@ -395,7 +434,7 @@ mod tests {
     #[test]
     fn a_timer_that_panics_frees_the_next_press() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         assert!(p.arm(t));
         let died = std::thread::scope(|s| {
             s.spawn(|| {
@@ -412,7 +451,7 @@ mod tests {
     #[test]
     fn a_timer_that_ends_normally_leaves_the_next_timer_alone() {
         let p = PendingScrub::new();
-        let t = Instant::now();
+        let t = When::now();
         assert!(p.arm(t));
         let mut first = p.timer();
         assert_eq!(first.step(t + PENDING_FOR), Timer::Expired);
@@ -425,9 +464,58 @@ mod tests {
         assert!(!p.arm(t + S(32)), "still one timer");
     }
 
+    /// A suspend: the monotonic clock stood still, the wall clock moved on.
+    fn after_a_suspend(t: When, asleep: Duration) -> When {
+        When {
+            mono: t.mono + S(1),
+            wall: t.wall + asleep,
+        }
+    }
+
+    #[test]
+    fn a_press_from_before_a_suspend_lapses_on_focus() {
+        let p = PendingScrub::new();
+        let t = When::now();
+        p.arm(t);
+        assert_eq!(p.take_on_focus(after_a_suspend(t, S(3600))), Take::Lapsed);
+    }
+
+    #[test]
+    fn the_timer_expires_a_press_from_before_a_suspend() {
+        let p = PendingScrub::new();
+        let t = When::now();
+        p.arm(t);
+        assert_eq!(
+            p.timer_step(after_a_suspend(t, PENDING_FOR)),
+            Timer::Expired
+        );
+    }
+
+    #[test]
+    fn an_unseen_expiry_from_before_a_long_suspend_ages_out() {
+        let p = PendingScrub::new();
+        let t = When::now();
+        p.arm(t);
+        assert_eq!(p.timer_step(t + PENDING_FOR), Timer::Expired);
+        let resumed = after_a_suspend(t + PENDING_FOR, UNSEEN_FOR);
+        assert_eq!(p.take_on_focus(resumed), Take::Nothing);
+    }
+
+    #[test]
+    fn a_wall_clock_set_back_does_not_end_the_wait() {
+        let p = PendingScrub::new();
+        let t = When::now();
+        p.arm(t);
+        let set_back = When {
+            mono: t.mono + S(1),
+            wall: t.wall - S(3600),
+        };
+        assert_eq!(p.take_on_focus(set_back), Take::Run);
+    }
+
     #[test]
     fn focus_without_press_is_nothing() {
         let p = PendingScrub::new();
-        assert_eq!(p.take_on_focus(Instant::now()), Take::Nothing);
+        assert_eq!(p.take_on_focus(When::now()), Take::Nothing);
     }
 }

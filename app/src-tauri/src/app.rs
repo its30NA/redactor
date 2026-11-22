@@ -17,7 +17,7 @@ use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
-use crate::pending::{Take, Timer};
+use crate::pending::{Take, Timer, When};
 use crate::platform::{self, HotkeyMode};
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
@@ -254,7 +254,7 @@ pub fn hotkey_pressed(app: &AppHandle) {
         // its result must not come before the notice it replaces.
         commands::emit_scrub_waiting(app);
         // Armed before the window is asked for, so the focus-in can never come first.
-        if st.pending.arm(Instant::now()) && !spawn_expiry_timer(app) {
+        if st.pending.arm(When::now()) && !spawn_expiry_timer(app) {
             // No timer: the press expired at once and the user was told; nothing waits.
             return;
         }
@@ -284,7 +284,7 @@ fn spawn_expiry_timer(app: &AppHandle) -> bool {
             let st = state::state(&handle);
             let mut timer = st.pending.timer();
             loop {
-                match timer.step(Instant::now()) {
+                match timer.step(When::now()) {
                     Timer::Sleep(left) => std::thread::sleep(left),
                     Timer::Expired => {
                         notify(&handle, NOT_CLEANED);
@@ -298,7 +298,7 @@ fn spawn_expiry_timer(app: &AppHandle) -> bool {
     if spawned.is_ok() {
         return true;
     }
-    if state::state(app).pending.timer_failed(Instant::now()) {
+    if state::state(app).pending.timer_failed(When::now()) {
         notify(app, NOT_CLEANED);
         commands::emit_scrub_expired(app);
     }
@@ -311,7 +311,7 @@ const NOT_CLEANED: &str = "Not cleaned: Redactor's window did not come to the fr
 /// The main window came to the front: runs the scrub a hotkey press left waiting, or says in
 /// the window that it expired (the desktop may have dropped the notification).
 fn scrub_if_pending(app: &AppHandle) {
-    match state::state(app).pending.take_on_focus(Instant::now()) {
+    match state::state(app).pending.take_on_focus(When::now()) {
         Take::Run => scrub_and_notify(app),
         // The timer notified already; only the window still has to learn it.
         Take::Expired => commands::emit_scrub_expired(app),
