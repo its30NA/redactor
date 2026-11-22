@@ -257,6 +257,11 @@ pub fn hotkey_pressed(app: &AppHandle) {
         if st.pending.arm(Instant::now()) {
             spawn_expiry_timer(app);
         }
+        // A focus-in between the check above and the arm found nothing to run: run it now.
+        if main_is_focused(app) {
+            scrub_if_pending(app);
+            return;
+        }
         show_main(app);
         notify(app, "Bring Redactor to the front to clean the clipboard");
     } else {
