@@ -17,7 +17,7 @@ use crate::clipscrub::{self, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
-use crate::pending::{Take, PENDING_FOR};
+use crate::pending::{Take, Timer};
 use crate::platform::{self, HotkeyMode};
 use crate::settings::{Settings, SettingsFile};
 use crate::state::{self, AppState, Shared};
@@ -245,31 +245,47 @@ fn args() -> Vec<String> {
 
 /// A hotkey press, the tray's scrub item, `--scrub-clipboard` or the window's "Clean now".
 /// Where the clipboard needs the window in front and it is not, the window comes back and the
-/// scrub waits for focus, up to [`PENDING_FOR`]. Otherwise the clipboard is scrubbed now, off
-/// the calling thread.
+/// scrub waits for focus, up to [`crate::pending::PENDING_FOR`]. Otherwise the clipboard is
+/// scrubbed now, off the calling thread.
 pub fn hotkey_pressed(app: &AppHandle) {
     let st = state::state(app);
     if st.platform.clipboard.needs_focus() && !main_is_focused(app) {
-        // Armed before the window is asked for, so the focus-in can never come first.
-        let armed = st.pending.arm(Instant::now());
-        // Before the window is asked for too, so the result can never come before it.
+        // The waiting notice first: a fast focus can run the scrub as soon as it is armed, and
+        // its result must not come before the notice it replaces.
         commands::emit_scrub_waiting(app);
+        // Armed before the window is asked for, so the focus-in can never come first.
+        if st.pending.arm(Instant::now()) {
+            spawn_expiry_timer(app);
+        }
         show_main(app);
         notify(app, "Bring Redactor to the front to clean the clipboard");
-        // The window may never come to the front: the user still hears that nothing ran.
-        let app = app.clone();
-        let _ = std::thread::Builder::new()
-            .name("pending-expiry".into())
-            .spawn(move || {
-                std::thread::sleep(PENDING_FOR);
-                if state::state(&app).pending.expire(armed, Instant::now()) {
-                    notify(&app, NOT_CLEANED);
-                }
-            });
     } else {
         // A focus-in still queued from an earlier press must not scrub a second time.
         st.pending.clear();
         scrub_and_notify(app);
+    }
+}
+
+/// The one thread that tells the user a press waited for the window in vain. The window may
+/// never come to the front, and a desktop may drop the notification, so it also tells the window
+/// (it may be on screen, just not in front); the next focus does not notify a second time.
+fn spawn_expiry_timer(app: &AppHandle) {
+    let handle = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("pending-expiry".into())
+        .spawn(move || loop {
+            match state::state(&handle).pending.timer_step(Instant::now()) {
+                Timer::Sleep(left) => std::thread::sleep(left),
+                Timer::Expired => {
+                    notify(&handle, NOT_CLEANED);
+                    commands::emit_scrub_expired(&handle);
+                    break;
+                }
+                Timer::Done => break,
+            }
+        });
+    if spawned.is_err() {
+        state::state(app).pending.timer_failed();
     }
 }
 
@@ -281,7 +297,10 @@ const NOT_CLEANED: &str = "Not cleaned: Redactor's window did not come to the fr
 fn scrub_if_pending(app: &AppHandle) {
     match state::state(app).pending.take_on_focus(Instant::now()) {
         Take::Run => scrub_and_notify(app),
-        Take::Expired => {
+        // The timer notified already; only the window still has to learn it.
+        Take::Expired => commands::emit_scrub_expired(app),
+        // The timer has not spoken (it runs late): this is the only notice.
+        Take::Lapsed => {
             notify(app, NOT_CLEANED);
             commands::emit_scrub_expired(app);
         }
