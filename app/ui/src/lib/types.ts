@@ -168,6 +168,10 @@ export type WipeReason = 'idle' | 'lock' | 'sleep' | 'tray';
 /** Events emitted by Rust to the UI, keyed by event name. */
 export interface AppEvents {
   'clipboard-scrubbed': ClipboardScrub;
+  /** A hotkey scrub waits for the window to come to the front (the clipboard needs focus). */
+  'clipboard-scrub-waiting': null;
+  /** That scrub waited in vain and did not run. */
+  'clipboard-scrub-expired': null;
   /** Also clears the session secrets. */
   wipe: { reason: WipeReason };
   'session-changed': SessionSecret[];

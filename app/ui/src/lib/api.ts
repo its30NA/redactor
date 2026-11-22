@@ -34,6 +34,7 @@ export const COMMANDS = {
   getSettings: 'get_settings',
   setSettings: 'set_settings',
   appInfo: 'app_info',
+  scrubClipboard: 'scrub_clipboard',
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -78,6 +79,9 @@ export const setSettings = (settings: Settings): Promise<Settings> =>
   invoke(COMMANDS.setSettings, { settings });
 
 export const appInfo = (): Promise<AppInfo> => invoke(COMMANDS.appInfo);
+
+/** Scrub the clipboard the way the hotkey does; the result comes as the `clipboard-scrubbed` event. */
+export const scrubClipboard = (): Promise<void> => invoke(COMMANDS.scrubClipboard);
 
 /** Subscribe to an event the shell emits. Resolves to the unsubscribe function. */
 export async function onEvent<K extends AppEventName>(

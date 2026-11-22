@@ -17,6 +17,7 @@ import {
   MIN_SESSION_SECRET,
   type AppEventName,
   type AppEvents,
+  type ClipboardScrub,
   type Finding,
   type OutputSpan,
   type ScanRequest,
@@ -344,6 +345,21 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
                 ...(opts.clipboardNeedsFocus ? { clipboardNeedsFocus: true } : {}),
               }
             : fixture('app-info');
+        case COMMANDS.scrubClipboard: {
+          // Like the shell: redacted text replaces the clipboard, and the result comes as the
+          // clipboard-scrubbed event, not as the answer.
+          const text = clipboard ?? '';
+          let result: ClipboardScrub = { status: 'empty', removed: 0, byLabel: [], historyCleaned: false };
+          if (text !== '') {
+            const { sensitivity, pii, stripInvisible } = settings;
+            const r = await scanFor({ text, sensitivity, pii, stripInvisible, keep: [], manual: [] }, known());
+            const removed = r.findings.length;
+            if (removed > 0) clipboard = r.output;
+            result = removed > 0 ? { ...result, status: 'cleaned', removed, byLabel: r.stats.byLabel } : { ...result, status: 'clean' };
+          }
+          void emit('clipboard-scrubbed', result);
+          return null;
+        }
         case 'plugin:window|minimize':
         case 'plugin:window|close':
           return null;

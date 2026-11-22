@@ -102,6 +102,7 @@ const cases: { fn: string; run: () => Promise<unknown>; cmd: string; args: Recor
   { fn: 'getSettings', run: () => api.getSettings(), cmd: 'get_settings', args: {} },
   { fn: 'setSettings', run: () => api.setSettings(settings), cmd: 'set_settings', args: { settings } },
   { fn: 'appInfo', run: () => api.appInfo(), cmd: 'app_info', args: {} },
+  { fn: 'scrubClipboard', run: () => api.scrubClipboard(), cmd: 'scrub_clipboard', args: {} },
 ];
 
 describe('api', () => {
@@ -126,6 +127,7 @@ describe('api', () => {
         'read_clipboard',
         'save_text_file',
         'scan',
+        'scrub_clipboard',
         'set_settings',
         'session_add',
         'session_clear',

@@ -75,6 +75,7 @@ pub fn run() -> Result<(), platform::Unavailable> {
             commands::get_settings,
             commands::set_settings,
             commands::app_info,
+            commands::scrub_clipboard,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -242,14 +243,17 @@ fn args() -> Vec<String> {
         .collect()
 }
 
-/// A hotkey press, the tray's scrub item or `--scrub-clipboard`. Where the clipboard needs the
-/// window in front and it is not, the window comes back and the scrub waits for focus, up to
-/// [`PENDING_FOR`]. Otherwise the clipboard is scrubbed now, off the calling thread.
+/// A hotkey press, the tray's scrub item, `--scrub-clipboard` or the window's "Clean now".
+/// Where the clipboard needs the window in front and it is not, the window comes back and the
+/// scrub waits for focus, up to [`PENDING_FOR`]. Otherwise the clipboard is scrubbed now, off
+/// the calling thread.
 pub fn hotkey_pressed(app: &AppHandle) {
     let st = state::state(app);
     if st.platform.clipboard.needs_focus() && !main_is_focused(app) {
         // Armed before the window is asked for, so the focus-in can never come first.
         let armed = st.pending.arm(Instant::now());
+        // Before the window is asked for too, so the result can never come before it.
+        commands::emit_scrub_waiting(app);
         show_main(app);
         notify(app, "Bring Redactor to the front to clean the clipboard");
         // The window may never come to the front: the user still hears that nothing ran.
@@ -272,11 +276,15 @@ pub fn hotkey_pressed(app: &AppHandle) {
 /// A press waited for the window in vain.
 const NOT_CLEANED: &str = "Not cleaned: Redactor's window did not come to the front";
 
-/// The main window came to the front: runs the scrub a hotkey press left waiting.
+/// The main window came to the front: runs the scrub a hotkey press left waiting, or says in
+/// the window that it expired (the desktop may have dropped the notification).
 fn scrub_if_pending(app: &AppHandle) {
     match state::state(app).pending.take_on_focus(Instant::now()) {
         Take::Run => scrub_and_notify(app),
-        Take::Expired => notify(app, NOT_CLEANED),
+        Take::Expired => {
+            notify(app, NOT_CLEANED);
+            commands::emit_scrub_expired(app);
+        }
         Take::Nothing => {}
     }
 }

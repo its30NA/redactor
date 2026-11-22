@@ -5,7 +5,8 @@
 //! runs, once; after [`PENDING_FOR`] it has expired instead, so it never runs on a clipboard
 //! the user has moved on from. A timer expires it at [`PENDING_FOR`] even when the window never
 //! comes to the front, so the user hears that it did not run; whichever comes first takes it,
-//! so there is one notice and never a late scrub.
+//! so there is never a late scrub. A desktop may drop that notice (WSLg shows none), so the
+//! next focus after the timer still says once, in the window, that the scrub did not run.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -19,7 +20,8 @@ pub const PENDING_FOR: Duration = Duration::from_secs(30);
 pub enum Take {
     /// A scrub was armed less than [`PENDING_FOR`] ago: run it now.
     Run,
-    /// A scrub was armed, but too long ago: tell the user it did not run.
+    /// A scrub was armed, but too long ago, or the timer expired it and the window has not said
+    /// so yet: tell the user it did not run.
     Expired,
     /// No scrub was armed.
     Nothing,
@@ -32,10 +34,21 @@ pub struct Armed {
     id: u64,
 }
 
+/// What the pending scrub holds between a press and the next focus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Slot {
+    #[default]
+    Empty,
+    /// A press waits for the window.
+    Armed(Armed),
+    /// The timer expired a press; the window has not said so yet.
+    ExpiredUnseen,
+}
+
 /// The last hotkey press still waiting for focus, if any.
 #[derive(Debug, Default)]
 pub struct PendingScrub {
-    armed: Mutex<Option<Armed>>,
+    slot: Mutex<Slot>,
     next_id: AtomicU64,
 }
 
@@ -45,47 +58,51 @@ impl PendingScrub {
     }
 
     /// A press while the window is not in front. A second press restarts the wait; it never
-    /// adds a second scrub. Returns this arming, for [`PendingScrub::expire`].
+    /// adds a second scrub, and an earlier expiry the window has not shown is dropped.
+    /// Returns this arming, for [`PendingScrub::expire`].
     pub fn arm(&self, now: Instant) -> Armed {
         let armed = Armed {
             at: now,
             id: self.next_id.fetch_add(1, Ordering::Relaxed),
         };
-        *self.lock() = Some(armed);
+        *self.lock() = Slot::Armed(armed);
         armed
     }
 
     /// A scrub ran without waiting: the one still pending is dropped, so one press never
-    /// scrubs twice.
+    /// scrubs twice, and an earlier expiry the window has not shown is stale.
     pub fn clear(&self) {
-        *self.lock() = None;
+        *self.lock() = Slot::Empty;
     }
 
-    /// The window came to the front: takes the pending scrub, if any.
+    /// The window came to the front: takes the pending scrub, or the expiry the window has not
+    /// shown yet, if any.
     pub fn take_on_focus(&self, now: Instant) -> Take {
-        match self.lock().take() {
-            None => Take::Nothing,
-            Some(armed) if now.saturating_duration_since(armed.at) < PENDING_FOR => Take::Run,
-            Some(_) => Take::Expired,
+        match std::mem::take(&mut *self.lock()) {
+            Slot::Empty => Take::Nothing,
+            Slot::Armed(armed) if now.saturating_duration_since(armed.at) < PENDING_FOR => {
+                Take::Run
+            }
+            Slot::Armed(_) | Slot::ExpiredUnseen => Take::Expired,
         }
     }
 
     /// The timer of `armed` is up: takes the pending scrub if it is still that arming and has
-    /// waited [`PENDING_FOR`]. True: it expired now, tell the user. False: a focus, a scrub or
-    /// a later press dealt with it already.
+    /// waited [`PENDING_FOR`]. True: it expired now, tell the user; the next focus says so in the
+    /// window too. False: a focus, a scrub or a later press dealt with it already.
     pub fn expire(&self, armed: Armed, now: Instant) -> bool {
         let mut slot = self.lock();
         let due = now.saturating_duration_since(armed.at) >= PENDING_FOR;
-        if due && *slot == Some(armed) {
-            *slot = None;
+        if due && *slot == Slot::Armed(armed) {
+            *slot = Slot::ExpiredUnseen;
             true
         } else {
             false
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Armed>> {
-        self.armed.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock(&self) -> std::sync::MutexGuard<'_, Slot> {
+        self.slot.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -144,8 +161,40 @@ mod tests {
         assert!(!p.expire(armed, t + Duration::from_secs(29)), "not due yet");
         assert!(p.expire(armed, t + PENDING_FOR));
         assert!(!p.expire(armed, t + PENDING_FOR), "one notice");
-        // A focus after the timer: no late scrub, no second notice.
-        assert_eq!(p.take_on_focus(t + Duration::from_secs(31)), Take::Nothing);
+        // A focus after the timer: no late scrub; the window says once that it did not run.
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(31)), Take::Expired);
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(32)), Take::Nothing);
+    }
+
+    #[test]
+    fn focus_after_the_timer_expired_reports_once_in_the_window() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        let armed = p.arm(t);
+        assert!(p.expire(armed, t + PENDING_FOR));
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(45)), Take::Expired);
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(46)), Take::Nothing);
+    }
+
+    #[test]
+    fn a_new_press_clears_an_unseen_expiry() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        let armed = p.arm(t);
+        assert!(p.expire(armed, t + PENDING_FOR));
+        p.arm(t + Duration::from_secs(40));
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(41)), Take::Run);
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(42)), Take::Nothing);
+    }
+
+    #[test]
+    fn a_scrub_without_waiting_clears_an_unseen_expiry() {
+        let p = PendingScrub::new();
+        let t = Instant::now();
+        let armed = p.arm(t);
+        assert!(p.expire(armed, t + PENDING_FOR));
+        p.clear();
+        assert_eq!(p.take_on_focus(t + Duration::from_secs(41)), Take::Nothing);
     }
 
     #[test]

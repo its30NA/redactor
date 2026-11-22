@@ -130,7 +130,15 @@ async function everyUiCall(): Promise<void> {
   await api.getSettings();
   await api.setSettings(settings);
   await api.appInfo();
-  for (const name of ['clipboard-scrubbed', 'wipe', 'session-changed', 'settings-changed'] as const) {
+  await api.scrubClipboard();
+  for (const name of [
+    'clipboard-scrubbed',
+    'clipboard-scrub-waiting',
+    'clipboard-scrub-expired',
+    'wipe',
+    'session-changed',
+    'settings-changed',
+  ] as const) {
     const unlisten = await api.onEvent(name, () => {});
     unlisten();
   }
@@ -160,7 +168,7 @@ describe('the isolation hook', () => {
   test('lets every call the UI makes through, unchanged', async () => {
     await everyUiCall();
     const cmds = new Set(sent.map((m) => m.cmd));
-    // All 13 app commands and the plugin commands are exercised.
+    // All 14 app commands and the plugin commands are exercised.
     for (const c of Object.values(api.COMMANDS)) expect(cmds.has(c), c).toBe(true);
     for (const m of sent) {
       expect(Object.keys(m).sort()).toEqual(['callback', 'cmd', 'error', 'options', 'payload']);
@@ -195,8 +203,6 @@ describe('the isolation hook', () => {
       '__proto__',
       'toString',
       'hasOwnProperty',
-      // The hotkey and the tray scrub the clipboard inside the shell; the UI never asks.
-      'scrub_clipboard',
     ]) {
       rejected({ ...base, cmd, payload: {} });
     }

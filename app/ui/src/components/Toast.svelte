@@ -33,6 +33,9 @@
         <span class="title">{t.title}</span>
         {#if t.detail}<span class="detail">{t.detail}</span>{/if}
       </div>
+      {#if t.action}
+        <button type="button" class="action" onclick={() => toasts.act(t.id)}>{t.action.label}</button>
+      {/if}
       <button type="button" class="dismiss" aria-label="Dismiss" onclick={() => toasts.dismiss(t.id)}>
         <X size={14} aria-hidden="true" />
       </button>
@@ -100,6 +103,17 @@
   .detail {
     font-size: var(--text-sm);
     color: var(--muted);
+  }
+  .action {
+    flex: none;
+    padding: 4px 10px;
+    border-radius: var(--radius-xs);
+    font-weight: 500;
+    color: var(--tone);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 45%, transparent);
+  }
+  .action:hover {
+    background: var(--glass-hover);
   }
   .dismiss {
     display: grid;

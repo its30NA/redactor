@@ -218,6 +218,22 @@ test.describe('clipboard-scrubbed event', () => {
     await expect(unverified).toBeVisible();
     await expect(unverified).toHaveClass(/warning/);
   });
+
+  test('a scrub that expired waiting for the window offers Clean now', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-waiting', null));
+    const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to clean the clipboard…" });
+    await expect(waiting).toBeVisible();
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-expired', null));
+    await expect(waiting).toHaveCount(0);
+    const expired = page.locator('.toast', { hasText: 'Not cleaned' });
+    await expect(expired).toContainText("Redactor's window did not come to the front in time.");
+    await expect(expired).toHaveClass(/warning/);
+    await expect(expired.locator('.life')).toHaveCount(0);
+    await expired.getByRole('button', { name: 'Clean now' }).click();
+    await expect(expired).toHaveCount(0);
+    await expect(page.locator('.toast', { hasText: 'Clipboard scrubbed' })).toBeVisible();
+  });
 });
 
 test.describe('wipe event', () => {

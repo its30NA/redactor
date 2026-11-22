@@ -263,7 +263,25 @@ pub async fn app_info(state: State<'_, Shared>) -> Res<AppInfo> {
     .await
 }
 
+/// The window's "Clean now": scrubs the clipboard the way a hotkey press does. The result
+/// comes as the `clipboard-scrubbed` event, never the clipboard's text.
+#[tauri::command]
+pub async fn scrub_clipboard(app: AppHandle, state: State<'_, Shared>) -> Res<()> {
+    state.wiper.touch(false);
+    blocking(move || app::hotkey_pressed(&app)).await
+}
+
 /// Emits the scrub result to the UI (it shows a toast).
 pub fn emit_scrub(app: &AppHandle, r: &ClipboardScrub) {
     let _ = app.emit("clipboard-scrubbed", r);
+}
+
+/// Tells the UI that a scrub waits for the window to come to the front.
+pub fn emit_scrub_waiting(app: &AppHandle) {
+    let _ = app.emit("clipboard-scrub-waiting", ());
+}
+
+/// Tells the UI that a scrub waited for the window in vain and did not run.
+pub fn emit_scrub_expired(app: &AppHandle) {
+    let _ = app.emit("clipboard-scrub-expired", ());
 }

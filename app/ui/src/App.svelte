@@ -29,12 +29,12 @@
   import Toast from './components/Toast.svelte';
   import Workspace from './components/Workspace.svelte';
   import { appInfo, onEvent } from './lib/api';
+  import { listenForClipboardScrubs } from './lib/clipboard-notices';
   import { appearance, applyAppearance } from './lib/appearance.svelte';
   import { actionFor, keyOsFrom, keysFor, type Action } from './lib/keys';
   import { shieldNote } from './lib/platform';
   import { session } from './lib/session.svelte';
   import { settings } from './lib/settings.svelte';
-  import { toasts } from './lib/toast.svelte';
   import { workspace } from './lib/workspace.svelte';
   import type { AppInfo, Sensitivity, ThemeSetting } from './lib/types';
 
@@ -73,25 +73,7 @@
       }),
       onEvent('session-changed', (items) => session.set(items)),
       onEvent('settings-changed', (s) => (settings.value = s)),
-      onEvent('clipboard-scrubbed', (s) => {
-        if (s.status === 'cleaned')
-          toasts.show({
-            tone: 'success',
-            title: 'Clipboard scrubbed',
-            detail: `${s.removed} ${s.removed === 1 ? 'secret' : 'secrets'} removed${s.historyCleaned ? ' · history cleaned' : ''}`,
-          });
-        else if (s.status === 'unverified')
-          toasts.show({
-            tone: 'warning',
-            title: 'Clipboard scrubbed',
-            detail: `${s.removed} ${s.removed === 1 ? 'secret' : 'secrets'} removed · check before pasting${s.historyCleaned ? ' · history cleaned' : ''}`,
-          });
-        else if (s.status === 'clean') toasts.show({ tone: 'info', title: 'Clipboard is clean' });
-        else if (s.status === 'protected')
-          toasts.show({ tone: 'warning', title: 'Left alone', detail: 'A password manager marked that copy private.' });
-        else if (s.status === 'tooLarge')
-          toasts.show({ tone: 'warning', title: 'Left alone', detail: 'The clipboard text is larger than 20 MiB.' });
-      }),
+      ...listenForClipboardScrubs(),
     ];
 
     // Decorative loops rest while the window is in the background.
