@@ -251,18 +251,42 @@ impl SettingsFile {
     }
 
     /// The stored settings, repaired; defaults when the file is missing or unreadable.
+    ///
+    /// A file that is there but cannot be used (too big to be ours, not settings JSON) is moved
+    /// to `settings.json.bad` next to it, replacing an older one, so the next save does not
+    /// overwrite the always-redact list in it without a trace. When the move fails, nothing
+    /// changes.
     pub fn load(&self) -> Settings {
         let Ok(meta) = std::fs::metadata(&self.path) else {
             return Settings::default();
         };
         if meta.len() > MAX_FILE_BYTES {
+            self.keep_as_bad();
             return Settings::default();
         }
-        std::fs::read(&self.path)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
-            .map(|s| s.sanitized(self.os))
-            .unwrap_or_default()
+        let Ok(bytes) = std::fs::read(&self.path) else {
+            return Settings::default();
+        };
+        match serde_json::from_slice::<Settings>(&bytes) {
+            Ok(s) => s.sanitized(self.os),
+            Err(_) => {
+                self.keep_as_bad();
+                Settings::default()
+            }
+        }
+    }
+
+    /// Moves the settings file to `settings.json.bad` (the user's alone on macOS and Linux).
+    fn keep_as_bad(&self) {
+        let bad = self.path.with_extension("json.bad");
+        if std::fs::rename(&self.path, &bad).is_err() {
+            return;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o600));
+        }
     }
 
     /// Writes atomically: a temporary file next to the target, then a rename.
@@ -441,13 +465,64 @@ mod tests {
         assert_eq!(json["firstRunDone"], false);
     }
 
+    fn bad_copy(f: &SettingsFile) -> PathBuf {
+        f.path().with_extension("json.bad")
+    }
+
     #[test]
     fn missing_file_and_garbage_give_defaults() {
         let f = temp_file("garbage");
         assert_eq!(f.load(), Settings::default());
+        assert!(!bad_copy(&f).exists(), "a missing file left a .bad copy");
         std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
         std::fs::write(f.path(), b"{ not json").unwrap();
         assert_eq!(f.load(), Settings::default());
+        cleanup(&f);
+    }
+
+    /// A file that cannot be used is kept as `settings.json.bad` (the always-redact list in it
+    /// is not lost to the next save), replacing an older one.
+    #[test]
+    fn unusable_file_is_kept_as_bad() {
+        let f = temp_file("bad");
+        std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
+        std::fs::write(bad_copy(&f), b"older").unwrap();
+        std::fs::write(f.path(), b"{\"alwaysRedact\":[\"Nightjar\"] not json").unwrap();
+        assert_eq!(f.load(), Settings::default());
+        assert!(!f.path().exists());
+        assert_eq!(
+            std::fs::read(bad_copy(&f)).unwrap(),
+            b"{\"alwaysRedact\":[\"Nightjar\"] not json"
+        );
+        #[cfg(unix)]
+        assert_eq!(mode(&bad_copy(&f)) & 0o077, 0);
+
+        // Valid JSON of the wrong shape is not settings either.
+        std::fs::write(f.path(), b"[1, 2]").unwrap();
+        assert_eq!(f.load(), Settings::default());
+        assert_eq!(std::fs::read(bad_copy(&f)).unwrap(), b"[1, 2]");
+
+        // Too big to be ours.
+        let big = vec![b' '; MAX_FILE_BYTES as usize + 1];
+        std::fs::write(f.path(), &big).unwrap();
+        assert_eq!(f.load(), Settings::default());
+        assert_eq!(std::fs::read(bad_copy(&f)).unwrap().len(), big.len());
+
+        // A save afterwards does not touch the kept copy.
+        f.save(&Settings::default()).unwrap();
+        assert_eq!(std::fs::read(bad_copy(&f)).unwrap().len(), big.len());
+        cleanup(&f);
+    }
+
+    #[test]
+    fn valid_file_is_left_alone() {
+        let f = temp_file("valid");
+        std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
+        let raw = br#"{"theme":"dark","alwaysRedact":["Nightjar"]}"#;
+        std::fs::write(f.path(), raw).unwrap();
+        assert_eq!(f.load().always_redact, ["Nightjar"]);
+        assert_eq!(std::fs::read(f.path()).unwrap(), raw);
+        assert!(!bad_copy(&f).exists());
         cleanup(&f);
     }
 
