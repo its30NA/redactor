@@ -189,11 +189,11 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build
-      # The count makes a test that went missing fail the job: wayland_clipboard 18,
-      # wayland_focused 12, wayland_portal 5 (plus the no-portal pass), wayland_webview 1.
+      # The count makes a test that went missing fail the job: wayland_clipboard 19,
+      # wayland_focused 12, wayland_portal 10 (plus the no-portal pass), wayland_webview 1.
       - name: Desktop contract tests (L2, sway)
         env:
-          WAYLAND_TESTS_EXPECT: "36"
+          WAYLAND_TESTS_EXPECT: "42"
         run: tools/ci/wayland-tests.sh
       # Built as the Windows loop builds it, without an installer.
       - name: Build the app
@@ -202,7 +202,7 @@ jobs:
       # mainBinaryName renames the binary to Redactor; fall back to the cargo name.
       # WebDriver is off, as in the X11 job: WebKitWebDriver cannot open a session in the app's
       # incognito web context, so W6 (Settings without a portal) is reported as SKIP (the UI tests
-      # of the Settings notes stay). The script passes when all 7 checks report and none is FAIL;
+      # of the Settings notes stay). The script passes when all 8 checks report and none is FAIL;
       # only W6 can report SKIP, and that SKIP is accepted. With WebDriver on, the job also needs
       # webkit2gtk-driver and `cargo install tauri-driver --locked --version 2.1.0`.
       - name: App smoke (L3, sway)
@@ -258,13 +258,13 @@ jobs:
         env:
           REDACTOR_WAYLAND_COMPOSITOR: kwin
         run: tools/ci/wayland-tests.sh --build target/wayland-tests
-      # The count (wayland_clipboard: 18) makes a test that went missing fail the job.
+      # The count (wayland_clipboard: 19) makes a test that went missing fail the job.
       # The container does not see GITHUB_STEP_SUMMARY; the OBSERVED lines go there from the log.
       # `shell: bash` runs with pipefail: without it the step would report tee's status.
       - name: Data-control tests on KWin (L2, Plasma 6 container)
         shell: bash
         run: |
-          tools/ci/desktop-container.sh env REDACTOR_WAYLAND_COMPOSITOR=kwin WAYLAND_TESTS_EXPECT=18 \
+          tools/ci/desktop-container.sh env REDACTOR_WAYLAND_COMPOSITOR=kwin WAYLAND_TESTS_EXPECT=19 \
             WAYLAND_TEST_BINARIES=target/wayland-tests tools/ci/wayland-tests.sh 2>&1 |
             tee wayland-plasma.log
       - name: Observed on KWin
