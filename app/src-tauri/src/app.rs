@@ -499,9 +499,17 @@ fn change_settings(
             warm.engines.get(strip);
         });
     }
-    st.store_settings(next.clone());
+    // The settings apply all the same; the user hears once per run that they will not last.
+    if st.store_settings(next.clone()).is_err()
+        && !st.save_failed_shown.swap(true, Ordering::SeqCst)
+    {
+        notify(app, NOT_SAVED);
+    }
     Ok(next)
 }
+
+/// Settings the disk refused.
+const NOT_SAVED: &str = "Settings could not be saved to disk. They hold until Redactor closes.";
 
 /// The tray's shield toggle: same path as Settings, then tell the UI. The toggle reads the
 /// current value under the same lock that stores the new one, so quick clicks never get lost.

@@ -21,6 +21,8 @@ pub struct AppState {
     pub settings_file: Option<SettingsFile>,
     /// The "still running in the tray" notice was shown this run.
     pub tray_notice_shown: AtomicBool,
+    /// The "settings could not be saved" notice was shown this run.
+    pub save_failed_shown: AtomicBool,
     /// Serializes clipboard scrubs and lets at most one wait (the hotkey can repeat).
     pub scrubs: ScrubQueue,
     /// Scrub presses so far (hotkey, tray, flag, "Clean now"), and the latest one a scrub may
@@ -55,6 +57,7 @@ impl AppState {
             settings: Mutex::new(settings),
             settings_file,
             tray_notice_shown: AtomicBool::new(false),
+            save_failed_shown: AtomicBool::new(false),
             scrubs: ScrubQueue::default(),
             presses: Presses::default(),
             start_scrub: HeldScrub::default(),
@@ -73,14 +76,17 @@ impl AppState {
         self.settings.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Stores new settings in memory and on disk. Disk errors are ignored: the app keeps
-    /// working with the settings in memory.
-    pub fn store_settings(&self, s: Settings) {
-        if let Some(f) = &self.settings_file {
-            let _ = f.save(&s);
-        }
-        *self.lock_settings() = s;
+    /// Stores new settings in memory and on disk. They apply in memory even when the disk
+    /// refuses them: the error says only that they will not outlive this run.
+    pub fn store_settings(&self, s: Settings) -> std::io::Result<()> {
+        store(self.settings_file.as_ref(), &self.settings, s)
     }
+}
+
+fn store(file: Option<&SettingsFile>, slot: &Mutex<Settings>, s: Settings) -> std::io::Result<()> {
+    let saved = file.map_or(Ok(()), |f| f.save(&s));
+    *slot.lock().unwrap_or_else(|e| e.into_inner()) = s;
+    saved
 }
 
 /// The shared state, as Tauri manages it.
@@ -303,6 +309,34 @@ mod tests {
         assert_eq!(p.covered(), 2, "its wait ended in a scrub");
         p.cover(first);
         assert_eq!(p.covered(), 2, "never goes down");
+    }
+
+    #[test]
+    fn settings_that_cannot_be_saved_still_apply_and_say_so() {
+        let dir = std::env::temp_dir().join(format!("redactor-state-store-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // The settings folder would be below a regular file: it cannot be made.
+        let blocker = dir.join("not-a-folder");
+        std::fs::write(&blocker, b"").unwrap();
+        let file = SettingsFile::new(
+            blocker.join("Redactor").join("settings.json"),
+            crate::os::Os::Linux,
+        );
+        let slot = Mutex::new(Settings::default());
+        let next = Settings {
+            auto_wipe_minutes: 42,
+            ..Settings::default()
+        };
+
+        let saved = store(Some(&file), &slot, next.clone());
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(saved.is_err(), "the caller hears it");
+        assert_eq!(*slot.lock().unwrap(), next, "in memory all the same");
+        assert!(
+            store(None, &slot, Settings::default()).is_ok(),
+            "no file, nothing to save"
+        );
     }
 
     #[test]
