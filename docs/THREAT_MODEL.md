@@ -71,8 +71,10 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
   (`tauri.conf.json`, `app/src-tauri/src/app.rs`, `app/src-tauri/tests/config.rs`). IPC goes through
   the isolation pattern, whose hook (`app/isolation/index.js`) lets through only the UI's own calls,
   with their argument names, types and sizes checked; anything else is turned into a call that fails.
-  WebRTC, which the CSP does not govern, is removed from the page, and WebView2 runs with non-proxied
-  WebRTC UDP, DNS prefetching and background networking off (`app/src-tauri/src/browser_args.rs`).
+  WebRTC, which the CSP does not govern, is removed from the page. On Windows, WebView2 runs with
+  non-proxied WebRTC UDP, DNS prefetching and background networking off
+  (`app/src-tauri/src/browser_args.rs`); on Linux, WebKitGTK's WebRTC, media stream and DNS prefetching
+  are off (`app/src-tauri/src/platform/linux/webview.rs`).
   Text from the input is shown as text in the editor, never as markup.
 - *Memory safety.* Rust, with `unsafe` forbidden in the engine, the wire crate and the CLI.
 
@@ -80,11 +82,15 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
 - The app has no logging code and installs a panic hook that prints nothing, because a panic message could
   quote text. Release builds abort on panic. `scrub`'s panic hook prints one fixed line with the source
   location, never the message, and exits with code 101.
-- Scanned text and remembered secrets are never written to disk. The only file is
-  `%APPDATA%\Redactor\settings.json`, and it holds settings and the always-redact words. Those words are
-  stored as plain text so that they can be shown and edited, and the app says so and warns when an entry
-  looks like a password.
-- The window runs in WebView2's private mode, and the UI uses no local storage.
+- Scanned text and remembered secrets are never written to disk. The only file the app writes is
+  `settings.json` (on Windows `%APPDATA%\Redactor\settings.json`; for macOS and Linux see
+  [below](#macos-and-linux-preview-what-is-different)), and it holds settings and the always-redact
+  words. Those words are stored as plain text so that they can be shown and edited, and the app says so
+  and warns when an entry looks like a password. A settings file the app cannot read is moved aside to
+  `settings.json.bad` next to it, so the next save does not overwrite the list in it; delete that file
+  when you no longer need it.
+- The web view keeps no browsing data: WebView2's private mode on Windows, a non-persistent data store
+  on macOS, an ephemeral one on Linux (with the files listed below). The UI uses no local storage.
 - The app never keeps anything derived from your passwords: no hashes, no fingerprints, no encrypted
   lists. Anything like that on disk or in memory would let another program on the machine test password
   guesses against it. The one keyed hash in play, the finding's `ValueKey`, uses a random key that exists
@@ -92,24 +98,26 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
 - `scrub` writes a file only when you ask: `--write`, or `--audit PATH`. The audit records the time, the
   source name, counts, line numbers, labels and detector ids, never values, lengths, offsets or hashes.
 
-**Screen capture (best effort).** By default the window asks Windows to exclude it from screenshots and
-screen sharing. This works with the capture methods Windows controls, and some tools or drivers can
-bypass it. Treat it as a seatbelt, not a wall. It can be switched off in Settings or in the tray.
+**Screen capture (best effort, Windows only).** By default the window asks Windows to exclude it from
+screenshots and screen sharing. This works with the capture methods Windows controls, and some tools or
+drivers can bypass it. Treat it as a seatbelt, not a wall. It can be switched off in Settings or in the
+tray. macOS and Linux have no such shield.
 
-**Clipboard history (best effort).** After the hotkey cleans the clipboard in place, the app asks Windows
-to delete the raw item from the Win+V history. If history is off, the call fails, or the cloud clipboard has
-already synced the raw copy, that copy may survive. Copies that a password manager marked as private
-(`ExcludeClipboardContentFromMonitorProcessing`) are never read and never rewritten. A copy made while a
-scan runs is never overwritten: the app compares the clipboard's sequence number after opening the clipboard
-for writing, in the same session that writes, and `scrub clipboard` re-reads and compares the text in the
-same helper process that writes it. The `scrub clipboard` command does not touch Win+V history at all.
+**Clipboard history (best effort, Windows only).** After the hotkey cleans the clipboard in place, the
+app asks Windows to delete the raw item from the Win+V history. If history is off, the call fails, or the
+cloud clipboard has already synced the raw copy, that copy may survive. Copies that a password manager
+marked as private (`ExcludeClipboardContentFromMonitorProcessing`) are never read and never rewritten. A
+copy made while a scan runs is never overwritten: the app compares the clipboard's sequence number after
+opening the clipboard for writing, in the same session that writes, and `scrub clipboard` re-reads and
+compares the text in the same helper process that writes it. The `scrub clipboard` command does not
+touch Win+V history at all.
 
 **Time limits.** Remembered secrets are zeroed, and both text panes are cleared, when you quit, lock
-Windows, put the PC to sleep, or leave the app idle past the timeout (10 minutes by default, selectable).
-"Idle" means no call from the window to the app's backend: a scan, a copy, a settings change. Reading the
-output or the findings without doing any of those does not count as activity, so the panes are also wiped
-after the timeout while you are reading. The timer runs only while the app holds text or remembered
-secrets.
+the screen, put the computer to sleep, or leave the app idle past the timeout (10 minutes by default,
+selectable). On Linux a lock counts only when the desktop announces it (see below). "Idle" means no
+call from the window to the app's backend: a scan, a copy, a settings change. Reading the output or the
+findings without doing any of those does not count as activity, so the panes are also wiped after the
+timeout while you are reading. The timer runs only while the app holds text or remembered secrets.
 
 ## What is not protected
 
@@ -131,10 +139,15 @@ secrets.
 - **Memory on crafted input.** Memory grows by about 1 KB per finding (8 MiB of `password=` lines, 349,464
   findings: 335 MiB peak, 585 MiB with `--json`), so a crafted 20 MiB paste can use close to a gigabyte
   for that scan.
-- **Crash dumps.** Nothing in the app turns off Windows Error Reporting or the WebView2 crash reporter.
-  If the app or its web view crashes, the dump can contain the text that was in memory (the window's
-  text, remembered secrets), and Windows may keep it on disk. Redactor does not write dumps itself and
-  cannot delete the ones Windows writes.
+- **Other formats of a clipboard copy.** The hotkey reads and scans only the plain text of a copy. When
+  it removes something, it replaces the whole copy with the safe plain text. When the verdict is clean,
+  it leaves the copy as it is, so its other formats (HTML, RTF and the like) were never looked at: a
+  secret that is only there, in hidden markup say, can still be pasted into an app that takes that
+  format. This holds on every OS.
+- **Crash dumps on Windows.** Nothing in the app turns off Windows Error Reporting or the WebView2
+  crash reporter. If the app or its web view crashes, the dump can contain the text that was in memory
+  (the window's text, remembered secrets), and Windows may keep it on disk. Redactor does not write dumps
+  itself and cannot delete the ones Windows writes. For macOS and Linux see below.
 - **`--amend`.** `scrub check` does not re-check content that is already in HEAD when you amend a commit.
 - **Values after a placeholder.** A value written right after a placeholder with no gap
   (`[REDACTED: Password #1]Juniper-Coast-55`) is redacted. One that follows it after punctuation or a space
@@ -148,18 +161,19 @@ secrets.
     the decoded copies and the index built from found values to find their other occurrences, and the
     output strings, including the response sent back to the window;
   - Tauri's IPC buffers, including the payloads the isolation pattern encrypts and the shell decrypts;
-  - JavaScript strings: the text you paste lives as strings in the WebView2 process, which the garbage
+  - JavaScript strings: the text you paste lives as strings in the web view's process, which the garbage
     collector frees when it likes. The wipe replaces the editor contents and drops the history, which is
     as far as a web view allows.
   These copies are freed normally and can stay in memory until it is reused.
 - **Remembered secrets and the swap file.** Memory holding a remembered secret can be paged to disk by
-  Windows. Zeroing on drop limits the time a value sits in memory, not what the operating system does
-  with it meanwhile.
+  the operating system (the page file on Windows, swap on macOS and Linux). Zeroing on drop limits the
+  time a value sits in memory, not what the operating system does with it meanwhile.
 - **Other software on the path.** Redactor cannot see what your browser, terminal or chat client does with
   text before or after. The WebView2 runtime is a Microsoft component with its own update mechanism; the
   installer downloads it from Microsoft when a PC does not have it. The
   app's content security policy keeps the app's own page from using the network, but does not govern the
-  runtime's updates.
+  runtime's updates. On macOS the web view is the system's WebKit, on Linux the distribution's
+  WebKitGTK; each is updated with the system.
 - **Metadata.** Placeholders keep structure: labels, line breaks and which values are equal (`#1` twice).
   That is deliberate, so the output still reads well, but it reveals that two places share a value.
 - **The always-redact list.** It is plain text on disk. Do not put passwords in it. Use "Remember" for those.
@@ -180,6 +194,110 @@ read the output before you send it. Fixes are tracked in the [roadmap](ROADMAP.m
 | `Passwort: siehe E-Mail` | kept | kept | A standalone `see`, `siehe`, `voir`, `ver` or `vedi` after a password key marks a pointer, not a value. A real password that is one of these words followed by text leaks; `siehe1234` is still redacted. |
 | `mysql -u root -pROOTPASS` | kept | kept | An all-capital, letters-only value after `-p` reads as a placeholder from usage text (`-pPASSWORD`). |
 | `DB_PASSWORD='$DB_PASS'` | kept | kept | A `$` plus an all-capital name reads as a variable reference, also in single quotes (Docker Compose expands it there). Mixed case such as `'$ummer2024'` is redacted. |
+
+## macOS and Linux (preview): what is different
+
+The macOS and Linux apps are previews ([macOS](install/macos.md), [Linux](install/linux.md)). Everything
+above holds for them too, except what this section says. The macOS app is tested by machines on macOS 15
+and 26 and has not yet been used by hand. The Linux app is tested by machines on X11 and sway, and by hand
+on WSLg; GNOME and KDE Plasma are not tested end to end. Where a line below says "not tried on a real
+Mac", it is what the code does, not what anyone has seen.
+
+**Settings.** The file is `~/Library/Application Support/Redactor/settings.json` on macOS and
+`$XDG_CONFIG_HOME/redactor/settings.json` (or `~/.config/redactor/settings.json`) on Linux. A variable
+that is unset, empty or not an absolute path means no file at all: the app runs on defaults and never
+writes into the folder it was started from. The app's own folder is created readable by you alone
+(0700), and a folder that already let others in is tightened; the file and `settings.json.bad` are 0600.
+A shared parent such as `~/.config` is never changed. The rights are set when the app saves, so a file
+left by an older build stays as it was until the next settings change.
+
+**No screen-capture shield.** On macOS, since 15.4, screen capture ignores the window flag the shield
+would set; Linux has no such flag. The setting is off and greyed out, and Settings says why. Anyone who
+sees your shared screen or a recording sees the window.
+
+**No clipboard history cleaning.** Neither OS lets an app delete one item from a clipboard history, so
+the scrub result never says the history was cleaned. On macOS the raw copy can stay in a clipboard tool,
+in Spotlight's clipboard history (macOS 26, off by default) and on your other Apple devices through
+Universal Clipboard. On Linux a clipboard manager (Klipper, GNOME extensions, `cliphist` and others)
+keeps its own history, often on disk. All of these are out of Redactor's reach. Copy the raw text only
+where you need it, or turn the history off.
+
+**The primary selection.** On X11 and Wayland, selecting text also puts it in the primary selection,
+which a middle click pastes. Redactor reads and cleans only the clipboard. Text you selected stays
+pasteable with a middle click, raw.
+
+**Desktops where the clipboard needs the window in front** (GNOME, Weston, WSLg). The hotkey or
+`--scrub-clipboard` brings the window forward and cleans when it is in front. Until then the raw text
+is on the clipboard and can be pasted. The wait ends after 30 seconds: the clipboard is left raw, a
+desktop notification says "Not cleaned", and the window shows it with **Clean now** (at once, and again
+when you next bring it forward within 10 minutes). WSLg shows no notifications. The window's toolkit
+(GTK) keeps its own copy of the text it read, which Redactor cannot wipe, and reads a copy over 20 MiB
+in full before the size check refuses it.
+
+**When the clean text is pasteable.** On Wayland and on X11 the text Redactor puts on the clipboard lives
+in Redactor: after you quit it is gone, unless a clipboard manager took it over (on X11 it is offered to
+one). On macOS it stays after quit. The write is not atomic on Wayland or macOS: a copy you make in the
+very same instant can be lost under the safe text of the earlier copy. It is never a secret that ends up
+on top. Forced 2000 times in tests, this happened in up to 2.25 % of rounds on a local sway and at most
+9 times on CI's macOS runners.
+
+**Core dumps.** The app sets its core-file limit to zero first thing at start, on Linux and macOS, so a
+crash does not put its memory (clipboard text, both panes, remembered secrets) in a core file, and
+systemd-coredump does not store one. Processes the app starts itself inherit the limit, which on Linux
+includes the web view's. Not covered: a crash reporter that does not honour the limit, the system's own
+crash reports on macOS, and the macOS web view's processes, which the system starts rather than
+Redactor, so the limit may not reach them (not checked).
+
+**Wipe on lock on Linux.** The panes and remembered secrets are wiped on these signals: logind's
+`PrepareForSleep` (going to sleep), the session's `Lock` and its `LockedHint` turning true, and
+`ActiveChanged` turning true on `org.freedesktop.ScreenSaver`, `org.gnome.ScreenSaver`,
+`org.cinnamon.ScreenSaver`, `org.mate.ScreenSaver` or `org.xfce.ScreenSaver`. If a bus restarts, the app
+listens again; a bus that is not there when the app starts is not watched at all. A locker that
+announces nothing does not trigger the wipe: `swaylock` or `i3lock` started directly, and locking
+Windows while the app runs in WSLg. The idle timer is then the only backstop. On sway, lock through
+logind instead, so the lock is announced: bind your lock key to `loginctl lock-session` and let swayidle
+start the locker (`swayidle -w lock 'swaylock -f'`).
+
+**Wipe on lock on macOS.** The screen-locked notification (which Apple does not document), displays
+going to sleep, the Mac going to sleep and switching to another user all wipe. Tested with posted
+notifications only, not with a real lock.
+
+**The web view's files on Linux.** The web view keeps no page data, but WebKitGTK still creates
+`~/.local/share/io.github.its30na.redactor` with `hsts-storage.sqlite`, files named `salt` and empty
+cache folders. The Linux smoke tests check after each run that the app left nothing else in its XDG
+folders and that no password is in any of them. Delete the folder when you remove the app.
+
+**macOS: pasteboard privacy.** Newer macOS versions can ask whether Redactor may paste from other apps.
+If you choose "Don't Allow" and macOS still lists the text on the clipboard but hands over none of it,
+Redactor says "Clipboard not scrubbed" and leaves the clipboard as it was; it does not read that as an
+empty clipboard. If macOS hides even the list of formats, the app sees no text and says "Nothing to
+scrub", although the raw text is still there. Which of the two a refusal gives has not been tried on a
+real Mac.
+
+**macOS: the single-instance socket.** To hand a second launch to the running app, the single-instance
+plugin uses a socket at `/tmp/io_github_its30na_redactor_si.sock`, in a folder every user of the Mac
+shares. When something at that path belongs to another user, Redactor does not use it: it starts without
+the single-instance check, says so once on stderr, and a second launch opens a second window. Another
+user therefore cannot stop Redactor from starting. Not tried on a real Mac. On Linux the plugin uses your
+own session bus instead.
+
+**The previews are not release downloads.** The macOS app is a CI build, kept for 7 days, signed only ad
+hoc (not by an Apple developer account, not notarized); the Linux app is built from source. They come
+with no `SHA256SUMS` and no build attestation, so the defence against a tampered download described
+[below](#the-unsigned-binary-and-smartscreen) does not cover them yet. Download the build only from this
+repository's own Actions page, or build it yourself.
+
+**Advisory exceptions.** The Linux build pulls in Tauri's GTK3 and D-Bus stack, which has five open
+advisories that `cargo deny` is told to accept (`deny.toml`). Each is re-checked at every Tauri update and
+before every release.
+
+| Advisory | Crate | Why it is accepted |
+|---|---|---|
+| RUSTSEC-2024-0429 | glib 0.18 | `VariantStrIter` is unsound (fixed in 0.20). Tauri's GTK3 stack pins 0.18, and Redactor never calls it. |
+| RUSTSEC-2024-0370 | proc-macro-error | Unmaintained. A build-time macro of glib 0.18; no code of it runs in the app. |
+| RUSTSEC-2026-0370 | zvariant | Unmaintained (merged into zbus 6). zbus 5 still uses it, and the Tauri notification and single-instance plugins need zbus 5; Redactor's own D-Bus code (lock watcher, tray check, hotkey portal) uses the same zbus 5. |
+| RUSTSEC-2026-0371 | zbus_names | Unmaintained (merged into zbus 6), same reason. |
+| RUSTSEC-2026-0372 | zvariant_derive | Unmaintained (merged into zbus 6), same reason. |
 
 ## The unsigned binary and SmartScreen
 
