@@ -266,21 +266,74 @@ impl SettingsFile {
     }
 
     /// Writes atomically: a temporary file next to the target, then a rename.
+    ///
+    /// On macOS and Linux the app's own folder is the user's alone (0700, tightened when it
+    /// already exists) and so is the file (0600): the always-redact list names people,
+    /// companies and hosts. A shared parent such as `~/.config` is never changed.
     pub fn save(&self, settings: &Settings) -> std::io::Result<()> {
         let dir = self
             .path
             .parent()
             .ok_or_else(|| std::io::Error::other("settings path has no parent"))?;
-        std::fs::create_dir_all(dir)?;
+        create_private_dir(dir)?;
         let json = serde_json::to_vec_pretty(settings).map_err(std::io::Error::other)?;
         let tmp = self.path.with_extension("json.tmp");
         {
-            let mut f = std::fs::File::create(&tmp)?;
+            let mut f = create_private_file(&tmp)?;
             f.write_all(&json)?;
             f.sync_all()?;
         }
         std::fs::rename(&tmp, &self.path)
     }
+}
+
+/// Creates `dir` (and any missing parent, with the usual permissions).
+#[cfg(not(unix))]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
+/// Creates `dir` as 0700 (its missing parents with the usual permissions), or takes group and
+/// other access away from it when it exists.
+#[cfg(unix)]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    let mode = std::fs::metadata(dir)?.permissions().mode();
+    if mode & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode & 0o700))?;
+    }
+    Ok(())
+}
+
+/// Creates `path` empty; a file left there before is truncated.
+#[cfg(not(unix))]
+fn create_private_file(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::create(path)
+}
+
+/// Creates `path` new, empty and 0600. A file left there before (a save that stopped
+/// half-way) is removed first, so the new one never keeps its permissions.
+#[cfg(unix)]
+fn create_private_file(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
 }
 
 #[cfg(test)]
@@ -394,6 +447,42 @@ mod tests {
         assert_eq!(f.load(), Settings::default());
         std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
         std::fs::write(f.path(), b"{ not json").unwrap();
+        assert_eq!(f.load(), Settings::default());
+        cleanup(&f);
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode()
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    /// The always-redact list names people, companies and hosts: other users on the machine
+    /// must not read it, nor see the folder's contents.
+    #[cfg(unix)]
+    #[test]
+    fn saved_settings_are_private_to_the_user() {
+        let f = temp_file("private");
+        let dir = f.path().parent().unwrap().to_path_buf();
+        f.save(&Settings::default()).unwrap();
+        assert_eq!(mode(f.path()) & 0o077, 0, "file {:o}", mode(f.path()));
+        assert_eq!(mode(&dir) & 0o077, 0, "folder {:o}", mode(&dir));
+
+        // Left by an older version, or by a save that stopped half-way: tightened by the next.
+        set_mode(&dir, 0o755);
+        set_mode(f.path(), 0o644);
+        let stale = f.path().with_extension("json.tmp");
+        std::fs::write(&stale, b"stale").unwrap();
+        set_mode(&stale, 0o644);
+        f.save(&Settings::default()).unwrap();
+        assert_eq!(mode(f.path()) & 0o077, 0, "file {:o}", mode(f.path()));
+        assert_eq!(mode(&dir) & 0o077, 0, "folder {:o}", mode(&dir));
         assert_eq!(f.load(), Settings::default());
         cleanup(&f);
     }
