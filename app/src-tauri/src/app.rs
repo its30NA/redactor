@@ -289,7 +289,7 @@ fn args() -> Vec<String> {
         .collect()
 }
 
-/// A hotkey press, the tray's scrub item, `--scrub-clipboard` or the window's "Clean now".
+/// A hotkey press, the tray's scrub item, `--scrub-clipboard` or the window's "Scrub now".
 /// Where the clipboard needs the window in front and it is not, the window comes back and the
 /// scrub waits for focus, up to [`crate::pending::PENDING_FOR`]. Otherwise the clipboard is
 /// scrubbed now, off the calling thread.
@@ -312,7 +312,7 @@ pub fn hotkey_pressed(app: &AppHandle) {
             return;
         }
         show_main(app);
-        notify(app, "Bring Redactor to the front to clean the clipboard");
+        notify(app, "Bring Redactor to the front to scrub the clipboard");
     } else {
         // A focus-in still queued from an earlier press must not scrub a second time: this
         // scrub covers that press too.
@@ -366,7 +366,7 @@ fn spawn_expiry_timer(app: &AppHandle) -> bool {
                 match timer.step(When::now()) {
                     Timer::Sleep(left) => std::thread::sleep(left),
                     Timer::Expired(press) => {
-                        notify(&handle, NOT_CLEANED);
+                        notify(&handle, &clipscrub::expired().notice());
                         commands::emit_scrub_expired(&handle, press);
                         break;
                     }
@@ -378,14 +378,11 @@ fn spawn_expiry_timer(app: &AppHandle) -> bool {
         return true;
     }
     if let Some(press) = state::state(app).pending.timer_failed(When::now()) {
-        notify(app, NOT_CLEANED);
+        notify(app, &clipscrub::expired().notice());
         commands::emit_scrub_expired(app, press);
     }
     false
 }
-
-/// A press waited for the window in vain.
-const NOT_CLEANED: &str = "Not cleaned: Redactor's window did not come to the front";
 
 /// The main window came to the front: runs the scrub a hotkey press left waiting, or says in
 /// the window that it expired (the desktop may have dropped the notification).
@@ -400,7 +397,7 @@ fn scrub_if_pending(app: &AppHandle) {
         Take::Expired(press) => commands::emit_scrub_expired(app, press),
         // The timer has not spoken (it runs late): this is the only notice.
         Take::Lapsed(press) => {
-            notify(app, NOT_CLEANED);
+            notify(app, &clipscrub::expired().notice());
             commands::emit_scrub_expired(app, press);
         }
         Take::Nothing => {}

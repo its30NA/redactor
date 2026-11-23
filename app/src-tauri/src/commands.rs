@@ -292,7 +292,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> 
     .await
 }
 
-/// The window's "Clean now": scrubs the clipboard the way a hotkey press does. The result
+/// The window's "Scrub now": scrubs the clipboard the way a hotkey press does. The result
 /// comes as the `clipboard-scrubbed` event, never the clipboard's text. Calls in a loop start
 /// no more than one scrub waiting behind the one that runs.
 #[tauri::command]

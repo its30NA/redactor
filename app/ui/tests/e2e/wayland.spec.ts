@@ -11,12 +11,12 @@ const COMMAND_NOTE = 'This desktop does not let apps set a hotkey. Add a shortcu
 /** The mock's executable (MOCK_EXECUTABLE) with the flag. */
 const COMMAND = '/opt/redactor/Redactor --scrub-clipboard';
 const FIRST_RUN_COMMAND_LINE =
-  "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).";
+  "Scrub the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).";
 const FOCUS_NOTE = 'Redactor can reach the clipboard only while its window is in front.';
 const SCRUB_ROW = 'From any app, without opening the window.';
 const SCRUB_ROW_FOCUS = 'From any app. On this desktop the window comes to the front first.';
-const FIRST_RUN_HOTKEY = 'Cleans the clipboard in place, without opening this window.';
-const FIRST_RUN_HOTKEY_FOCUS = 'Brings this window forward, then cleans the clipboard.';
+const FIRST_RUN_HOTKEY = 'Scrubs the clipboard in place, without opening this window.';
+const FIRST_RUN_HOTKEY_FOCUS = 'Brings this window forward, then scrubs the clipboard.';
 const LOCK_DESC = 'Lock signals from logind or a screen saver, and suspend. Lockers that send none go unseen.';
 const LOCK_NOTE =
   'No lock signal found on this desktop: a screen lock does not wipe. Suspend and the idle timer still do.';
@@ -161,7 +161,7 @@ test.describe('a scrub where the clipboard needs focus', () => {
   test('waiting_then_the_result_replaces_it', async ({ page, problems: _ }) => {
     // Started with `--scrub-clipboard`: the mock tells the wait, then the result, like the shell.
     await page.goto('/?os=linux&hotkey=portal&focus=1&scrub&clipboard=empty');
-    const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to clean the clipboard…" });
+    const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to scrub the clipboard…" });
     await expect(waiting).toBeVisible();
     await expect(page.locator('.toast', { hasText: 'Nothing to scrub' })).toBeVisible();
     await expect(waiting).toHaveCount(0);

@@ -9,7 +9,7 @@
 //! next focus after the timer still says once, in the window, that the scrub did not run, for
 //! [`UNSEEN_FOR`] at most.
 //!
-//! Only one timer runs at a time, however often the press repeats (the window's "Clean now" is
+//! Only one timer runs at a time, however often the press repeats (the window's "Scrub now" is
 //! an IPC command a script could loop): it follows the latest press.
 //!
 //! The wait counts on two clocks, [`When`]: where the monotonic clock stands still while the

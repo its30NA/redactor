@@ -26,7 +26,7 @@ pub struct AppState {
     pub save_failed_shown: AtomicBool,
     /// Serializes clipboard scrubs and lets at most one wait (the hotkey can repeat).
     pub scrubs: ScrubQueue,
-    /// Scrub presses so far (hotkey, tray, flag, "Clean now"), and the latest one a scrub may
+    /// Scrub presses so far (hotkey, tray, flag, "Scrub now"), and the latest one a scrub may
     /// cover: the events carry a press's number, so the window lets a result end only the wait
     /// of a press it covers.
     pub presses: Presses,
@@ -114,7 +114,7 @@ pub fn wipe(app: &AppHandle, reason: WipeReason) {
 }
 
 /// Clipboard scrubs, one at a time, and at most one waiting behind the one that runs, however
-/// often they are asked for (the window's "Clean now" is an IPC command a script could loop).
+/// often they are asked for (the window's "Scrub now" is an IPC command a script could loop).
 #[derive(Debug, Default)]
 pub struct ScrubQueue {
     /// A scrub was asked for and has not started yet.

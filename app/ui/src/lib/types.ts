@@ -109,7 +109,7 @@ export interface ClipboardScrub {
 
 /**
  * The `clipboard-scrubbed` event: a scrub's result and the latest press it covers (it read the
- * clipboard after that press). The shell counts presses (hotkey, tray, flag, "Clean now") from 1.
+ * clipboard after that press). The shell counts presses (hotkey, tray, flag, "Scrub now") from 1.
  */
 export interface ScrubResult extends ClipboardScrub {
   press: number;

@@ -109,7 +109,7 @@ export const hotkeyNote = (info: Pick<AppInfo, 'hotkey'> | null): string | null 
 /** The welcome card's line where the key does nothing and the desktop runs the command instead, or null where the keycaps are shown. */
 export const hotkeyCommandLine = (info: Pick<AppInfo, 'hotkey'> | null): string | null =>
   hotkeyMode(info) === 'command'
-    ? "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings)."
+    ? "Scrub the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings)."
     : null;
 
 /** Why the hotkey brings the window forward (the row above says that it does), or null where the clipboard works in the background. */
@@ -125,5 +125,5 @@ export const scrubRowDesc = (info: Pick<AppInfo, 'clipboardNeedsFocus'> | null):
 /** The welcome card's line under the keycaps: where the clipboard needs focus, the window comes forward. */
 export const firstRunHotkeyDesc = (info: Pick<AppInfo, 'clipboardNeedsFocus'> | null): string =>
   info?.clipboardNeedsFocus === true
-    ? 'Brings this window forward, then cleans the clipboard.'
-    : 'Cleans the clipboard in place, without opening this window.';
+    ? 'Brings this window forward, then scrubs the clipboard.'
+    : 'Scrubs the clipboard in place, without opening this window.';

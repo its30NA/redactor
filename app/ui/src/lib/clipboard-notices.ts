@@ -2,13 +2,16 @@
  * The window's toasts for a hotkey, tray or `--scrub-clipboard` scrub. Where the clipboard needs
  * the window in front, a press first waits for it: the wait shows until the result or the expiry
  * replaces it. An expiry stays until dismissed (the desktop may drop its notification) and offers
- * "Clean now", an explicit scrub of whatever the clipboard holds then; so does a failed scrub,
+ * "Scrub now", an explicit scrub of whatever the clipboard holds then; so does a failed scrub,
  * until a later result replaces it or it is ten minutes old.
+ *
+ * A result's words are the shell's notification's (`scrubWords`, pinned on both sides by
+ * `app/src-tauri/tests/fixtures/scrub_notices.json`): the toast shows the title over the detail.
  */
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { onEvent, scrubClipboard } from './api';
-import { toasts, type ToastAction } from './toast.svelte';
-import type { ScrubExpired, ScrubResult, ScrubWaiting } from './types';
+import { toasts, type ToastAction, type ToastTone } from './toast.svelte';
+import type { ClipboardStatus, ScrubExpired, ScrubResult, ScrubWaiting } from './types';
 
 /** The wait or expiry toast on screen, if any: a newer press or result replaces it. */
 let pending: number | null = null;
@@ -22,7 +25,7 @@ let pendingPress = 0;
 /**
  * The last expiry toast shown. The shell tells an expiry twice (at the timer, then at the next
  * focus); while the first notice is still on screen the second is not news, and replacing the
- * node could swallow the click on "Clean now" that brought the window to the front.
+ * node could swallow the click on "Scrub now" that brought the window to the front.
  */
 let expired: number | null = null;
 
@@ -65,7 +68,7 @@ export function scrubClipboardNow(): void {
 }
 
 /** The same scrub as a toast's button, for a scrub that did not happen. */
-const cleanNow: ToastAction = { label: 'Clean now', run: scrubClipboardNow };
+const scrubNow: ToastAction = { label: 'Scrub now', run: scrubClipboardNow };
 
 /**
  * The press an event names, or null when it names none (an expiry from a shell that does not
@@ -80,6 +83,55 @@ function pressOf(payload: unknown): number | null {
 
 const secrets = (n: number) => `${n} ${n === 1 ? 'secret' : 'secrets'} removed`;
 
+/** What a scrub's outcome says: the title, and the sentence under it. */
+export interface ScrubWords {
+  title: string;
+  detail: string;
+}
+
+/** A result in the words of the shell's notification (`ClipboardScrub::words`). */
+export function scrubWords(s: ScrubResult): ScrubWords {
+  const history = s.historyCleaned ? ' · history cleaned' : '';
+  switch (s.status) {
+    case 'cleaned':
+      return { title: 'Clipboard scrubbed', detail: `${secrets(s.removed)}, safe to paste${history}` };
+    case 'unverified':
+      // Nothing removed: the shell left the clipboard as it was.
+      return s.removed === 0
+        ? { title: 'Check before pasting', detail: 'Nothing was removed, but the scan could not be verified.' }
+        : { title: 'Clipboard scrubbed', detail: `${secrets(s.removed)}, check before pasting${history}` };
+    case 'stripped':
+      return { title: 'Hidden characters removed', detail: `Nothing sensitive found${history}` };
+    case 'clean':
+      return { title: 'Clipboard is clean', detail: 'Nothing sensitive found' };
+    case 'empty':
+      return { title: 'Nothing to scrub', detail: 'The clipboard holds no text.' };
+    case 'protected':
+      return { title: 'Left alone', detail: 'A password manager marked that copy private.' };
+    case 'tooLarge':
+      return { title: 'Left alone', detail: 'The clipboard text is larger than 20 MiB.' };
+    case 'error':
+      return { title: 'Clipboard not scrubbed', detail: 'It could not be read, or it changed during the scrub.' };
+  }
+}
+
+/** A press that waited for the window in vain (the shell's `clipscrub::expired`). */
+export const EXPIRED: ScrubWords = {
+  title: 'Not scrubbed',
+  detail: "Redactor's window did not come to the front in time.",
+};
+
+const TONE: Record<ClipboardStatus, ToastTone> = {
+  cleaned: 'success',
+  unverified: 'warning',
+  stripped: 'success',
+  clean: 'info',
+  empty: 'info',
+  protected: 'warning',
+  tooLarge: 'warning',
+  error: 'error',
+};
+
 function showResult(s: ScrubResult): void {
   if (typeof s !== 'object' || s === null) return;
   // A result that names no press is taken as the newest: it ends the wait rather than strand it.
@@ -87,61 +139,20 @@ function showResult(s: ScrubResult): void {
   if (press !== null) covered = Math.max(covered, press);
   if (press === null || press >= pendingPress) replacePending(null);
   if (failed !== null && (press === null || press > failed.press || s.status === 'error')) retireFailed();
-  const history = s.historyCleaned ? ' · history cleaned' : '';
-  switch (s.status) {
-    case 'cleaned':
-      toasts.show({ tone: 'success', title: 'Clipboard scrubbed', detail: `${secrets(s.removed)}${history}` });
-      break;
-    case 'unverified':
-      // Nothing removed: the shell left the clipboard as it was.
-      toasts.show(
-        s.removed === 0
-          ? {
-              tone: 'warning',
-              title: 'Check before pasting',
-              detail: 'Nothing was removed, but the scan could not be verified.',
-            }
-          : {
-              tone: 'warning',
-              title: 'Clipboard scrubbed',
-              detail: `${secrets(s.removed)} · check before pasting${history}`,
-            },
-      );
-      break;
-    case 'stripped':
-      // No secret, but zero-width, bidi or tag characters were removed and written back.
-      toasts.show({ tone: 'success', title: 'Hidden characters removed', detail: `Nothing sensitive found${history}` });
-      break;
-    case 'clean':
-      toasts.show({ tone: 'info', title: 'Clipboard is clean' });
-      break;
-    case 'empty':
-      toasts.show({ tone: 'info', title: 'Nothing to scrub', detail: 'The clipboard holds no text.' });
-      break;
-    case 'protected':
-      toasts.show({ tone: 'warning', title: 'Left alone', detail: 'A password manager marked that copy private.' });
-      break;
-    case 'tooLarge':
-      toasts.show({ tone: 'warning', title: 'Left alone', detail: 'The clipboard text is larger than 20 MiB.' });
-      break;
-    case 'error':
-      // The clipboard is still raw: stay until dismissed (the desktop may drop its notification),
-      // a later result, or FAILED_FOR.
-      {
-        const id = toasts.show({
-          tone: 'error',
-          title: 'Clipboard not scrubbed',
-          detail: 'It could not be read, or it changed during the scrub.',
-          duration: 0,
-          action: cleanNow,
-        });
-        const timer = setTimeout(() => {
-          if (failed?.id === id) retireFailed();
-        }, FAILED_FOR);
-        failed = { id, press: press ?? covered, timer };
-      }
-      break;
+  // A status this page does not know (a newer shell) shows nothing rather than a blank toast.
+  if (!Object.hasOwn(TONE, s.status)) return;
+  const words = scrubWords(s);
+  if (s.status !== 'error') {
+    toasts.show({ tone: TONE[s.status], ...words });
+    return;
   }
+  // The clipboard is still raw: stay until dismissed (the desktop may drop its notification), a
+  // later result, or FAILED_FOR.
+  const id = toasts.show({ tone: 'error', ...words, duration: 0, action: scrubNow });
+  const timer = setTimeout(() => {
+    if (failed?.id === id) retireFailed();
+  }, FAILED_FOR);
+  failed = { id, press: press ?? covered, timer };
 }
 
 function showWaiting(w: ScrubWaiting): void {
@@ -149,7 +160,7 @@ function showWaiting(w: ScrubWaiting): void {
   // No press, a press a result covered, or one older than (or the same as) the wait or expiry
   // on screen: a notice that came late or out of order is no news.
   if (press === null || press <= covered || press <= pendingPress) return;
-  replacePending(toasts.show({ tone: 'info', title: "Waiting for Redactor's window to clean the clipboard…", duration: 0 }));
+  replacePending(toasts.show({ tone: 'info', title: "Waiting for Redactor's window to scrub the clipboard…", duration: 0 }));
   pendingPress = press;
 }
 
@@ -162,13 +173,7 @@ function showExpired(e: ScrubExpired | null): void {
     pendingPress = press;
   }
   if (expired !== null && toasts.items.some((t) => t.id === expired)) return;
-  expired = toasts.show({
-    tone: 'warning',
-    title: 'Not cleaned',
-    detail: "Redactor's window did not come to the front in time.",
-    duration: 0,
-    action: cleanNow,
-  });
+  expired = toasts.show({ tone: 'warning', ...EXPIRED, duration: 0, action: scrubNow });
   replacePending(expired);
 }
 

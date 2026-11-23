@@ -24,11 +24,11 @@ describe('over the limit', () => {
   });
 
   test('a toast that stays until dismissed is kept while a timed one can go', () => {
-    toasts.show({ title: 'Not cleaned', duration: 0 });
+    toasts.show({ title: 'Not scrubbed', duration: 0 });
     toasts.show({ title: 'b' });
     toasts.show({ title: 'c' });
     toasts.show({ title: 'd' });
-    expect(titles()).toEqual(['Not cleaned', 'c', 'd']);
+    expect(titles()).toEqual(['Not scrubbed', 'c', 'd']);
   });
 
   test('the new toast is never the one dropped', () => {

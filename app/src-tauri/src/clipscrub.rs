@@ -237,39 +237,82 @@ impl ClipboardScrub {
         }
     }
 
+    /// What this result says: the window's toast shows the words, the desktop notification
+    /// joins them ([`Words::notice`]). The UI words its toast from the same table
+    /// (`tests/fixtures/scrub_notices.json`).
+    pub fn words(&self) -> Words {
+        let secrets =
+            |n: usize| format!("{n} {} removed", if n == 1 { "secret" } else { "secrets" });
+        let history = if self.history_cleaned {
+            " · history cleaned"
+        } else {
+            ""
+        };
+        let (title, detail) = match self.status {
+            ClipStatus::Cleaned => (
+                "Clipboard scrubbed",
+                format!("{}, safe to paste{history}", secrets(self.removed)),
+            ),
+            ClipStatus::Unverified if self.removed > 0 => (
+                "Clipboard scrubbed",
+                format!("{}, check before pasting{history}", secrets(self.removed)),
+            ),
+            // Nothing removed: the clipboard was left as it was.
+            ClipStatus::Unverified => (
+                "Check before pasting",
+                "Nothing was removed, but the scan could not be verified.".to_string(),
+            ),
+            ClipStatus::Stripped => (
+                "Hidden characters removed",
+                format!("Nothing sensitive found{history}"),
+            ),
+            ClipStatus::Clean => ("Clipboard is clean", "Nothing sensitive found".to_string()),
+            ClipStatus::Empty => (
+                "Nothing to scrub",
+                "The clipboard holds no text.".to_string(),
+            ),
+            ClipStatus::Protected => (
+                "Left alone",
+                "A password manager marked that copy private.".to_string(),
+            ),
+            ClipStatus::TooLarge => (
+                "Left alone",
+                "The clipboard text is larger than 20 MiB.".to_string(),
+            ),
+            ClipStatus::Error => (
+                "Clipboard not scrubbed",
+                "It could not be read, or it changed during the scrub.".to_string(),
+            ),
+        };
+        Words { title, detail }
+    }
+
     /// The notification text after a hotkey scrub.
     pub fn notice(&self) -> String {
-        match self.status {
-            ClipStatus::Cleaned => format!(
-                "{} {} removed, safe to paste",
-                self.removed,
-                if self.removed == 1 {
-                    "secret"
-                } else {
-                    "secrets"
-                }
-            ),
-            ClipStatus::Unverified if self.removed > 0 => format!(
-                "{} {} removed, check before pasting",
-                self.removed,
-                if self.removed == 1 {
-                    "secret"
-                } else {
-                    "secrets"
-                }
-            ),
-            ClipStatus::Unverified => "Check before pasting".to_string(),
-            ClipStatus::Stripped => "Hidden characters removed".to_string(),
-            ClipStatus::Clean => "Nothing sensitive found".to_string(),
-            ClipStatus::Empty => "The clipboard holds no text".to_string(),
-            ClipStatus::Protected => {
-                "Left alone: a password manager marked that copy private".to_string()
-            }
-            ClipStatus::TooLarge => {
-                "Left alone: the clipboard text is larger than 20 MiB".to_string()
-            }
-            ClipStatus::Error => "The clipboard could not be scrubbed".to_string(),
-        }
+        self.words().notice()
+    }
+}
+
+/// A scrub's outcome in words: a short title and the sentence under it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Words {
+    pub title: &'static str,
+    pub detail: String,
+}
+
+impl Words {
+    /// One line for a desktop notification: the title, then the detail, as two sentences.
+    pub fn notice(&self) -> String {
+        let stop = if self.detail.ends_with('.') { "" } else { "." };
+        format!("{}. {}{stop}", self.title, self.detail)
+    }
+}
+
+/// A press that waited for the window in vain: nothing was scrubbed.
+pub fn expired() -> Words {
+    Words {
+        title: "Not scrubbed",
+        detail: "Redactor's window did not come to the front in time.".to_string(),
     }
 }
 
@@ -492,7 +535,10 @@ mod tests {
         // The raw copy leaves the history, as after any rewrite.
         assert!(r.history_cleaned);
         assert!(!cb.history.borrow().iter().any(|t| t == HIDDEN));
-        assert_eq!(r.notice(), "Hidden characters removed");
+        assert_eq!(
+            r.notice(),
+            "Hidden characters removed. Nothing sensitive found · history cleaned."
+        );
         assert_eq!(serde_json::to_value(&r).unwrap()["status"], "stripped");
 
         // The cleaned text is clean: a second scrub writes nothing.
@@ -641,7 +687,10 @@ mod tests {
         // Still written: the redacted text is safer than the original.
         assert_eq!(cb.writes.get(), 1);
         assert!(!cb.text().unwrap().contains(&pw));
-        assert_eq!(r.notice(), "1 secret removed, check before pasting");
+        assert_eq!(
+            r.notice(),
+            "Clipboard scrubbed. 1 secret removed, check before pasting · history cleaned."
+        );
         assert!(!r.notice().contains("safe"));
         assert_eq!(serde_json::to_value(&r).unwrap()["status"], "unverified");
     }
@@ -650,10 +699,13 @@ mod tests {
     fn notices_and_json() {
         let mut r = ClipboardScrub::status(ClipStatus::Cleaned);
         r.removed = 2;
-        assert_eq!(r.notice(), "2 secrets removed, safe to paste");
+        assert_eq!(
+            r.notice(),
+            "Clipboard scrubbed. 2 secrets removed, safe to paste."
+        );
         assert_eq!(
             ClipboardScrub::status(ClipStatus::Clean).notice(),
-            "Nothing sensitive found"
+            "Clipboard is clean. Nothing sensitive found."
         );
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["status"], "cleaned");

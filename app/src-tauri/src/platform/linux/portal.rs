@@ -53,7 +53,7 @@ const DBUS_PATH: &str = "/org/freedesktop/DBus";
 const APP_ID: &str = "io.github.its30na.redactor";
 /// The one shortcut the app binds.
 const SHORTCUT_ID: &str = "scrub-clipboard";
-const DESCRIPTION: &str = "Clean the clipboard";
+const DESCRIPTION: &str = "Scrub the clipboard";
 /// How long a method call on the bus may take to reply (the portal replies at once; its answer
 /// comes later, as a `Response`).
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);

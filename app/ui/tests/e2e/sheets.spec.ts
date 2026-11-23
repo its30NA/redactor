@@ -208,13 +208,13 @@ test.describe('clipboard-scrubbed event', () => {
     await page.evaluate(() =>
       window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'cleaned', removed: 2, byLabel: [], historyCleaned: true, press: 1 }),
     );
-    const verified = page.locator('.toast', { hasText: '2 secrets removed · history cleaned' });
+    const verified = page.locator('.toast', { hasText: '2 secrets removed, safe to paste · history cleaned' });
     await expect(verified).toBeVisible();
     await expect(verified).toHaveClass(/success/);
     await page.evaluate(() =>
       window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'unverified', removed: 1, byLabel: [], historyCleaned: true, press: 2 }),
     );
-    const unverified = page.locator('.toast', { hasText: '1 secret removed · check before pasting · history cleaned' });
+    const unverified = page.locator('.toast', { hasText: '1 secret removed, check before pasting · history cleaned' });
     await expect(unverified).toBeVisible();
     await expect(unverified).toHaveClass(/warning/);
   });
@@ -233,18 +233,18 @@ test.describe('clipboard-scrubbed event', () => {
     await expect(page.locator('.toast', { hasText: 'Nothing to scrub' })).toBeVisible();
   });
 
-  test('a scrub that expired waiting for the window offers Clean now', async ({ page, problems: _ }) => {
+  test('a scrub that expired waiting for the window offers Scrub now', async ({ page, problems: _ }) => {
     await openApp(page);
     await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-waiting', { press: 1 }));
-    const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to clean the clipboard…" });
+    const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to scrub the clipboard…" });
     await expect(waiting).toBeVisible();
     await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-expired', { press: 1 }));
     await expect(waiting).toHaveCount(0);
-    const expired = page.locator('.toast', { hasText: 'Not cleaned' });
+    const expired = page.locator('.toast', { hasText: 'Not scrubbed' });
     await expect(expired).toContainText("Redactor's window did not come to the front in time.");
     await expect(expired).toHaveClass(/warning/);
     await expect(expired.locator('.life')).toHaveCount(0);
-    await expired.getByRole('button', { name: 'Clean now' }).click();
+    await expired.getByRole('button', { name: 'Scrub now' }).click();
     await expect(expired).toHaveCount(0);
     await expect(page.locator('.toast', { hasText: 'Clipboard scrubbed' })).toBeVisible();
   });

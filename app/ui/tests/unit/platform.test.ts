@@ -210,7 +210,7 @@ describe('focusNote', () => {
 describe('hotkeyCommandLine', () => {
   test('command: the welcome card points to the desktop settings', () =>
     expect(hotkeyCommandLine(info({ hotkey: 'command' }))).toBe(
-      "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).",
+      "Scrub the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).",
     ));
   test('keys, portal, missing and before app_info: null (the keycaps stay)', () => {
     expect(hotkeyCommandLine(info({ hotkey: 'keys' }))).toBeNull();
@@ -236,13 +236,13 @@ describe('scrubRowDesc', () => {
 describe('firstRunHotkeyDesc', () => {
   test("no need for focus keeps today's text", () => {
     expect(firstRunHotkeyDesc(info({ clipboardNeedsFocus: false }))).toBe(
-      'Cleans the clipboard in place, without opening this window.',
+      'Scrubs the clipboard in place, without opening this window.',
     );
-    expect(firstRunHotkeyDesc(info())).toBe('Cleans the clipboard in place, without opening this window.');
-    expect(firstRunHotkeyDesc(null)).toBe('Cleans the clipboard in place, without opening this window.');
+    expect(firstRunHotkeyDesc(info())).toBe('Scrubs the clipboard in place, without opening this window.');
+    expect(firstRunHotkeyDesc(null)).toBe('Scrubs the clipboard in place, without opening this window.');
   });
   test('needs focus: the window comes forward first', () =>
     expect(firstRunHotkeyDesc(info({ clipboardNeedsFocus: true }))).toBe(
-      'Brings this window forward, then cleans the clipboard.',
+      'Brings this window forward, then scrubs the clipboard.',
     ));
 });

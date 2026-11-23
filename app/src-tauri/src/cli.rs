@@ -1,13 +1,13 @@
 //! The app's command-line arguments.
 //!
-//! `--scrub-clipboard` cleans the clipboard as the hotkey does: on a second start the running
+//! `--scrub-clipboard` scrubs the clipboard as the hotkey does: on a second start the running
 //! app gets it through the single-instance plugin, on a first start the app acts on it once it
 //! is up. A desktop shortcut that runs the app with `--scrub-clipboard` is then a hotkey.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-/// Asks the app to clean the clipboard.
+/// Asks the app to scrub the clipboard.
 pub const SCRUB_FLAG: &str = "--scrub-clipboard";
 
 /// True when an argument after the program name is exactly [`SCRUB_FLAG`].
@@ -15,7 +15,7 @@ pub fn scrub_requested(args: &[String]) -> bool {
     args.iter().skip(1).any(|a| a == SCRUB_FLAG)
 }
 
-/// The program a desktop shortcut runs to clean the clipboard: the AppImage file when the app
+/// The program a desktop shortcut runs to scrub the clipboard: the AppImage file when the app
 /// runs from one (`$APPIMAGE`, an absolute path; the executable itself then sits in a mount that
 /// changes with each start), else this executable. `None` when neither is a Unicode path.
 pub fn program_path(exe: Option<PathBuf>, appimage: Option<OsString>) -> Option<String> {
