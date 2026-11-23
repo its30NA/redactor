@@ -35,12 +35,17 @@
   import { shieldNote } from './lib/platform';
   import { session } from './lib/session.svelte';
   import { settings } from './lib/settings.svelte';
+  import { toasts } from './lib/toast.svelte';
   import { workspace } from './lib/workspace.svelte';
   import type { AppInfo, Sensitivity, ThemeSetting } from './lib/types';
 
   let info = $state<AppInfo | null>(null);
+  /** app_info answered or failed: until then the page does not know what this desktop can do. */
+  let infoSettled = $state(false);
   // Windows rules until app_info answers, so nothing changes on Windows.
   const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
+  // The shield is promised (welcome card, pill) only once app_info says this desktop has it.
+  const shieldKnown = $derived(info !== null && shieldNote(info, keyOs) === null);
   let settingsOpen = $state(false);
   let rememberedOpen = $state(false);
   let addingSecret = $state(false);
@@ -48,9 +53,10 @@
   let firstRunOpen = $state(false);
   let firstRunChecked = false;
 
-  // The first-run card, once settings are known.
+  // The first-run card, once settings are known and app_info has answered (or failed): before
+  // that its rows would be the Windows promises.
   $effect(() => {
-    if (!settings.loaded || firstRunChecked) return;
+    if (!settings.loaded || !infoSettled || firstRunChecked) return;
     firstRunChecked = true;
     if (!settings.value.firstRunDone) firstRunOpen = true;
   });
@@ -77,7 +83,14 @@
     void Promise.allSettled(unlisten).then(() =>
       appInfo()
         .then((i) => (info = i))
-        .catch(() => {}),
+        .catch(() =>
+          toasts.show({
+            tone: 'warning',
+            title: 'App details could not be loaded',
+            detail: 'Whether the screen-capture shield works here is unknown.',
+          }),
+        )
+        .finally(() => (infoSettled = true)),
     );
 
     // Decorative loops rest while the window is in the background.
@@ -109,8 +122,9 @@
   const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en')} ${n === 1 ? one : many}`;
 
   const pill = $derived.by<{ tone: 'ok' | 'busy' | 'warn' | 'alert'; segments: PillSegment[]; announce?: string }>(() => {
-    // No shield segment (and no warning about it) where the desktop cannot hide the window.
-    const noShield = shieldNote(info, keyOs) !== null;
+    // No shield segment (and no warning about it) where the desktop cannot hide the window, or
+    // while app_info has not said whether it can.
+    const noShield = !shieldKnown;
     const shield: PillSegment[] = noShield
       ? []
       : settings.value.contentProtection
@@ -254,7 +268,7 @@
 
 <Aurora />
 
-<div class="app" data-ready={settings.loaded ? '' : undefined}>
+<div class="app" data-ready={settings.loaded && infoSettled ? '' : undefined}>
   <TitleBar os={keyOs}>
     {#snippet status()}
       <StatusPill tone={pill.tone} segments={pill.segments} announce={pill.announce} />
@@ -316,7 +330,7 @@
 <SettingsSheet bind:open={settingsOpen} {info} />
 <RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
-<FirstRun bind:open={firstRunOpen} shield={shieldNote(info, keyOs) === null} os={keyOs} {info} />
+<FirstRun bind:open={firstRunOpen} shield={shieldKnown} os={keyOs} {info} />
 
 <style>
   .app {

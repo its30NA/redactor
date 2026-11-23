@@ -101,3 +101,33 @@ test.describe('Wayland', () => {
     await expect(page.getByTestId('first-run').getByTestId('hotkey-desc')).toHaveText(FIRST_RUN_HOTKEY);
   });
 });
+
+/**
+ * Until app_info answers, the page does not know the desktop: it must not promise the Windows
+ * shield (the welcome card's row, the pill's segment). `?appinfo=slow|fail` delays or fails it.
+ */
+test.describe('before app_info answers', () => {
+  test('a_slow_app_info_shows_no_shield_promise_and_holds_the_welcome_card', async ({ page, problems: _ }) => {
+    await page.goto('/?firstrun&os=linux&appinfo=slow');
+    const pill = page.getByTestId('status-pill');
+    await expect(pill).toContainText('Offline');
+    await expect(pill).not.toContainText('Shield');
+    await expect(page.getByTestId('first-run')).toHaveCount(0);
+    // Once it answers, the card opens without the row this desktop cannot keep.
+    const card = page.getByTestId('first-run');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await expect(card).toContainText('Offline by design');
+    await expect(card).not.toContainText('Shielded from screen capture');
+    await expect(pill).not.toContainText('Shield');
+  });
+
+  test('a_failed_app_info_says_so_and_makes_no_shield_promise', async ({ page, problems: _ }) => {
+    await openApp(page, '?firstrun&os=linux&appinfo=fail');
+    const card = page.getByTestId('first-run');
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText('Shielded from screen capture');
+    await expect(page.getByTestId('status-pill')).not.toContainText('Shield');
+    await expect(page.locator('.toast', { hasText: 'App details could not be loaded' })).toHaveCount(1);
+  });
+});
+

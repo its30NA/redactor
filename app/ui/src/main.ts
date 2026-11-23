@@ -12,13 +12,14 @@ import App from './App.svelte';
 async function boot(): Promise<void> {
   // `--mode mock` (npm run dev, the Playwright build) runs against the fixture backend.
   // The condition is static, so production bundles contain no mock code at all.
-  // Query: ?clipboard=demo|harsh|large|huge|empty  ?session=empty  ?latency=ms  ?firstrun  ?os=macos|linux  ?hotkey=portal|command  ?focus=1 (the last two with os)  ?scrub (started with --scrub-clipboard)
+  // Query: ?clipboard=demo|harsh|large|huge|empty  ?session=empty  ?latency=ms  ?firstrun  ?os=macos|linux  ?hotkey=portal|command  ?focus=1 (the last two with os)  ?scrub (started with --scrub-clipboard)  ?appinfo=slow|fail
   if (import.meta.env.MODE === 'mock' && !isTauri()) {
     const { installMockBackend } = await import('./lib/mock/ipc');
     const q = new URLSearchParams(location.search);
     const clipboard = q.get('clipboard');
     const os = q.get('os');
     const hotkey = q.get('hotkey');
+    const info = q.get('appinfo');
     installMockBackend({
       scanLatencyMs: q.has('latency') ? Number(q.get('latency')) : undefined,
       session: q.get('session') === 'empty' ? 'empty' : 'demo',
@@ -28,6 +29,7 @@ async function boot(): Promise<void> {
       hotkey: hotkey === 'portal' || hotkey === 'command' ? hotkey : undefined,
       clipboardNeedsFocus: q.get('focus') === '1',
       scrubOnStart: q.has('scrub'),
+      appInfo: info === 'slow' || info === 'fail' ? info : undefined,
     });
   }
   const target = document.getElementById('app');

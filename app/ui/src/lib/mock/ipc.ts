@@ -51,7 +51,12 @@ export interface MockOptions {
   clipboardNeedsFocus?: boolean;
   /** Started with `--scrub-clipboard`: the scrub runs at the page's first app_info. */
   scrubOnStart?: boolean;
+  /** app_info answers only after `APP_INFO_SLOW_MS` (`slow`) or fails (`fail`); unset answers at once. */
+  appInfo?: 'slow' | 'fail';
 }
+
+/** How long a `slow` app_info takes. */
+export const APP_INFO_SLOW_MS = 2500;
 
 export interface MockBackend {
   calls: MockCall[];
@@ -365,6 +370,8 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
             scrubOnStart = false;
             void scrubNow();
           }
+          if (opts.appInfo === 'slow') await delay(APP_INFO_SLOW_MS);
+          if (opts.appInfo === 'fail') throw 'Internal error.';
           return opts.os
             ? {
                 ...fixture('app-info'),
