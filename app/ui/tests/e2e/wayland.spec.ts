@@ -11,8 +11,11 @@ const COMMAND_NOTE = 'This desktop does not let apps set a hotkey. Add a shortcu
 const COMMAND = 'redactor --scrub-clipboard';
 const FIRST_RUN_COMMAND_LINE =
   "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).";
-const FOCUS_NOTE =
-  'On this desktop Redactor can reach the clipboard only while its window is in front. The hotkey brings it forward first.';
+const FOCUS_NOTE = 'Redactor can reach the clipboard only while its window is in front.';
+const SCRUB_ROW = 'From any app, without opening the window.';
+const SCRUB_ROW_FOCUS = 'From any app. On this desktop the window comes to the front first.';
+const FIRST_RUN_HOTKEY = 'Cleans the clipboard in place, without opening this window.';
+const FIRST_RUN_HOTKEY_FOCUS = 'Brings this window forward, then cleans the clipboard.';
 
 /** Open the app as that desktop, open Settings and wait until app_info has answered (the shield row turns off). */
 async function openSettings(page: Page, query: string) {
@@ -73,5 +76,28 @@ test.describe('Wayland', () => {
     const portal = page.getByTestId('first-run');
     await expect(portal.locator('kbd').first()).toBeVisible();
     await expect(portal.getByTestId('hotkey-command-line')).toHaveCount(0);
+  });
+
+  test('where_the_clipboard_needs_focus_settings_does_not_promise_a_closed_window', async ({ page, problems: _ }) => {
+    const sheet = await openSettings(page, '?os=linux&hotkey=portal&focus=1');
+    await expect(sheet.getByTestId('scrub-row-desc')).toHaveText(SCRUB_ROW_FOCUS);
+    await expect(sheet.getByTestId('focus-note')).toHaveText(FOCUS_NOTE);
+    await expect(sheet).not.toContainText(SCRUB_ROW);
+    // Without the need for focus the row keeps its text.
+    const plain = await openSettings(page, '?os=linux&hotkey=portal');
+    await expect(plain.getByTestId('scrub-row-desc')).toHaveText(SCRUB_ROW);
+  });
+
+  test('where_the_clipboard_needs_focus_the_first_run_card_says_the_window_comes_forward', async ({
+    page,
+    problems: _,
+  }) => {
+    await openApp(page, '?firstrun&os=linux&hotkey=portal&focus=1');
+    const card = page.getByTestId('first-run');
+    await expect(card).toBeVisible();
+    await expect(card.getByTestId('hotkey-desc')).toHaveText(FIRST_RUN_HOTKEY_FOCUS);
+    await expect(card).not.toContainText(FIRST_RUN_HOTKEY);
+    await openApp(page, '?firstrun&os=linux&hotkey=portal');
+    await expect(page.getByTestId('first-run').getByTestId('hotkey-desc')).toHaveText(FIRST_RUN_HOTKEY);
   });
 });

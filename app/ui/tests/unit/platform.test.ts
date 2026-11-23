@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { KeyOs } from '../../src/lib/keys';
 import {
+  firstRunHotkeyDesc,
   focusNote,
   hotkeyCommandLine,
   hotkeyMode,
@@ -8,6 +9,7 @@ import {
   lockDesc,
   lockShort,
   lockTitle,
+  scrubRowDesc,
   settingsNote,
   shieldNote,
   themeDesc,
@@ -137,9 +139,10 @@ describe('hotkeyNote', () => {
 });
 
 describe('focusNote', () => {
-  test('needs focus: says so', () =>
+  // The row above it says the window comes to the front; the note keeps only the why.
+  test('needs focus: says why', () =>
     expect(focusNote(info({ clipboardNeedsFocus: true }))).toBe(
-      'On this desktop Redactor can reach the clipboard only while its window is in front. The hotkey brings it forward first.',
+      'Redactor can reach the clipboard only while its window is in front.',
     ));
   test('no need: no note', () => expect(focusNote(info({ clipboardNeedsFocus: false }))).toBeNull());
   test('missing field: no note', () => expect(focusNote(info())).toBeNull());
@@ -157,4 +160,31 @@ describe('hotkeyCommandLine', () => {
     expect(hotkeyCommandLine(info())).toBeNull();
     expect(hotkeyCommandLine(null)).toBeNull();
   });
+});
+
+describe('scrubRowDesc', () => {
+  test("no need for focus keeps today's text", () =>
+    expect(scrubRowDesc(info({ clipboardNeedsFocus: false }))).toBe('From any app, without opening the window.'));
+  test("missing field and before app_info keep today's text", () => {
+    expect(scrubRowDesc(info())).toBe('From any app, without opening the window.');
+    expect(scrubRowDesc(null)).toBe('From any app, without opening the window.');
+  });
+  test('needs focus: the window comes to the front first', () =>
+    expect(scrubRowDesc(info({ clipboardNeedsFocus: true }))).toBe(
+      'From any app. On this desktop the window comes to the front first.',
+    ));
+});
+
+describe('firstRunHotkeyDesc', () => {
+  test("no need for focus keeps today's text", () => {
+    expect(firstRunHotkeyDesc(info({ clipboardNeedsFocus: false }))).toBe(
+      'Cleans the clipboard in place, without opening this window.',
+    );
+    expect(firstRunHotkeyDesc(info())).toBe('Cleans the clipboard in place, without opening this window.');
+    expect(firstRunHotkeyDesc(null)).toBe('Cleans the clipboard in place, without opening this window.');
+  });
+  test('needs focus: the window comes forward first', () =>
+    expect(firstRunHotkeyDesc(info({ clipboardNeedsFocus: true }))).toBe(
+      'Brings this window forward, then cleans the clipboard.',
+    ));
 });

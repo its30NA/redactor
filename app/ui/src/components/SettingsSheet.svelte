@@ -18,6 +18,7 @@
     lockDesc,
     lockTitle,
     SCRUB_COMMAND,
+    scrubRowDesc,
     settingsNote,
     shieldNote,
     themeDesc,
@@ -221,7 +222,7 @@
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Scrub the clipboard</p>
-        <p class="row-desc">From any app, without opening the window.</p>
+        <p class="row-desc" data-testid="scrub-row-desc">{scrubRowDesc(info)}</p>
       </div>
       {#if mode !== 'command'}
         <button
