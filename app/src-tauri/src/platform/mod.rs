@@ -158,3 +158,39 @@ pub fn native() -> Result<Platform, Unavailable> {
 pub fn native() -> Result<Platform, Unavailable> {
     Err(unsupported::UNAVAILABLE)
 }
+
+/// Switches core dumps off for this process and every process it starts (the web view's helper
+/// processes inherit the limit). A crash aborts the process, and a core file would put its memory
+/// on disk: clipboard text, both panes, the session secrets. The limit stops the kernel writing a
+/// core file and systemd-coredump storing one; it is no guarantee against every crash reporter.
+/// Called first thing in `main`. An error is ignored: the app runs either way.
+#[cfg(target_os = "linux")]
+pub fn no_core_dumps() {
+    use rustix::process::{setrlimit, Resource, Rlimit};
+    let none = Rlimit {
+        current: Some(0),
+        maximum: Some(0),
+    };
+    let _ = setrlimit(Resource::Core, none);
+}
+
+/// Elsewhere nothing to do here.
+#[cfg(not(target_os = "linux"))]
+pub fn no_core_dumps() {}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use rustix::process::{getrlimit, Resource, Rlimit};
+
+    #[test]
+    fn no_core_dumps_sets_the_core_limit_to_zero() {
+        super::no_core_dumps();
+        assert_eq!(
+            getrlimit(Resource::Core),
+            Rlimit {
+                current: Some(0),
+                maximum: Some(0),
+            }
+        );
+    }
+}
