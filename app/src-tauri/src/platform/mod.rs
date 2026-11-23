@@ -85,6 +85,9 @@ pub enum HotkeyMode {
     Command,
 }
 
+/// Something the shell does on a hotkey event (a press, a lost key).
+pub type OnHotkey = Arc<dyn Fn(&tauri::AppHandle) + Send + Sync>;
+
 /// The system-wide hotkey.
 pub trait GlobalHotkey: Send + Sync {
     fn register(&self, app: &tauri::AppHandle, hk: &Hotkey) -> Result<(), HotkeyTaken>;
@@ -95,15 +98,11 @@ pub trait GlobalHotkey: Send + Sync {
         HotkeyMode::Keys
     }
 
-    /// Hands over what a press does. Called once, in `setup`, before the first `register`.
-    /// Where presses arrive some other way (the global-shortcut plugin's handler) this does
-    /// nothing.
-    fn listen(
-        &self,
-        _app: &tauri::AppHandle,
-        _on_press: Arc<dyn Fn(&tauri::AppHandle) + Send + Sync>,
-    ) {
-    }
+    /// Hands over what a press does, and what to do when the desktop drops a bound key
+    /// (`on_lost`). Called once, in `setup`, before the first `register`. Where presses arrive
+    /// some other way (the global-shortcut plugin's handler) and a registered key stays bound,
+    /// this does nothing.
+    fn listen(&self, _app: &tauri::AppHandle, _on_press: OnHotkey, _on_lost: OnHotkey) {}
 }
 
 /// What this OS offers the shell.

@@ -13,7 +13,9 @@ use std::sync::{mpsc, Arc, OnceLock};
 use std::time::Duration;
 
 use super::hotkey_plugin::PluginHotkey;
-use super::{GlobalHotkey, HotkeyMode, HotkeyTaken, Platform, SystemClipboard, Unavailable};
+use super::{
+    GlobalHotkey, HotkeyMode, HotkeyTaken, OnHotkey, Platform, SystemClipboard, Unavailable,
+};
 use crate::hotkey::Hotkey;
 use crate::os::Os;
 use command_hotkey::CommandHotkey;
@@ -177,12 +179,8 @@ impl GlobalHotkey for ProbedHotkey {
         self.get().mode()
     }
 
-    fn listen(
-        &self,
-        app: &tauri::AppHandle,
-        on_press: Arc<dyn Fn(&tauri::AppHandle) + Send + Sync>,
-    ) {
-        self.get().listen(app, on_press)
+    fn listen(&self, app: &tauri::AppHandle, on_press: OnHotkey, on_lost: OnHotkey) {
+        self.get().listen(app, on_press, on_lost)
     }
 }
 

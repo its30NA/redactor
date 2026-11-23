@@ -98,7 +98,9 @@ pub fn run() -> Result<(), platform::Unavailable> {
             if st.platform.hotkey.mode() == HotkeyMode::Portal {
                 start_hotkey_in_background(&handle);
             } else {
-                st.platform.hotkey.listen(&handle, Arc::new(hotkey_pressed));
+                st.platform
+                    .hotkey
+                    .listen(&handle, Arc::new(hotkey_pressed), Arc::new(hotkey_lost));
                 // Another app may hold the key; the app still runs, and Settings can pick
                 // another one.
                 register_at_start(&handle, &settings.hotkey);
@@ -182,7 +184,9 @@ fn start_hotkey_in_background(app: &AppHandle) {
             let st = state::state(&app);
             let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
             let _ = held.send(());
-            st.platform.hotkey.listen(&app, Arc::new(hotkey_pressed));
+            st.platform
+                .hotkey
+                .listen(&app, Arc::new(hotkey_pressed), Arc::new(hotkey_lost));
             // The desktop may refuse the key; the app still runs, and Settings can ask for
             // another one.
             register_at_start(&app, &st.settings().hotkey);
@@ -205,8 +209,8 @@ fn register_at_start(app: &AppHandle, hotkey: &str) {
 }
 
 /// The desktop dropped the hotkey it had bound: Settings shows it as not active and the window
-/// says so (the desktop notification is the caller's).
-pub fn hotkey_lost(app: &AppHandle) {
+/// says so (the desktop notification is the platform's). Handed to the platform in `listen`.
+fn hotkey_lost(app: &AppHandle) {
     set_hotkey_active(app, false, Some(Notice::HotkeyLost));
 }
 

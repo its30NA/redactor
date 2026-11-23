@@ -39,7 +39,7 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 use zbus::Message;
 
 use crate::hotkey::{Hotkey, Key};
-use crate::platform::{GlobalHotkey, HotkeyMode, HotkeyTaken};
+use crate::platform::{GlobalHotkey, HotkeyMode, HotkeyTaken, OnHotkey};
 
 const PORTAL: &str = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
@@ -436,14 +436,14 @@ impl GlobalHotkey for PortalHotkey {
         HotkeyMode::Portal
     }
 
-    fn listen(&self, app: &AppHandle, on_press: Arc<dyn Fn(&AppHandle) + Send + Sync>) {
+    fn listen(&self, app: &AppHandle, on_press: OnHotkey, on_lost: OnHotkey) {
         let lost = app.clone();
         let app = app.clone();
         self.start(
             Arc::new(move || on_press(&app)),
             Arc::new(move || {
                 crate::app::notify(&lost, LOST);
-                crate::app::hotkey_lost(&lost);
+                on_lost(&lost);
             }),
         );
     }
