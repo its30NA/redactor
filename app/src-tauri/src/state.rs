@@ -23,9 +23,10 @@ pub struct AppState {
     pub tray_notice_shown: AtomicBool,
     /// Serializes clipboard scrubs and lets at most one wait (the hotkey can repeat).
     pub scrubs: ScrubQueue,
-    /// Scrub presses so far (hotkey, tray, flag, "Clean now"): the events carry a press's number,
-    /// so the window lets a result end only the wait of a press it covers.
-    pub presses: AtomicU64,
+    /// Scrub presses so far (hotkey, tray, flag, "Clean now"), and the latest one a scrub may
+    /// cover: the events carry a press's number, so the window lets a result end only the wait
+    /// of a press it covers.
+    pub presses: Presses,
     /// `--scrub-clipboard` started the app where the clipboard needs the window, and the scrub
     /// waits for the page to listen.
     pub start_scrub: HeldScrub,
@@ -55,7 +56,7 @@ impl AppState {
             settings_file,
             tray_notice_shown: AtomicBool::new(false),
             scrubs: ScrubQueue::default(),
-            presses: AtomicU64::new(0),
+            presses: Presses::default(),
             start_scrub: HeldScrub::default(),
             scrub_results: ForPage::default(),
             settings_change: Mutex::new(()),
@@ -149,6 +150,32 @@ impl ScrubQueue {
         let _one_at_a_time = self.running.lock().unwrap_or_else(|e| e.into_inner());
         self.queued.store(false, Ordering::SeqCst);
         scrub()
+    }
+}
+
+/// The numbers of the scrub presses.
+#[derive(Debug, Default)]
+pub struct Presses {
+    numbered: AtomicU64,
+    covered: AtomicU64,
+}
+
+impl Presses {
+    /// A new press: its number, before any scrub can start for it.
+    pub fn next(&self) -> u64 {
+        self.numbered.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// `press` is scrubbed without waiting, or its wait for the window ends in a scrub. Called
+    /// before that scrub is asked for, so the scrub reads at least this number.
+    pub fn cover(&self, press: u64) {
+        self.covered.fetch_max(press, Ordering::SeqCst);
+    }
+
+    /// The latest press a scrub that starts now covers. A press still waiting for the window is
+    /// never counted in.
+    pub fn covered(&self) -> u64 {
+        self.covered.load(Ordering::SeqCst)
     }
 }
 
@@ -262,6 +289,20 @@ mod tests {
             });
             assert_eq!(*sent.lock().unwrap(), [7]);
         }
+    }
+
+    #[test]
+    fn a_scrub_covers_only_presses_that_do_not_wait_for_the_window() {
+        let p = Presses::default();
+        let first = p.next();
+        p.cover(first);
+        let waiting = p.next();
+        assert_eq!((first, waiting), (1, 2));
+        assert_eq!(p.covered(), 1, "press 2 still waits for the window");
+        p.cover(waiting);
+        assert_eq!(p.covered(), 2, "its wait ended in a scrub");
+        p.cover(first);
+        assert_eq!(p.covered(), 2, "never goes down");
     }
 
     #[test]
