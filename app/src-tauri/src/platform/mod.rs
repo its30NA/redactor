@@ -196,9 +196,10 @@ pub fn socket_is_ours(owner: Option<u32>, own: u32) -> bool {
 /// Switches core dumps off for this process and every process it starts (the web view's helper
 /// processes inherit the limit). A crash aborts the process, and a core file would put its memory
 /// on disk: clipboard text, both panes, the session secrets. The limit stops the kernel writing a
-/// core file and systemd-coredump storing one; it is no guarantee against every crash reporter.
-/// Called first thing in `main`. An error is ignored: the app runs either way.
-#[cfg(target_os = "linux")]
+/// core file (on Linux and macOS) and systemd-coredump storing one; it is no guarantee against
+/// every crash reporter. Called first thing in `main`. An error is ignored: the app runs either
+/// way.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn no_core_dumps() {
     use rustix::process::{setrlimit, Resource, Rlimit};
     let none = Rlimit {
@@ -208,8 +209,8 @@ pub fn no_core_dumps() {
     let _ = setrlimit(Resource::Core, none);
 }
 
-/// Elsewhere nothing to do here.
-#[cfg(not(target_os = "linux"))]
+/// Elsewhere (Windows) there is no core limit to set.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn no_core_dumps() {}
 
 #[cfg(test)]
@@ -236,7 +237,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn no_core_dumps_sets_the_core_limit_to_zero() {
         use rustix::process::{getrlimit, Resource, Rlimit};
