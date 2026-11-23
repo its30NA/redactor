@@ -3,7 +3,8 @@
  * and the notices the window shows once: a hotkey that could not be set at start or that the
  * desktop dropped, settings that could not be written or read. Each also comes as a desktop
  * notification where the shell sends one; these stay until dismissed, since the window may not
- * be in front when they arrive.
+ * be in front when they arrive. A hotkey notice goes once the hotkey works again (a key picked
+ * in Settings).
  */
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { onEvent } from './api';
@@ -47,16 +48,23 @@ const isNotice = (n: unknown): n is AppNotice => typeof n === 'string' && Object
 /** Subscribes to `app-status`; `openSettings` is the hotkey notices' button. */
 export function listenForAppStatus(openSettings: () => void): Promise<UnlistenFn> {
   hotkeyState.active = null;
+  // The hotkey notices on screen: they say the hotkey does not work, until it does.
+  let hotkeyNotices: number[] = [];
   // Events are not validated at runtime: a payload that is not what the shell sends changes nothing.
   return onEvent('app-status', (s: AppStatus) => {
     if (typeof s !== 'object' || s === null) return;
     if (typeof s.hotkeyActive === 'boolean') hotkeyState.active = s.hotkeyActive;
+    if (s.hotkeyActive === true) {
+      for (const id of hotkeyNotices) toasts.dismiss(id);
+      hotkeyNotices = [];
+    }
     if (!isNotice(s.notice)) return;
     const { settings, ...notice } = NOTICES[s.notice];
-    toasts.show({
+    const id = toasts.show({
       ...notice,
       duration: 0,
       action: settings ? { label: 'Open Settings', run: openSettings } : undefined,
     });
+    if (settings) hotkeyNotices.push(id);
   });
 }

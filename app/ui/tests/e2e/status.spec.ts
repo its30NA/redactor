@@ -38,6 +38,20 @@ test.describe('app status', () => {
     await expect(sheet.getByTestId('hotkey-inactive')).toHaveCount(0);
   });
 
+  test('a_key_picked_through_the_gear_retires_the_hotkey_notice', async ({ page, problems: _ }) => {
+    await openApp(page, '?hotkeyrefused');
+    const notice = toast(page, 'Hotkey not active');
+    await expect(notice).toBeVisible();
+    // Settings opened from the gear, not the notice's button: the notice stays meanwhile.
+    const sheet = await openSettings(page);
+    await expect(notice).toBeVisible();
+    await sheet.getByTestId('hotkey').click();
+    await page.keyboard.press('Control+Alt+K');
+    await expect.poll(async () => (await lastSettings(page))?.hotkey).toBe('Ctrl+Alt+K');
+    await expect(sheet.getByTestId('hotkey-inactive')).toHaveCount(0);
+    await expect(notice).toHaveCount(0);
+  });
+
   test('a_working_hotkey_has_no_note_and_no_notice', async ({ page, problems: _ }) => {
     await openApp(page);
     const sheet = await openSettings(page);

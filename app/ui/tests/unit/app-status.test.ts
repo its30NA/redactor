@@ -63,6 +63,23 @@ describe('app-status', () => {
     expect(toasts.items.at(-1)?.action?.label).toBe('Open Settings');
   });
 
+  test('a hotkey that works again retires its notices, and only those', async () => {
+    await backend.emit('app-status', status(false, 'hotkeyNotActive'));
+    await backend.emit('app-status', status(false, 'settingsNotSaved'));
+    await backend.emit('app-status', status(false, 'hotkeyLost'));
+    expect(toasts.items.map((t) => t.title)).toEqual([
+      'Hotkey not active',
+      'Settings not written to disk',
+      'Hotkey stopped working',
+    ]);
+    // Still not active: nothing is retired.
+    await backend.emit('app-status', status(false, null));
+    expect(toasts.items).toHaveLength(3);
+    await backend.emit('app-status', status(true, null));
+    expect(hotkeyState.active).toBe(true);
+    expect(toasts.items.map((t) => t.title)).toEqual(['Settings not written to disk']);
+  });
+
   test('settings that could not be written or read say so, with no button', async () => {
     await backend.emit('app-status', status(true, 'settingsNotSaved'));
     await backend.emit('app-status', status(true, 'settingsUnreadable'));
