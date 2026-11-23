@@ -513,6 +513,24 @@ mod tests {
         assert_eq!(p.take_on_focus(set_back), Take::Run);
     }
 
+    /// By design: the wall clock cannot tell a clock set forward from a suspend, so the wait
+    /// ends early. The press is then reported as not cleaned; it never scrubs late.
+    #[test]
+    fn a_wall_clock_set_forward_expires_early() {
+        let p = PendingScrub::new();
+        let t = When::now();
+        p.arm(t);
+        let set_forward = When {
+            mono: t.mono + S(1),
+            wall: t.wall + S(3600),
+        };
+        assert_eq!(p.timer_step(set_forward), Timer::Expired);
+
+        let p = PendingScrub::new();
+        p.arm(t);
+        assert_eq!(p.take_on_focus(set_forward), Take::Lapsed);
+    }
+
     #[test]
     fn focus_without_press_is_nothing() {
         let p = PendingScrub::new();
