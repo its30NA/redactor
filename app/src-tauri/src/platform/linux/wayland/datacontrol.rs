@@ -35,7 +35,7 @@ use super::pipe::{read_bounded, write_bounded};
 use super::protocol::{Device, Events, Manager, Offer, Source, SourceData};
 use super::{hint_value_is_secret, lost, HINT_BYTES, PASSWORD_HINT, TEXT_MIMES};
 use crate::bridge::MAX_INPUT_BYTES;
-use crate::clipscrub::{text_from_utf8, ClipError, ClipText, Clipboard};
+use crate::clipscrub::{own_text, text_from_utf8, ClipError, ClipText, Clipboard};
 use crate::platform::SystemClipboard;
 
 /// How long the compositor gets to answer a round trip (a sync, the echo of our write).
@@ -267,18 +267,6 @@ fn hint_is_secret(hint: Result<std::io::PipeReader, ClipError>) -> bool {
         return true;
     };
     hint_value_is_secret(&value)
-}
-
-/// Our own text, read as another app would get it: up to the first NUL, within the limit.
-fn own_text(text: &str) -> ClipText {
-    let end = memchr::memchr(0, text.as_bytes()).unwrap_or(text.len());
-    if end == 0 {
-        ClipText::Empty
-    } else if end > MAX_INPUT_BYTES {
-        ClipText::TooLarge
-    } else {
-        ClipText::Text(Zeroizing::new(text[..end].to_owned()))
-    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -520,9 +508,11 @@ mod tests {
     }
 
     #[test]
-    fn own_text_ends_at_nul_and_keeps_the_limit() {
-        assert!(matches!(own_text("one\0two"), ClipText::Text(t) if t.as_str() == "one"));
-        assert!(matches!(own_text("\0two"), ClipText::Empty));
+    fn own_text_is_read_whole_and_keeps_the_limit() {
+        assert!(
+            matches!(own_text("one\0two\0"), ClipText::Text(t) if t.as_str() == "one\u{FFFD}two")
+        );
+        assert!(matches!(own_text("\0"), ClipText::Empty));
         assert!(matches!(
             own_text(&"a".repeat(MAX_INPUT_BYTES + 1)),
             ClipText::TooLarge

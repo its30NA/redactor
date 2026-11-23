@@ -18,9 +18,9 @@ mod wayland_session;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use contract::{unique, OtherApp};
+use contract::{secret_text, unique, OtherApp};
 use redactor_app::bridge::MAX_INPUT_BYTES;
-use redactor_app::clipscrub::{ClipText, Clipboard};
+use redactor_app::clipscrub::{ClipStatus, ClipText, Clipboard};
 use redactor_app::platform::linux::wayland::{self, DataControlClipboard, DataControlKind};
 use redactor_app::platform::SystemClipboard;
 use wayland_other::{WaylandOther, HINT, TEXT_MIMES};
@@ -62,6 +62,25 @@ contract_tests!(
     stale_sequence_blocks_the_write,
     scrub_rewrites_only_when_findings,
 );
+
+/// A paste gets every byte the owner sends, NULs included: text after a NUL is scanned, and
+/// the rewrite replaces all of it with text that holds no NUL.
+#[test]
+#[ignore = "needs a throwaway Wayland compositor: tools/ci/wayland-tests.sh"]
+fn text_after_a_nul_is_scrubbed() {
+    compositor();
+    let (cb, other) = desktop();
+    let (secret, pw) = secret_text(&unique());
+    other.copy_text(&format!("harmless\0{secret}"));
+    assert_eq!(
+        read_text(&cb).as_deref(),
+        Some(format!("harmless\u{FFFD}{secret}").as_str())
+    );
+    assert_eq!(contract::scrub(&cb).status, ClipStatus::Cleaned);
+    let now = other.paste().expect("text on the clipboard");
+    assert!(!now.contains(&pw), "the text after the NUL was left");
+    assert!(!now.contains('\0'), "the rewrite holds a NUL");
+}
 
 /// The probe names the protocol the clipboard will use: `ext` where offered (Plasma 6), else
 /// `zwlr` (sway, KWin 5.27).

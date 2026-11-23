@@ -13,11 +13,11 @@ use x11rb::protocol::xproto::{
     Atom, AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, GetPropertyReply, Property,
     Timestamp, Window, WindowClass,
 };
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use super::{lost, Op, Reply, Shared, READ_TIMEOUT, STEP_TIMEOUT};
 use crate::bridge::MAX_INPUT_BYTES;
-use crate::clipscrub::{ClipError, ClipText};
+use crate::clipscrub::{self, ClipError, ClipText};
 
 /// How many targets of an owner are looked at.
 const MAX_TARGETS: u32 = 1024;
@@ -68,18 +68,11 @@ pub(super) fn read(shared: &Shared, op: &Op, time: Timestamp) -> Result<ClipText
     })
 }
 
-/// Our own text, read as another app would get it: up to the first NUL, within the limit.
+/// Our own text, read as another app would get it (see [`clipscrub::own_text`]).
 fn own_text(shared: &Shared) -> ClipText {
-    let Some(text) = shared.owned_text() else {
-        return ClipText::Empty;
-    };
-    let end = memchr::memchr(0, text.as_bytes()).unwrap_or(text.len());
-    if end == 0 {
-        ClipText::Empty
-    } else if end > MAX_INPUT_BYTES {
-        ClipText::TooLarge
-    } else {
-        ClipText::Text(Zeroizing::new(text[..end].to_owned()))
+    match shared.owned_text() {
+        Some(text) => clipscrub::own_text(&text),
+        None => ClipText::Empty,
     }
 }
 
@@ -346,37 +339,25 @@ enum Piece {
     End,
 }
 
-/// The text in `bytes`: it ends at the first NUL (as on Windows), invalid UTF-8 becomes U+FFFD,
-/// and `STRING` is Latin-1.
-fn decode(mut bytes: Zeroizing<Vec<u8>>, latin1: bool) -> ClipText {
-    if let Some(nul) = memchr::memchr(0, &bytes) {
-        bytes.truncate(nul);
+/// The text in `bytes`, all of it: a paste on X11 gets every byte, so a NUL does not end the
+/// text. NULs at the end are dropped, every other NUL becomes U+FFFD, invalid UTF-8 becomes
+/// U+FFFD (see [`clipscrub::text_from_utf8`]), and `STRING` is Latin-1.
+fn decode(bytes: Zeroizing<Vec<u8>>, latin1: bool) -> ClipText {
+    if !latin1 {
+        return clipscrub::text_from_utf8(bytes);
     }
-    // Every buffer is sized once, for the worst case, so no copy of the text is left behind in
-    // memory that a growing buffer gave back.
-    let text = if latin1 {
-        let mut text = String::with_capacity(bytes.len() * 2);
-        text.extend(bytes.iter().map(|&b| char::from(b)));
-        text
-    } else {
-        match String::from_utf8(std::mem::take(&mut *bytes)) {
-            // The usual case: the bytes become the string, nothing is copied.
-            Ok(text) => text,
-            Err(invalid) => {
-                let mut raw = invalid.into_bytes();
-                let mut text = String::with_capacity(raw.len() * 3);
-                for chunk in raw.utf8_chunks() {
-                    text.push_str(chunk.valid());
-                    if !chunk.invalid().is_empty() {
-                        text.push(char::REPLACEMENT_CHARACTER);
-                    }
-                }
-                raw.zeroize();
-                text
-            }
-        }
-    };
-    let text = Zeroizing::new(text);
+    let end = bytes
+        .iter()
+        .rposition(|&b| b != 0)
+        .map_or(0, |last| last + 1);
+    let bytes = &bytes[..end];
+    // Sized once, for the worst case (a NUL becomes three bytes, other bytes at most two), so
+    // no copy of the text is left behind in memory that a growing buffer gave back.
+    let mut text = Zeroizing::new(String::with_capacity(bytes.len() * 3));
+    text.extend(bytes.iter().map(|&b| match b {
+        0 => char::REPLACEMENT_CHARACTER,
+        b => char::from(b),
+    }));
     if text.is_empty() {
         ClipText::Empty
     } else if text.len() > MAX_INPUT_BYTES {
@@ -403,11 +384,15 @@ mod tests {
         assert_eq!(text(sample.as_bytes(), false).as_deref(), Some(sample));
     }
 
+    /// A paste on X11 gets every byte: a NUL never hides the text after it.
     #[test]
-    fn text_ends_at_the_first_nul() {
-        assert_eq!(text(b"one\0two", false).as_deref(), Some("one"));
+    fn a_nul_never_hides_text() {
+        assert_eq!(text(b"one\0two", false).as_deref(), Some("one\u{FFFD}two"));
+        assert_eq!(text(b"\0two", false).as_deref(), Some("\u{FFFD}two"));
+        assert_eq!(text(b"a\0\0", false).as_deref(), Some("a"));
+        assert_eq!(text(b"Gr\xFC\0e\0", true).as_deref(), Some("Grü\u{FFFD}e"));
         assert!(matches!(
-            decode(Zeroizing::new(b"\0two".to_vec()), false),
+            decode(Zeroizing::new(b"\0\0".to_vec()), true),
             ClipText::Empty
         ));
         assert!(matches!(

@@ -33,17 +33,16 @@ pub const TOO_LARGE_MESSAGE: &str = "The clipboard text is larger than 20 MiB.";
 /// UTF-8: the number of code units before the first NUL (or all of them). `None` when the
 /// text would be larger. Looks at no more units than the limit needs and allocates nothing,
 /// so an oversized clipboard is refused before any copy is made.
+///
+/// This is the Windows rule (`CF_UNICODETEXT` ends at the first NUL for every reader). The
+/// macOS reader, [`text_from_utf16`], never stops at a NUL.
 pub fn utf16_text_len(units: &[u16], max_bytes: usize) -> Option<usize> {
     let mut bytes = 0usize;
     for (i, &u) in units.iter().enumerate() {
-        bytes += match u {
-            0 => return Some(i),
-            0x0001..=0x007F => 1,
-            0x0080..=0x07FF => 2,
-            // Each half of a surrogate pair stands for 2 of the 4 bytes.
-            0xD800..=0xDFFF => 2,
-            _ => 3,
-        };
+        if u == 0 {
+            return Some(i);
+        }
+        bytes += utf8_bytes_of_unit(u);
         if bytes > max_bytes {
             return None;
         }
@@ -51,37 +50,61 @@ pub fn utf16_text_len(units: &[u16], max_bytes: usize) -> Option<usize> {
     Some(units.len())
 }
 
-/// The text in UTF-8 `bytes` a clipboard handed out: it ends at the first NUL (as on Windows)
-/// and invalid UTF-8 becomes U+FFFD. No text is `Empty`; more than
-/// [`bridge::MAX_INPUT_BYTES`] is `TooLarge`.
-pub fn text_from_utf8(mut bytes: Zeroizing<Vec<u8>>) -> ClipText {
-    if let Some(nul) = memchr::memchr(0, &bytes) {
-        bytes.truncate(nul);
+/// How many bytes of UTF-8 a UTF-16 unit stands for. Each half of a surrogate pair stands for
+/// 2 of the 4 bytes; a NUL stands for the U+FFFD it is shown as.
+fn utf8_bytes_of_unit(unit: u16) -> usize {
+    match unit {
+        0 => 3,
+        0x0001..=0x007F => 1,
+        0x0080..=0x07FF => 2,
+        0xD800..=0xDFFF => 2,
+        _ => 3,
     }
-    let text = match String::from_utf8(std::mem::take(&mut *bytes)) {
-        // The usual case: the bytes become the string, nothing is copied.
-        Ok(text) => text,
-        Err(invalid) => {
-            let raw = Zeroizing::new(invalid.into_bytes());
-            // Sized once, for the worst case, so no copy of the text is left behind in memory
-            // that a growing buffer gave back.
-            let mut text = String::with_capacity(raw.len() * 3);
-            for chunk in raw.utf8_chunks() {
-                text.push_str(chunk.valid());
-                if !chunk.invalid().is_empty() {
-                    text.push(char::REPLACEMENT_CHARACTER);
-                }
-            }
-            text
-        }
-    };
-    sized(Zeroizing::new(text))
 }
 
-/// The text in UTF-16 `bytes` a clipboard handed out. A byte-order mark decides the byte order
-/// and is not part of the text; without one the order is this machine's. The text ends at the
-/// first NUL, half a unit at the end is dropped, and a surrogate without its partner becomes
-/// U+FFFD. No text is `Empty`; more than [`bridge::MAX_INPUT_BYTES`] of UTF-8 is `TooLarge`.
+/// The text in UTF-8 `bytes` a clipboard with a length handed out (Linux, macOS). A paste there
+/// gets every byte, so a NUL does not end the text: NULs at the end are dropped, every other
+/// NUL becomes U+FFFD, as invalid UTF-8 does. The scan then sees all a paste can deliver, and
+/// a rewrite holds no NUL. No text is `Empty`; more than [`bridge::MAX_INPUT_BYTES`] after
+/// that mapping is `TooLarge`.
+pub fn text_from_utf8(mut bytes: Zeroizing<Vec<u8>>) -> ClipText {
+    let end = bytes
+        .iter()
+        .rposition(|&b| b != 0)
+        .map_or(0, |last| last + 1);
+    bytes.truncate(end);
+    let raw = if memchr::memchr(0, &bytes).is_none() {
+        match String::from_utf8(std::mem::take(&mut *bytes)) {
+            // The usual case: the bytes become the string, nothing is copied.
+            Ok(text) => return sized(Zeroizing::new(text)),
+            Err(invalid) => Zeroizing::new(invalid.into_bytes()),
+        }
+    } else {
+        bytes
+    };
+    // Sized once, for the worst case (a NUL or an invalid byte grows to three), so no copy of
+    // the text is left behind in memory that a growing buffer gave back.
+    let mut text = Zeroizing::new(String::with_capacity(raw.len() * 3));
+    for chunk in raw.utf8_chunks() {
+        for (i, part) in chunk.valid().split('\0').enumerate() {
+            if i > 0 {
+                text.push(char::REPLACEMENT_CHARACTER);
+            }
+            text.push_str(part);
+        }
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    sized(text)
+}
+
+/// The text in UTF-16 `bytes` a clipboard with a length handed out (macOS). A byte-order mark
+/// decides the byte order and is not part of the text; without one the order is this
+/// machine's. NULs at the end are dropped, every other NUL becomes U+FFFD (as in
+/// [`text_from_utf8`]), half a unit at the end is dropped, and a surrogate without its partner
+/// becomes U+FFFD. No text is `Empty`; more than [`bridge::MAX_INPUT_BYTES`] of UTF-8 is
+/// `TooLarge`.
 pub fn text_from_utf16(bytes: &[u8]) -> ClipText {
     let (big_endian, body) = match bytes {
         [0xFF, 0xFE, rest @ ..] => (false, rest),
@@ -96,15 +119,37 @@ pub fn text_from_utf16(bytes: &[u8]) -> ClipText {
             u16::from_le_bytes(pair)
         }
     }));
-    let Some(len) = utf16_text_len(&units, bridge::MAX_INPUT_BYTES) else {
-        return ClipText::TooLarge;
-    };
+    let len = units
+        .iter()
+        .rposition(|&u| u != 0)
+        .map_or(0, |last| last + 1);
+    let mut size = 0usize;
+    for &unit in &units[..len] {
+        size += utf8_bytes_of_unit(unit);
+        if size > bridge::MAX_INPUT_BYTES {
+            return ClipText::TooLarge;
+        }
+    }
     // Sized once: a unit is at most three bytes of UTF-8.
     let mut text = Zeroizing::new(String::with_capacity(len * 3));
     for c in char::decode_utf16(units[..len].iter().copied()) {
-        text.push(c.unwrap_or(char::REPLACEMENT_CHARACTER));
+        text.push(match c {
+            Ok('\0') | Err(_) => char::REPLACEMENT_CHARACTER,
+            Ok(c) => c,
+        });
     }
     sized(text)
+}
+
+/// Our own text, read as another app on Linux would get it: all of it (see
+/// [`text_from_utf8`]), within the limit. Text over the limit is not copied.
+pub fn own_text(text: &str) -> ClipText {
+    let text = text.trim_end_matches('\0');
+    // The mapping only ever makes text longer.
+    if text.len() > bridge::MAX_INPUT_BYTES {
+        return ClipText::TooLarge;
+    }
+    text_from_utf8(Zeroizing::new(text.as_bytes().to_vec()))
 }
 
 /// `text` as clipboard content: nothing is `Empty`, more than the input limit is `TooLarge`.
@@ -383,6 +428,10 @@ mod tests {
     }
 
     fn run(cb: &FakeClipboard) -> ClipboardScrub {
+        run_on(cb)
+    }
+
+    fn run_on(cb: &impl Clipboard) -> ClipboardScrub {
         scrub(cb, &engine(), Sensitivity::Balanced, false, true)
     }
 
@@ -596,13 +645,67 @@ mod tests {
         }
     }
 
+    /// A clipboard that hands out bytes with a length, as on Linux and macOS: a paste gets
+    /// every byte, NULs included.
+    struct LengthClipboard {
+        bytes: RefCell<Vec<u8>>,
+        writes: Cell<u32>,
+    }
+
+    impl Clipboard for LengthClipboard {
+        fn sequence(&self) -> u32 {
+            1 + self.writes.get()
+        }
+        fn read(&self) -> Result<ClipText, ClipError> {
+            Ok(text_from_utf8(Zeroizing::new(self.bytes.borrow().clone())))
+        }
+        fn write_if_unchanged(&self, text: &str, seq: u32) -> Result<bool, ClipError> {
+            if seq != self.sequence() {
+                return Ok(false);
+            }
+            self.writes.set(self.writes.get() + 1);
+            *self.bytes.borrow_mut() = text.as_bytes().to_vec();
+            Ok(true)
+        }
+        fn delete_from_history(&self, _: &str) -> bool {
+            false
+        }
+    }
+
+    /// Text after a NUL reaches the paste on Linux and macOS, so it is scanned too, and a
+    /// rewrite replaces all of it with text that holds no NUL.
     #[test]
-    fn utf8_bytes_pass_through_and_end_at_the_first_nul() {
+    fn text_after_a_nul_is_scrubbed_too() {
+        let (secret, pw) = secret_text();
+        let mut bytes = b"harmless\0".to_vec();
+        bytes.extend(secret.as_bytes());
+        let cb = LengthClipboard {
+            bytes: RefCell::new(bytes),
+            writes: Cell::new(0),
+        };
+        let r = run_on(&cb);
+        assert_eq!(r.status, ClipStatus::Cleaned);
+        assert_eq!(cb.writes.get(), 1);
+        let now = String::from_utf8(cb.bytes.borrow().clone()).unwrap();
+        assert!(!now.contains(&pw), "the text after the NUL was left");
+        assert!(!now.contains('\0'), "the rewrite still holds a NUL");
+        assert!(now.starts_with("harmless\u{FFFD}DB_PASSWORD=[REDACTED"));
+    }
+
+    #[test]
+    fn utf8_bytes_pass_through_and_nul_never_hides_text() {
         let sample = "😀 Grüße\r\n\tline two";
         assert_eq!(utf8(sample.as_bytes()).as_deref(), Some(sample));
-        assert_eq!(utf8(b"one\0two").as_deref(), Some("one"));
+        // A NUL inside the text is shown as U+FFFD, NULs at the end are dropped.
+        assert_eq!(utf8(b"one\0two").as_deref(), Some("one\u{FFFD}two"));
+        assert_eq!(utf8(b"\0two").as_deref(), Some("\u{FFFD}two"));
+        assert_eq!(utf8(b"a\0\0").as_deref(), Some("a"));
+        assert_eq!(
+            utf8(b"\0\xFFa\0\0b\0").as_deref(),
+            Some("\u{FFFD}\u{FFFD}a\u{FFFD}\u{FFFD}b")
+        );
         assert!(matches!(
-            text_from_utf8(Zeroizing::new(b"\0two".to_vec())),
+            text_from_utf8(Zeroizing::new(b"\0\0".to_vec())),
             ClipText::Empty
         ));
         assert!(matches!(
@@ -631,6 +734,17 @@ mod tests {
             text_from_utf8(Zeroizing::new(vec![b'a'; bridge::MAX_INPUT_BYTES])),
             ClipText::Text(_)
         ));
+        // So does each NUL inside the text; NULs at the end are dropped first.
+        assert!(matches!(
+            text_from_utf8(Zeroizing::new(vec![0; bridge::MAX_INPUT_BYTES / 3 + 1])),
+            ClipText::Empty
+        ));
+        let mut nuls = vec![0; bridge::MAX_INPUT_BYTES / 3 + 1];
+        nuls.push(b'a');
+        assert!(matches!(
+            text_from_utf8(Zeroizing::new(nuls)),
+            ClipText::TooLarge
+        ));
     }
 
     #[test]
@@ -652,11 +766,13 @@ mod tests {
     }
 
     #[test]
-    fn utf16_bytes_end_at_the_first_nul_and_survive_damage() {
+    fn utf16_bytes_never_hide_text_behind_a_nul_and_survive_damage() {
         let le = |text: &str| utf16_bytes(text, &[0xFF, 0xFE], false);
-        assert_eq!(utf16(&le("one\0two")).as_deref(), Some("one"));
+        assert_eq!(utf16(&le("one\0two")).as_deref(), Some("one\u{FFFD}two"));
+        assert_eq!(utf16(&le("\0two")).as_deref(), Some("\u{FFFD}two"));
+        assert_eq!(utf16(&le("a\0\0")).as_deref(), Some("a"));
         assert!(matches!(text_from_utf16(&le("")), ClipText::Empty));
-        assert!(matches!(text_from_utf16(&le("\0two")), ClipText::Empty));
+        assert!(matches!(text_from_utf16(&le("\0\0")), ClipText::Empty));
         assert!(matches!(text_from_utf16(&[]), ClipText::Empty));
         // Half a unit at the end is not text.
         let mut odd = le("ab");
@@ -679,5 +795,11 @@ mod tests {
         assert!(matches!(text_from_utf16(&big), ClipText::TooLarge));
         big.truncate(big.len() - 2);
         assert!(matches!(text_from_utf16(&big), ClipText::Text(_)));
+        // A NUL inside the text counts as U+FFFD, three bytes; NULs at the end not at all.
+        let mut nuls = vec![0xFF, 0xFE];
+        nuls.extend(vec![0; 2 * (bridge::MAX_INPUT_BYTES / 3 + 1)]);
+        assert!(matches!(text_from_utf16(&nuls), ClipText::Empty));
+        nuls.extend([0x41, 0x00]);
+        assert!(matches!(text_from_utf16(&nuls), ClipText::TooLarge));
     }
 }
