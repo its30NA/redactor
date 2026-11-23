@@ -55,6 +55,27 @@ Closing the window keeps Redactor in the menu bar (top right). Click its icon fo
 
 Copies from password managers are left alone, and locking the Mac or putting it to sleep empties both panes.
 
+## Known limits
+
+- **No screen-capture shield.** Since macOS 15.4, screen capture ignores the setting that would hide the
+  window, so Redactor has none on a Mac. Settings shows the row greyed out. Screen sharing shows the window.
+- **No clipboard history cleaning.** macOS gives apps no way to remove one item from a clipboard history.
+  The raw copy can stay in a clipboard tool, in Spotlight's clipboard history (macOS 26, off by default),
+  and on your iPhone or other Mac through Universal Clipboard. Redactor cannot reach any of them.
+- **"Paste from other apps".** Newer macOS versions may ask whether Redactor may paste from other apps.
+  If you click **Don't Allow**, the shortcut cannot read the clipboard: Redactor should say **Clipboard not
+  scrubbed** and leave the clipboard as it was. This has not been tried on a real Mac yet; if it says
+  "Nothing to scrub" instead, the raw text is still there, so please tell us. To change your answer later,
+  look for Redactor under **System Settings** > **Privacy & Security**.
+- **The shortcut's keys keep their Windows names.** Settings shows **Ctrl+Alt+R** for Control+Option+R.
+- **No warning when another app has the same shortcut.** macOS does not tell Redactor. If the shortcut
+  does nothing, pick another one in Settings.
+- **The preview is not a release download.** It is signed only ad hoc (not by an Apple developer account)
+  and comes with no checksum and no build attestation, so you cannot check that the zip is the one GitHub
+  built. Download it only from this repository's Actions page, or build it yourself. The
+  [threat model](../THREAT_MODEL.md#macos-and-linux-preview-what-is-different) lists what else differs on
+  a Mac.
+
 ## Remove it
 
 1. Quit Redactor, then drag it from **Applications** to the **Trash** (called **Bin** on some Macs).
