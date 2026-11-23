@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tauri::webview::NewWindowResponse;
 use tauri::{
@@ -427,7 +427,7 @@ fn start_idle_timer(app: AppHandle) {
         std::thread::sleep(Duration::from_secs(15));
         let st = state::state(&app);
         let minutes = st.settings().auto_wipe_minutes;
-        if st.wiper.idle_due(minutes, Instant::now()) {
+        if st.wiper.idle_due(minutes, When::now()) {
             state::wipe(&app, WipeReason::Idle);
         }
     });
