@@ -47,6 +47,18 @@ describe('fixtures', () => {
     ]);
   });
 
+  test('app_info: the hotkey state may be absent (an older shell); the status event is exact', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, hotkeyActive: false }, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, hotkeyActive: 'no' }, 'i')).toEqual(['i.hotkeyActive: expected boolean']);
+    // As the shell's own test pins them (commands.rs).
+    expect(schema.appStatus({ hotkeyActive: true, notice: null }, 's')).toEqual([]);
+    for (const notice of ['hotkeyNotActive', 'hotkeyLost', 'settingsNotSaved', 'settingsUnreadable'])
+      expect(schema.appStatus({ hotkeyActive: false, notice }, 's')).toEqual([]);
+    expect(schema.appStatus({ hotkeyActive: false }, 's')).toEqual(['s.notice: missing']);
+    expect(schema.appStatus({ hotkeyActive: false, notice: 'other' }, 's')).not.toEqual([]);
+  });
+
   test('app_info: the program path may be absent (a path that is not Unicode)', () => {
     const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
     expect(schema.appInfo({ ...base, executable: '/opt/redactor/Redactor' }, 'i')).toEqual([]);

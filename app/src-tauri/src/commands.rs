@@ -2,6 +2,8 @@
 //! `ipc_names.rs`. Heavy or blocking work runs on a blocking worker, never on the UI thread.
 //! Errors are short user-facing strings and never quote the text.
 
+use std::sync::atomic::Ordering;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
@@ -240,6 +242,10 @@ pub struct AppInfo {
     hotkey: HotkeyMode,
     /// The clipboard works only while the window is in front.
     clipboard_needs_focus: bool,
+    /// The hotkey works now: false when it could not be registered at start (another app holds
+    /// it, the desktop refused it), the desktop dropped it, or a new one was refused and none is
+    /// held. Changes come as the `app-status` event.
+    hotkey_active: bool,
     /// The program a desktop shortcut runs with `--scrub-clipboard`; left out when its path is
     /// not Unicode.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,13 +253,18 @@ pub struct AppInfo {
 }
 
 /// The page asks for this once it listens for the shell's events, so it also hands over a scrub
-/// result that came before, and runs a `--scrub-clipboard` held for the page.
+/// result and the notices that came before, and runs a `--scrub-clipboard` held for the page.
 #[tauri::command]
 pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> {
     let st = state.inner().clone();
     blocking(move || {
         st.scrub_results
             .page_listens(|(r, press)| send_scrub(&app, &r, press));
+        st.notices.page_listens(|kept| {
+            for notice in kept.into_iter().flatten() {
+                send_status(&app, Some(notice));
+            }
+        });
         app::run_start_scrub(&app);
         AppInfo {
             version: env!("CARGO_PKG_VERSION"),
@@ -264,6 +275,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> 
             shield: st.platform.shield,
             hotkey: st.platform.hotkey.mode(),
             clipboard_needs_focus: st.platform.clipboard.needs_focus(),
+            hotkey_active: st.hotkey_active.load(Ordering::SeqCst),
             executable: crate::cli::this_program(),
         }
     })
@@ -322,10 +334,78 @@ pub fn emit_scrub_expired(app: &AppHandle, press: u64) {
     let _ = app.emit("clipboard-scrub-expired", Expired { press });
 }
 
+/// Something the window shows once, as a notice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Notice {
+    /// The hotkey from Settings could not be registered at start (another app holds it, the
+    /// desktop refused it).
+    HotkeyNotActive,
+    /// The desktop dropped the hotkey it had bound (the shortcuts portal).
+    HotkeyLost,
+    /// Settings could not be written to disk; they hold until the app closes.
+    SettingsNotSaved,
+    /// The settings file could not be used at start and is kept as `settings.json.bad`.
+    SettingsUnreadable,
+}
+
+/// The `app-status` event: whether the hotkey works now, and a notice for the window, if any.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppStatus {
+    hotkey_active: bool,
+    notice: Option<Notice>,
+}
+
+/// Tells the window that the hotkey's state changed, or `notice`. Before the page listens a
+/// notice waits for its first `app_info` (which also answers with the hotkey's state then).
+pub fn post_status(app: &AppHandle, notice: Option<Notice>) {
+    state::state(app)
+        .notices
+        .add(notice, |notice| send_status(app, notice));
+}
+
+fn send_status(app: &AppHandle, notice: Option<Notice>) {
+    let hotkey_active = state::state(app).hotkey_active.load(Ordering::SeqCst);
+    let _ = app.emit(
+        "app-status",
+        AppStatus {
+            hotkey_active,
+            notice,
+        },
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::clipscrub::ClipStatus;
+
+    #[test]
+    fn the_status_event_carries_the_hotkey_state_and_the_notice() {
+        let v = |hotkey_active, notice| {
+            serde_json::to_value(AppStatus {
+                hotkey_active,
+                notice,
+            })
+            .unwrap()
+        };
+        assert_eq!(
+            v(true, None),
+            serde_json::json!({ "hotkeyActive": true, "notice": null })
+        );
+        for (notice, name) in [
+            (Notice::HotkeyNotActive, "hotkeyNotActive"),
+            (Notice::HotkeyLost, "hotkeyLost"),
+            (Notice::SettingsNotSaved, "settingsNotSaved"),
+            (Notice::SettingsUnreadable, "settingsUnreadable"),
+        ] {
+            assert_eq!(
+                v(false, Some(notice)),
+                serde_json::json!({ "hotkeyActive": false, "notice": name })
+            );
+        }
+    }
 
     #[test]
     fn the_scrub_events_carry_the_press_beside_the_result() {

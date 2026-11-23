@@ -228,6 +228,17 @@ pub fn config_file(os: Os, var: impl Fn(&str) -> Option<OsString>) -> Option<Pat
     Some(folder.join("settings.json"))
 }
 
+/// What became of the settings file at start.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Loaded {
+    /// Read, or there was nothing to read (no file, a read error, a file that could not be
+    /// moved aside): nothing to tell.
+    #[default]
+    Read,
+    /// It could not be used and is kept as `settings.json.bad`; the app runs on defaults.
+    KeptAsBad,
+}
+
 /// Where the settings live.
 #[derive(Clone, Debug)]
 pub struct SettingsFile {
@@ -251,42 +262,45 @@ impl SettingsFile {
     }
 
     /// The stored settings, repaired; defaults when the file is missing or unreadable.
+    pub fn load(&self) -> Settings {
+        self.load_noting().0
+    }
+
+    /// As [`SettingsFile::load`], and what became of the file.
     ///
     /// A file that is there but cannot be used (too big to be ours, not settings JSON) is moved
     /// to `settings.json.bad` next to it, replacing an older one, so the next save does not
     /// overwrite the always-redact list in it without a trace. When the move fails, nothing
     /// changes.
-    pub fn load(&self) -> Settings {
+    pub fn load_noting(&self) -> (Settings, Loaded) {
+        let unusable = || (Settings::default(), self.keep_as_bad());
         let Ok(meta) = std::fs::metadata(&self.path) else {
-            return Settings::default();
+            return Default::default();
         };
         if meta.len() > MAX_FILE_BYTES {
-            self.keep_as_bad();
-            return Settings::default();
+            return unusable();
         }
         let Ok(bytes) = std::fs::read(&self.path) else {
-            return Settings::default();
+            return Default::default();
         };
         match serde_json::from_slice::<Settings>(&bytes) {
-            Ok(s) => s.sanitized(self.os),
-            Err(_) => {
-                self.keep_as_bad();
-                Settings::default()
-            }
+            Ok(s) => (s.sanitized(self.os), Loaded::Read),
+            Err(_) => unusable(),
         }
     }
 
     /// Moves the settings file to `settings.json.bad` (the user's alone on macOS and Linux).
-    fn keep_as_bad(&self) {
+    fn keep_as_bad(&self) -> Loaded {
         let bad = self.path.with_extension("json.bad");
         if std::fs::rename(&self.path, &bad).is_err() {
-            return;
+            return Loaded::Read;
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o600));
         }
+        Loaded::KeptAsBad
     }
 
     /// Writes atomically: a temporary file next to the target, then a rename.
@@ -472,7 +486,7 @@ mod tests {
     #[test]
     fn missing_file_and_garbage_give_defaults() {
         let f = temp_file("garbage");
-        assert_eq!(f.load(), Settings::default());
+        assert_eq!(f.load_noting(), (Settings::default(), Loaded::Read));
         assert!(!bad_copy(&f).exists(), "a missing file left a .bad copy");
         std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
         std::fs::write(f.path(), b"{ not json").unwrap();
@@ -488,7 +502,7 @@ mod tests {
         std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
         std::fs::write(bad_copy(&f), b"older").unwrap();
         std::fs::write(f.path(), b"{\"alwaysRedact\":[\"Nightjar\"] not json").unwrap();
-        assert_eq!(f.load(), Settings::default());
+        assert_eq!(f.load_noting(), (Settings::default(), Loaded::KeptAsBad));
         assert!(!f.path().exists());
         assert_eq!(
             std::fs::read(bad_copy(&f)).unwrap(),

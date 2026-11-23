@@ -172,6 +172,12 @@ export interface AppInfo {
   /** The clipboard works only while the window is in front. Absent means false. */
   clipboardNeedsFocus?: boolean;
   /**
+   * The hotkey works now. False: it could not be registered at start (another app holds it, the
+   * desktop refused it), the desktop dropped it, or a new one was refused and none is held.
+   * Changes come as the `app-status` event. Absent means true.
+   */
+  hotkeyActive?: boolean;
+  /**
    * The program a desktop shortcut runs with `--scrub-clipboard`: this executable, or the
    * AppImage file. Absent where its path is not Unicode.
    */
@@ -183,6 +189,15 @@ export interface AppInfo {
  * the user. `command`: the app holds no key; a desktop shortcut runs it with `--scrub-clipboard`.
  */
 export type HotkeyMode = 'keys' | 'portal' | 'command';
+
+/** What the window shows once, as a notice (`app-status`). */
+export type AppNotice = 'hotkeyNotActive' | 'hotkeyLost' | 'settingsNotSaved' | 'settingsUnreadable';
+
+/** The `app-status` event: whether the hotkey works now, and a notice, if any. */
+export interface AppStatus {
+  hotkeyActive: boolean;
+  notice: AppNotice | null;
+}
 
 export interface OpenedFile {
   name: string;
@@ -203,6 +218,8 @@ export interface AppEvents {
   'session-changed': SessionSecret[];
   /** Settings changed outside the Settings sheet (the tray's Screen-share shield toggle). */
   'settings-changed': Settings;
+  /** The hotkey's state changed, or the window has something to say (`AppNotice`). */
+  'app-status': AppStatus;
 }
 
 export type AppEventName = keyof AppEvents;

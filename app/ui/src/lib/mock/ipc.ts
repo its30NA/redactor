@@ -17,6 +17,8 @@ import {
   MIN_SESSION_SECRET,
   type AppEventName,
   type AppEvents,
+  type AppNotice,
+  type AppStatus,
   type Finding,
   type OutputSpan,
   type ScanRequest,
@@ -55,6 +57,12 @@ export interface MockOptions {
   appInfo?: 'slow' | 'fail';
   /** With `os`: the program app_info names; unset is `MOCK_EXECUTABLE`. */
   executable?: string;
+  /** The hotkey could not be registered at start: app_info says so, with a notice at the first app_info. */
+  hotkeyRefused?: boolean;
+  /** The settings file could not be used at start (kept as settings.json.bad): a notice at the first app_info. */
+  settingsUnreadable?: boolean;
+  /** Settings cannot be written to disk: the first change brings a notice (once per run, like the shell). */
+  saveFails?: boolean;
 }
 
 /** The program app_info names on macOS and Linux unless `executable` says otherwise. */
@@ -80,6 +88,8 @@ export interface MockBackend {
   failScans(on: boolean): void;
   /** Delay `set_settings` answers by this many ms (tests). */
   delaySettings(ms: number): void;
+  /** Whether the hotkey works now, as app_info and `app-status` say. */
+  hotkeyActive: boolean;
   uninstall(): void;
 }
 
@@ -311,6 +321,13 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
     ...settings.alwaysRedact.map((w) => ({ value: w, label: 'Always redact', word: true })),
   ];
   let scrubOnStart = opts.scrubOnStart ?? false;
+  /** Notices held for the page's first app_info, like the shell's. */
+  let startNotices: AppNotice[] | null = [
+    ...(opts.settingsUnreadable ? (['settingsUnreadable'] as const) : []),
+    ...(opts.hotkeyRefused ? (['hotkeyNotActive'] as const) : []),
+  ];
+  let saveFailShown = false;
+  const status = (notice: AppNotice | null) => void emit('app-status', { hotkeyActive: backend.hotkeyActive, notice });
 
   /**
    * Like the shell: redacted text replaces the clipboard, and the result comes as the
@@ -377,8 +394,20 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
           // The shell rejects with a plain string, for example for a hotkey another app holds.
           if (settingsDelay) await delay(settingsDelay);
           if (settingsError !== null) throw settingsError;
-          settings = { ...(args.settings as Settings) };
+          {
+            const next = { ...(args.settings as Settings) };
+            // A new key the shell takes is held: the hotkey works again.
+            if (next.hotkey !== settings.hotkey && !backend.hotkeyActive) {
+              backend.hotkeyActive = true;
+              status(null);
+            }
+            settings = next;
+          }
           backend.settings = settings;
+          if (opts.saveFails && !saveFailShown) {
+            saveFailShown = true;
+            status('settingsNotSaved');
+          }
           return settings;
         case COMMANDS.appInfo:
           // Like the shell: a scrub asked for at start (`--scrub-clipboard`) runs at the page's
@@ -387,6 +416,9 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
             scrubOnStart = false;
             void scrubNow();
           }
+          // The notices held for the page go out now, as the shell's do.
+          for (const notice of startNotices ?? []) status(notice);
+          startNotices = null;
           if (opts.appInfo === 'slow') await delay(APP_INFO_SLOW_MS);
           if (opts.appInfo === 'fail') throw 'Internal error.';
           return opts.os
@@ -397,8 +429,9 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
                 ...(opts.hotkey ? { hotkey: opts.hotkey } : {}),
                 ...(opts.clipboardNeedsFocus ? { clipboardNeedsFocus: true } : {}),
                 executable: opts.executable ?? MOCK_EXECUTABLE,
+                hotkeyActive: backend.hotkeyActive,
               }
-            : fixture('app-info');
+            : { ...fixture('app-info'), hotkeyActive: backend.hotkeyActive };
         case COMMANDS.scrubClipboard:
           // The result comes as the event, not as the answer.
           await scrubNow();
@@ -421,9 +454,12 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
   const backend: MockBackend = {
     calls,
     settings,
+    hotkeyActive: !opts.hotkeyRefused,
     emit: async (name, payload) => {
       // Like the shell: a wipe also forgets the session secrets.
       if (name === 'wipe') session = [];
+      const active = (payload as Partial<AppStatus> | null)?.hotkeyActive;
+      if (name === 'app-status' && typeof active === 'boolean') backend.hotkeyActive = active;
       await emit(name, payload);
     },
     setClipboard: (text) => {

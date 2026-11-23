@@ -29,6 +29,7 @@
   import Toast from './components/Toast.svelte';
   import Workspace from './components/Workspace.svelte';
   import { appInfo, onEvent } from './lib/api';
+  import { hotkeyState, listenForAppStatus } from './lib/app-status.svelte';
   import { listenForClipboardScrubs } from './lib/clipboard-notices';
   import { appearance, applyAppearance } from './lib/appearance.svelte';
   import { actionFor, keyOsFrom, keysFor, type Action } from './lib/keys';
@@ -46,6 +47,10 @@
   const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
   // The shield is promised (welcome card, pill) only once app_info says this desktop has it.
   const shieldKnown = $derived(info !== null && shieldNote(info, keyOs) === null);
+  // Settings shows whether the hotkey works: app_info's answer, then each `app-status` event.
+  const settingsInfo = $derived(
+    info && hotkeyState.active !== null ? { ...info, hotkeyActive: hotkeyState.active } : info,
+  );
   let settingsOpen = $state(false);
   let rememberedOpen = $state(false);
   let addingSecret = $state(false);
@@ -77,6 +82,10 @@
       onEvent('session-changed', (items) => session.set(items)),
       onEvent('settings-changed', (s) => (settings.value = s)),
       ...listenForClipboardScrubs(),
+      listenForAppStatus(() => {
+        closeOverlays();
+        settingsOpen = true;
+      }),
     ];
     // Asked for once the events are heard: the shell holds a `--scrub-clipboard` it started with
     // until this first app_info, so the scrub's notices reach the window.
@@ -327,7 +336,7 @@
 
 <Toast />
 
-<SettingsSheet bind:open={settingsOpen} {info} />
+<SettingsSheet bind:open={settingsOpen} info={settingsInfo} />
 <RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
 <FirstRun bind:open={firstRunOpen} shield={shieldKnown} os={keyOs} {info} />

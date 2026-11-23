@@ -13,6 +13,7 @@
   import { copyText } from '../lib/api';
   import {
     focusNote,
+    hotkeyInactiveNote,
     hotkeyMode,
     hotkeyNote,
     lockDesc,
@@ -39,6 +40,7 @@
   const mode = $derived(hotkeyMode(info));
   const howHotkey = $derived(hotkeyNote(info));
   const needsFocus = $derived(focusNote(info));
+  const inactive = $derived(hotkeyInactiveNote(info));
   const command = $derived(scrubCommand(info));
 
   const themeOptions: SegmentOption<ThemeSetting>[] = [
@@ -245,7 +247,9 @@
             capturing = false;
             pending = null;
           }}
-          aria-label={capturing ? 'Press the new shortcut, or Esc to cancel' : `Hotkey ${settings.value.hotkey}. Change`}
+          aria-label={capturing
+            ? 'Press the new shortcut, or Esc to cancel'
+            : `Hotkey ${settings.value.hotkey}${inactive ? ', not active' : ''}. Change`}
           data-testid="hotkey"
         >
           <Keyboard size={14} strokeWidth={1.9} aria-hidden="true" />
@@ -254,7 +258,11 @@
         </button>
       {/if}
     </div>
-    {#if hotkeyError}<p class="error" role="alert">{hotkeyError}</p>{/if}
+    {#if hotkeyError}
+      <p class="error" role="alert">{hotkeyError}</p>
+    {:else if inactive}
+      <p class="inactive" data-testid="hotkey-inactive">{inactive}</p>
+    {/if}
     {#if mode === 'command'}
       <div class="note" data-testid="hotkey-note">
         <p class="row-desc">{howHotkey}</p>
@@ -394,6 +402,11 @@
     margin-top: 6px;
     font-size: var(--text-xs);
     color: var(--red);
+  }
+  .inactive {
+    margin-top: 6px;
+    font-size: var(--text-xs);
+    color: var(--amber);
   }
   .note {
     padding: 10px 0 12px;

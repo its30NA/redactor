@@ -14,9 +14,9 @@
 //! The desktop can drop a bound key without being asked: it closes the session (`Closed`), or
 //! xdg-desktop-portal restarts and its sessions are gone with it (`NameOwnerChanged`). The app
 //! also loses the key when this connection breaks. Each loss of a bound key is told to the user
-//! once (the `on_lost` callback; a desktop notification in the app), and the key is not bound
-//! again on its own, since that could put the desktop's dialog in front of the user. The next
-//! bind, from Settings, opens a fresh session.
+//! once (the `on_lost` callback; a desktop notification and a notice in the window), and the key
+//! is not bound again on its own, since that could put the desktop's dialog in front of the user.
+//! The next bind, from Settings, opens a fresh session.
 //!
 //! Match rules filter broadcasts only: any program on the session bus can send a signal straight
 //! to our unique name, and the request and session paths are easy to guess. So a portal signal
@@ -441,7 +441,10 @@ impl GlobalHotkey for PortalHotkey {
         let app = app.clone();
         self.start(
             Arc::new(move || on_press(&app)),
-            Arc::new(move || crate::app::notify(&lost, LOST)),
+            Arc::new(move || {
+                crate::app::notify(&lost, LOST);
+                crate::app::hotkey_lost(&lost);
+            }),
         );
     }
 }

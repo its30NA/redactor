@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import * as api from '../../src/lib/api';
-import type { ScanRequest, Settings } from '../../src/lib/types';
+import type { AppEventName, ScanRequest, Settings } from '../../src/lib/types';
 
 type Message = { cmd: string; callback: number; error: number; payload: unknown; options: unknown };
 type Hook = (m: unknown) => Message;
@@ -131,14 +131,17 @@ async function everyUiCall(): Promise<void> {
   await api.setSettings(settings);
   await api.appInfo();
   await api.scrubClipboard();
-  for (const name of [
-    'clipboard-scrubbed',
-    'clipboard-scrub-waiting',
-    'clipboard-scrub-expired',
-    'wipe',
-    'session-changed',
-    'settings-changed',
-  ] as const) {
+  // Every event in types.ts (the typecheck fails when one is missing here).
+  const events: Record<AppEventName, true> = {
+    'clipboard-scrubbed': true,
+    'clipboard-scrub-waiting': true,
+    'clipboard-scrub-expired': true,
+    wipe: true,
+    'session-changed': true,
+    'settings-changed': true,
+    'app-status': true,
+  };
+  for (const name of Object.keys(events) as AppEventName[]) {
     const unlisten = await api.onEvent(name, () => {});
     unlisten();
   }

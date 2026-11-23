@@ -32,6 +32,7 @@
     'wipe',
     'session-changed',
     'settings-changed',
+    'app-status',
   ];
   const WINDOW_EVENTS = ['tauri://resize'];
   const WINDOW = 'main';

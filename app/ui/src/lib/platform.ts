@@ -70,6 +70,10 @@ export const trayNote = (info: Pick<AppInfo, 'tray'> | null): string | null =>
 /** How a hotkey press reaches the app; `keys` where app_info does not say (Windows, macOS) or has not answered. */
 export const hotkeyMode = (info: Pick<AppInfo, 'hotkey'> | null): HotkeyMode => info?.hotkey ?? 'keys';
 
+/** Under the hotkey in Settings when the key does not work now; null where it does, or where the app holds no key. */
+export const hotkeyInactiveNote = (info: Pick<AppInfo, 'hotkey' | 'hotkeyActive'> | null): string | null =>
+  info?.hotkeyActive === false && hotkeyMode(info) !== 'command' ? 'Not active: pick another key.' : null;
+
 /** Characters a shell (or a desktop's shortcut parser) would read as more than part of a path. */
 const SHELL_SPECIAL = /[\s'"\\$`;&|<>()*?[\]{}~#!%^]/;
 

@@ -464,6 +464,20 @@ mod tests {
         assert_eq!(held, [old]);
     }
 
+    /// The old key, refused at start (another app held it), is asked for again after a refused
+    /// new one: a key is held after the swap exactly when that last request succeeded, which is
+    /// what Settings shows as the hotkey's state.
+    #[test]
+    fn after_a_refused_key_the_old_one_is_held_only_if_it_could_be_registered_again() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![];
+        assert!(!swap(&mut held, &[new], Some(&old), &new));
+        assert_eq!(held, [old], "freed meanwhile: held again");
+        let mut held = vec![];
+        assert!(!swap(&mut held, &[new, old], Some(&old), &new));
+        assert!(held.is_empty(), "still taken: no key is held");
+    }
+
     /// A fake desktop that binds keys: like `swap`, and every key asked for is recorded.
     fn desktop_swap(
         held: &mut Vec<Hotkey>,

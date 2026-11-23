@@ -4,6 +4,7 @@ import {
   firstRunHotkeyDesc,
   focusNote,
   hotkeyCommandLine,
+  hotkeyInactiveNote,
   hotkeyMode,
   hotkeyNote,
   lockDesc,
@@ -135,6 +136,20 @@ describe('hotkeyNote', () => {
     expect(hotkeyNote(info({ hotkey: 'command' }))).toBe(
       'This desktop does not let apps set a hotkey. Add a shortcut in its keyboard settings that runs:',
     ));
+});
+
+describe('hotkeyInactiveNote', () => {
+  test('a key that does not work says so', () => {
+    for (const hotkey of [undefined, 'keys', 'portal'] as const)
+      expect(hotkeyInactiveNote(info({ hotkey, hotkeyActive: false }))).toBe('Not active: pick another key.');
+  });
+  test('a working key, a missing field and no app_info yet: no note', () => {
+    expect(hotkeyInactiveNote(info({ hotkeyActive: true }))).toBeNull();
+    expect(hotkeyInactiveNote(info())).toBeNull();
+    expect(hotkeyInactiveNote(null)).toBeNull();
+  });
+  test('where the app holds no key there is nothing to pick', () =>
+    expect(hotkeyInactiveNote(info({ hotkey: 'command', hotkeyActive: false }))).toBeNull());
 });
 
 describe('scrubCommand', () => {

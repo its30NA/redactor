@@ -14,13 +14,13 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::cli;
 use crate::clipscrub::{self, ClipStatus, ClipboardScrub};
-use crate::commands;
+use crate::commands::{self, Notice};
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
 use crate::os::Os;
 use crate::pending::{Take, Timer, When};
 use crate::platform::{self, HotkeyMode};
-use crate::settings::{Settings, SettingsFile};
+use crate::settings::{Loaded, Settings, SettingsFile};
 use crate::state::{self, AppState, Shared, Start};
 use crate::tray;
 use crate::wipe::WipeReason;
@@ -32,11 +32,11 @@ pub const MAIN: &str = "main";
 pub fn run() -> Result<(), platform::Unavailable> {
     let platform = platform::native()?;
     let settings_file = SettingsFile::for_os(platform.os);
-    let settings = settings_file
+    let (settings, loaded) = settings_file
         .as_ref()
-        .map(SettingsFile::load)
-        .unwrap_or_default()
-        .without_unsupported(platform.shield);
+        .map(SettingsFile::load_noting)
+        .unwrap_or_default();
+    let settings = settings.without_unsupported(platform.shield);
     let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform));
     let reopen = shared.platform.reopen;
 
@@ -83,9 +83,12 @@ pub fn run() -> Result<(), platform::Unavailable> {
             commands::app_info,
             commands::scrub_clipboard,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
             let st = state::state(&handle);
+            if loaded == Loaded::KeptAsBad {
+                commands::post_status(&handle, Some(Notice::SettingsUnreadable));
+            }
             let settings = st.settings();
             create_main_window(&handle, &settings)?;
             if st.platform.tray {
@@ -96,11 +99,9 @@ pub fn run() -> Result<(), platform::Unavailable> {
                 start_hotkey_in_background(&handle);
             } else {
                 st.platform.hotkey.listen(&handle, Arc::new(hotkey_pressed));
-                if let Ok(hk) = Hotkey::parse(&settings.hotkey, st.platform.os) {
-                    // Another app may hold the key; the app still runs, and Settings can pick
-                    // another one.
-                    let _ = st.platform.hotkey.register(&handle, &hk);
-                }
+                // Another app may hold the key; the app still runs, and Settings can pick
+                // another one.
+                register_at_start(&handle, &settings.hotkey);
             }
             start_idle_timer(handle.clone());
             let lock_handle = handle.clone();
@@ -182,15 +183,40 @@ fn start_hotkey_in_background(app: &AppHandle) {
             let _one_at_a_time = st.settings_change.lock().unwrap_or_else(|e| e.into_inner());
             let _ = held.send(());
             st.platform.hotkey.listen(&app, Arc::new(hotkey_pressed));
-            if let Ok(hk) = Hotkey::parse(&st.settings().hotkey, st.platform.os) {
-                // The desktop may refuse the key; the app still runs, and Settings can ask for
-                // another one.
-                let _ = st.platform.hotkey.register(&app, &hk);
-            }
+            // The desktop may refuse the key; the app still runs, and Settings can ask for
+            // another one.
+            register_at_start(&app, &st.settings().hotkey);
         });
     if started.is_ok() {
         // Nothing else holds the lock while `setup` runs: this waits only for the thread to start.
         let _ = lock_taken.recv();
+    }
+}
+
+/// Registers the hotkey from Settings at start. When that fails (another app holds the key, the
+/// desktop refused it), Settings shows it as not active and the window says so once.
+fn register_at_start(app: &AppHandle, hotkey: &str) {
+    let st = state::state(app);
+    let registered = Hotkey::parse(hotkey, st.platform.os)
+        .is_ok_and(|hk| st.platform.hotkey.register(app, &hk).is_ok());
+    if !registered {
+        set_hotkey_active(app, false, Some(Notice::HotkeyNotActive));
+    }
+}
+
+/// The desktop dropped the hotkey it had bound: Settings shows it as not active and the window
+/// says so (the desktop notification is the caller's).
+pub fn hotkey_lost(app: &AppHandle) {
+    set_hotkey_active(app, false, Some(Notice::HotkeyLost));
+}
+
+/// Whether the hotkey works now. The window hears of a change, and of `notice` in any case.
+fn set_hotkey_active(app: &AppHandle, active: bool, notice: Option<Notice>) {
+    let was = state::state(app)
+        .hotkey_active
+        .swap(active, Ordering::SeqCst);
+    if was != active || notice.is_some() {
+        commands::post_status(app, notice);
     }
 }
 
@@ -475,21 +501,41 @@ fn change_settings(
     if next.hotkey != prev.hotkey {
         let new_hk = Hotkey::parse(&next.hotkey, os).map_err(|e| e.to_string())?;
         let old = Hotkey::parse(&prev.hotkey, os).ok();
-        let register = |h: &Hotkey| st.platform.hotkey.register(app, h).is_ok();
+        // The last registration asked for decides whether a key is held afterwards: the new
+        // one, or after a refusal the old one asked for again (which may fail too).
+        let held = std::cell::Cell::new(false);
+        let register = |h: &Hotkey| {
+            held.set(st.platform.hotkey.register(app, h).is_ok());
+            held.get()
+        };
         let unregister = |h: &Hotkey| st.platform.hotkey.unregister(app, h);
-        if st.platform.hotkey.mode() == HotkeyMode::Portal {
+        let refused = if st.platform.hotkey.mode() == HotkeyMode::Portal {
             // A refusal leaves no key: the old one ended with its session when it was unbound.
-            if !hotkey::rebind(old.as_ref(), &new_hk, register, unregister) {
-                return Err(format!(
+            (!hotkey::rebind(old.as_ref(), &new_hk, register, unregister)).then(|| {
+                format!(
                     "Your desktop did not accept {}. No hotkey is set now; pick another in Settings.",
                     next.hotkey
-                ));
-            }
-        } else if !hotkey::replace_registration(old.as_ref(), &new_hk, register, unregister) {
-            return Err(format!(
-                "Another app already uses {}. Kept {}.",
-                next.hotkey, prev.hotkey
-            ));
+                )
+            })
+        } else {
+            // The old key comes back unless it could not be registered again (another app
+            // held it at start and still does).
+            (!hotkey::replace_registration(old.as_ref(), &new_hk, register, unregister)).then(
+                || match held.get() {
+                    true => format!(
+                        "Another app already uses {}. Kept {}.",
+                        next.hotkey, prev.hotkey
+                    ),
+                    false => format!(
+                        "Another app already uses {}. No hotkey is set now; pick another in Settings.",
+                        next.hotkey
+                    ),
+                },
+            )
+        };
+        set_hotkey_active(app, held.get(), None);
+        if let Some(refused) = refused {
+            return Err(refused);
         }
     }
     if st.platform.shield && next.content_protection != prev.content_protection {
@@ -512,6 +558,7 @@ fn change_settings(
         && !st.save_failed_shown.swap(true, Ordering::SeqCst)
     {
         notify(app, NOT_SAVED);
+        commands::post_status(app, Some(Notice::SettingsNotSaved));
     }
     Ok(next)
 }

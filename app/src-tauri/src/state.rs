@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::clipscrub::ClipboardScrub;
+use crate::commands::Notice;
 use crate::engines::{EngineSet, Profile};
 use crate::pending::PendingScrub;
 use crate::platform::Platform;
@@ -35,6 +36,12 @@ pub struct AppState {
     /// Scrub results (`clipboard-scrubbed`) wait here until the page listens: a scrub can finish
     /// before the page has loaded (`--scrub-clipboard` starts the app).
     pub scrub_results: ForPage<(ClipboardScrub, u64)>,
+    /// Notices for the window (`app-status`), kept in order until the page listens. `None` is a
+    /// bare change of the hotkey's state: nothing to keep, the first `app_info` answers with it.
+    pub notices: ForPage<Vec<Option<Notice>>>,
+    /// The hotkey works now (`app_info.hotkeyActive`). True until a registration fails; where
+    /// the app holds no key (a desktop shortcut runs the command) it stays true.
+    pub hotkey_active: AtomicBool,
     /// Held across a whole settings change (read, apply, store), so two changes never interleave.
     pub settings_change: Mutex<()>,
     /// A hotkey press waiting for the window to come to the front.
@@ -62,6 +69,8 @@ impl AppState {
             presses: Presses::default(),
             start_scrub: HeldScrub::default(),
             scrub_results: ForPage::default(),
+            notices: ForPage::default(),
+            hotkey_active: AtomicBool::new(true),
             settings_change: Mutex::new(()),
             pending: PendingScrub::new(),
             platform,
@@ -232,6 +241,17 @@ impl<T> ForPage<T> {
     }
 }
 
+impl<T> ForPage<Vec<T>> {
+    /// One more for the page: `emit` runs now if the page listens; otherwise it is kept after
+    /// the ones kept before, so none is lost (unlike [`ForPage::send`]).
+    pub fn add(&self, item: T, emit: impl FnOnce(T)) {
+        match &mut *self.lock() {
+            Listening::Yes => emit(item),
+            Listening::NotYet(kept) => kept.get_or_insert_with(Vec::new).push(item),
+        }
+    }
+}
+
 /// A `--scrub-clipboard` held until the page listens. The page's first `app_info` and a fallback
 /// timer both release it; only the first runs it.
 #[derive(Debug, Default)]
@@ -282,6 +302,20 @@ mod tests {
         page.send((3, "clean"), |r| sent.lock().unwrap().push(r));
         page.send((4, "empty"), |r| sent.lock().unwrap().push(r));
         assert_eq!(*sent.lock().unwrap(), [(3, "clean"), (4, "empty")]);
+    }
+
+    #[test]
+    fn added_items_before_the_page_listens_are_all_handed_over_in_order() {
+        let page = ForPage::<Vec<&str>>::default();
+        let sent = Mutex::new(Vec::new());
+        page.add("unreadable", |n| sent.lock().unwrap().push(vec![n]));
+        page.add("not active", |n| sent.lock().unwrap().push(vec![n]));
+        assert!(sent.lock().unwrap().is_empty(), "kept: nobody listens yet");
+        page.page_listens(|kept| sent.lock().unwrap().push(kept));
+        page.page_listens(|kept| sent.lock().unwrap().push(kept));
+        assert_eq!(*sent.lock().unwrap(), [vec!["unreadable", "not active"]]);
+        page.add("lost", |n| sent.lock().unwrap().push(vec![n]));
+        assert_eq!(sent.lock().unwrap().last().unwrap(), &vec!["lost"]);
     }
 
     #[test]

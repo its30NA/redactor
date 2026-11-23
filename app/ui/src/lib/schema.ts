@@ -11,6 +11,8 @@ import {
   MAX_ALWAYS_REDACT,
   MIN_ALWAYS_REDACT,
   type AppInfo,
+  type AppNotice,
+  type AppStatus,
   type ClipboardScrub,
   type Finding,
   type HotkeyMode,
@@ -218,7 +220,14 @@ export const appInfo = object<AppInfo>({
   shield: bool,
   hotkey: optional(oneOf<HotkeyMode>('keys', 'portal', 'command')),
   clipboardNeedsFocus: optional(bool),
+  hotkeyActive: optional(bool),
   executable: optional(str),
+});
+
+/** The `app-status` event. */
+export const appStatus = object<AppStatus>({
+  hotkeyActive: bool,
+  notice: nullable(oneOf<AppNotice>('hotkeyNotActive', 'hotkeyLost', 'settingsNotSaved', 'settingsUnreadable')),
 });
 
 /** Throws with every problem listed when `value` does not match `check`. */
