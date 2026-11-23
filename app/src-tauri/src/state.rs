@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::clipscrub::ClipboardScrub;
 use crate::engines::{EngineSet, Profile};
 use crate::pending::PendingScrub;
 use crate::platform::Platform;
@@ -25,8 +26,12 @@ pub struct AppState {
     /// Scrub presses so far (hotkey, tray, flag, "Clean now"): the events carry a press's number,
     /// so the window lets a result end only the wait of a press it covers.
     pub presses: AtomicU64,
-    /// `--scrub-clipboard` started the app, and the scrub waits for the page to listen.
-    pub start_scrub: AtomicBool,
+    /// `--scrub-clipboard` started the app where the clipboard needs the window, and the scrub
+    /// waits for the page to listen.
+    pub start_scrub: HeldScrub,
+    /// Scrub results (`clipboard-scrubbed`) wait here until the page listens: a scrub can finish
+    /// before the page has loaded (`--scrub-clipboard` starts the app).
+    pub scrub_results: ForPage<(ClipboardScrub, u64)>,
     /// Held across a whole settings change (read, apply, store), so two changes never interleave.
     pub settings_change: Mutex<()>,
     /// A hotkey press waiting for the window to come to the front.
@@ -51,7 +56,8 @@ impl AppState {
             tray_notice_shown: AtomicBool::new(false),
             scrubs: ScrubQueue::default(),
             presses: AtomicU64::new(0),
-            start_scrub: AtomicBool::new(false),
+            start_scrub: HeldScrub::default(),
+            scrub_results: ForPage::default(),
             settings_change: Mutex::new(()),
             pending: PendingScrub::new(),
             platform,
@@ -122,9 +128,137 @@ impl ScrubQueue {
     }
 }
 
+/// Results for the page, held back until it listens for the shell's events. Before that an
+/// event would be lost: only the latest result is kept, and the page's first `app_info` (asked for
+/// once it listens) hands it over. From then on results go straight out. One lock covers keeping,
+/// handing over and sending, so a result racing the first `app_info` is shown exactly once.
+#[derive(Debug)]
+pub struct ForPage<T> {
+    state: Mutex<Listening<T>>,
+}
+
+#[derive(Debug)]
+enum Listening<T> {
+    /// The page has not asked for `app_info` yet; the latest result waits for it.
+    NotYet(Option<T>),
+    Yes,
+}
+
+impl<T> Default for ForPage<T> {
+    fn default() -> ForPage<T> {
+        ForPage {
+            state: Mutex::new(Listening::NotYet(None)),
+        }
+    }
+}
+
+impl<T> ForPage<T> {
+    /// A result for the page: `emit` runs now if the page listens; otherwise the result is kept,
+    /// in place of any kept before.
+    pub fn send(&self, result: T, emit: impl FnOnce(T)) {
+        match &mut *self.lock() {
+            Listening::Yes => emit(result),
+            Listening::NotYet(kept) => *kept = Some(result),
+        }
+    }
+
+    /// The page listens now: `emit` runs for the kept result, if any, once.
+    pub fn page_listens(&self, emit: impl FnOnce(T)) {
+        let mut st = self.lock();
+        if let Listening::NotYet(Some(kept)) = std::mem::replace(&mut *st, Listening::Yes) {
+            emit(kept);
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Listening<T>> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// A `--scrub-clipboard` held until the page listens. The page's first `app_info` and a fallback
+/// timer both release it; only the first runs it.
+#[derive(Debug, Default)]
+pub struct HeldScrub(AtomicBool);
+
+impl HeldScrub {
+    pub fn hold(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    /// True once after [`HeldScrub::hold`]: the caller runs the scrub.
+    pub fn release(&self) -> bool {
+        self.0.swap(false, Ordering::SeqCst)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_result_before_the_page_listens_is_handed_over_once() {
+        let page = ForPage::default();
+        let sent = Mutex::new(Vec::new());
+        page.send((1, "clean"), |r| sent.lock().unwrap().push(r));
+        assert!(sent.lock().unwrap().is_empty(), "kept: nobody listens yet");
+        page.page_listens(|r| sent.lock().unwrap().push(r));
+        page.page_listens(|r| sent.lock().unwrap().push(r));
+        assert_eq!(*sent.lock().unwrap(), [(1, "clean")], "once");
+    }
+
+    #[test]
+    fn the_latest_result_before_the_page_listens_wins() {
+        let page = ForPage::default();
+        let sent = Mutex::new(Vec::new());
+        page.send((1, "clean"), |r| sent.lock().unwrap().push(r));
+        page.send((2, "cleaned"), |r| sent.lock().unwrap().push(r));
+        page.page_listens(|r| sent.lock().unwrap().push(r));
+        assert_eq!(*sent.lock().unwrap(), [(2, "cleaned")]);
+    }
+
+    #[test]
+    fn results_after_the_page_listens_go_straight_out() {
+        let page = ForPage::default();
+        let sent = Mutex::new(Vec::new());
+        page.page_listens(|r| sent.lock().unwrap().push(r));
+        assert!(sent.lock().unwrap().is_empty(), "nothing was kept");
+        page.send((3, "clean"), |r| sent.lock().unwrap().push(r));
+        page.send((4, "empty"), |r| sent.lock().unwrap().push(r));
+        assert_eq!(*sent.lock().unwrap(), [(3, "clean"), (4, "empty")]);
+    }
+
+    #[test]
+    fn a_result_racing_the_first_app_info_is_shown_exactly_once() {
+        for _ in 0..200 {
+            let page = ForPage::default();
+            let sent = Mutex::new(Vec::new());
+            std::thread::scope(|s| {
+                s.spawn(|| page.send(7, |r| sent.lock().unwrap().push(r)));
+                s.spawn(|| page.page_listens(|r| sent.lock().unwrap().push(r)));
+            });
+            assert_eq!(*sent.lock().unwrap(), [7]);
+        }
+    }
+
+    #[test]
+    fn the_held_start_scrub_runs_once() {
+        let held = HeldScrub::default();
+        assert!(!held.release(), "nothing held");
+        held.hold();
+        let runs = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                // The page's first app_info and the fallback timer race.
+                s.spawn(|| {
+                    if held.release() {
+                        runs.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+            }
+        });
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert!(!held.release());
+    }
 
     #[test]
     fn a_call_while_a_scrub_waits_adds_none() {

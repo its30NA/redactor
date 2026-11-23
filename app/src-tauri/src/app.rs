@@ -110,7 +110,13 @@ pub fn run() -> Result<(), platform::Unavailable> {
                 warm.engines.get(true);
             });
             if cli::scrub_requested(&args()) {
-                hold_start_scrub(&handle);
+                if st.platform.clipboard.needs_focus() {
+                    hold_start_scrub(&handle);
+                } else {
+                    // At once: the raw clipboard must not stay pasteable while the page loads.
+                    // Its result waits for the page (`AppState::scrub_results`).
+                    hotkey_pressed(&handle);
+                }
             }
             Ok(())
         })
@@ -277,23 +283,28 @@ pub fn hotkey_pressed(app: &AppHandle) {
 /// How long a `--scrub-clipboard` the app started with waits for the page at most.
 const START_SCRUB_WAIT: Duration = Duration::from_secs(10);
 
-/// `--scrub-clipboard` started the app. The page cannot hear the scrub's events before it
-/// listens, so the scrub waits for its first `app_info` (asked for once it listens), or
-/// [`START_SCRUB_WAIT`] if the page never asks.
+/// `--scrub-clipboard` started the app where the clipboard works only while the window is in
+/// front. That press shows the window and waits for focus, and the page cannot hear its
+/// "waiting" notice before it listens, so the press waits for the page's first `app_info`
+/// (asked for once it listens), or [`START_SCRUB_WAIT`] if the page never asks. Without a timer
+/// thread it runs at once.
 fn hold_start_scrub(app: &AppHandle) {
-    state::state(app).start_scrub.store(true, Ordering::SeqCst);
+    state::state(app).start_scrub.hold();
     let handle = app.clone();
-    let _ = std::thread::Builder::new()
+    let timer = std::thread::Builder::new()
         .name("start-scrub".into())
         .spawn(move || {
             std::thread::sleep(START_SCRUB_WAIT);
             run_start_scrub(&handle);
         });
+    if timer.is_err() {
+        run_start_scrub(app);
+    }
 }
 
 /// Runs the held `--scrub-clipboard`, once: the page listens now, or it waited long enough.
 pub fn run_start_scrub(app: &AppHandle) {
-    if state::state(app).start_scrub.swap(false, Ordering::SeqCst) {
+    if state::state(app).start_scrub.release() {
         hotkey_pressed(app);
     }
 }

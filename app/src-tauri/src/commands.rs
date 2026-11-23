@@ -13,7 +13,7 @@ use crate::clipscrub::{self, ClipboardScrub};
 use crate::platform::HotkeyMode;
 use crate::session::SessionSecret;
 use crate::settings::Settings;
-use crate::state::Shared;
+use crate::state::{self, Shared};
 use crate::textfile;
 
 type Res<T> = Result<T, String>;
@@ -247,12 +247,14 @@ pub struct AppInfo {
     clipboard_needs_focus: bool,
 }
 
-/// The page asks for this once it listens for the shell's events, so it also runs a
-/// `--scrub-clipboard` the app started with.
+/// The page asks for this once it listens for the shell's events, so it also hands over a scrub
+/// result that came before, and runs a `--scrub-clipboard` held for the page.
 #[tauri::command]
 pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> {
     let st = state.inner().clone();
     blocking(move || {
+        st.scrub_results
+            .page_listens(|(r, press)| send_scrub(&app, &r, press));
         app::run_start_scrub(&app);
         AppInfo {
             version: env!("CARGO_PKG_VERSION"),
@@ -292,8 +294,15 @@ struct Waiting {
     press: u64,
 }
 
-/// Emits the scrub result to the UI (it shows a toast).
+/// Emits the scrub result to the UI (it shows a toast). Before the page listens, the latest
+/// result waits for its first `app_info`.
 pub fn emit_scrub(app: &AppHandle, r: &ClipboardScrub, press: u64) {
+    state::state(app)
+        .scrub_results
+        .send((r.clone(), press), |(r, press)| send_scrub(app, &r, press));
+}
+
+fn send_scrub(app: &AppHandle, r: &ClipboardScrub, press: u64) {
     let _ = app.emit("clipboard-scrubbed", Scrubbed { result: r, press });
 }
 
