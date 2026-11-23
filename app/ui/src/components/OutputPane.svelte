@@ -95,8 +95,8 @@
         <p class="notice-title">Too large to scan</p>
         <p class="notice-text">
           This text is {workspace.tooLarge.bytes
-            ? `${mb(workspace.tooLarge.bytes)} MB`
-            : `over ${mb(workspace.tooLarge.chars)} MB`}. Redactor scans up to {mb(MAX_INPUT_BYTES)} MB at
+            ? `${mb(workspace.tooLarge.bytes)} MiB`
+            : `over ${mb(workspace.tooLarge.chars)} MiB`}. Redactor scans up to {mb(MAX_INPUT_BYTES)} MiB at
           a time, so nothing was redacted and there is nothing to copy.
         </p>
         <p class="notice-text muted">Split it into smaller parts, or open the part you need.</p>

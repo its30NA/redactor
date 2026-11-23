@@ -66,6 +66,8 @@ export interface MockBackend {
   setClipboard(text: string | null): void;
   /** Make `set_settings` reject with this message, like the shell does (tests); null stops it. */
   rejectSettings(message: string | null): void;
+  /** Make `open_text_file` reject with this message, like the shell does (tests); null stops it. */
+  rejectOpen(message: string | null): void;
   /** Make `scan` reject, like a failed scan in the shell (tests). */
   failScans(on: boolean): void;
   /** Delay `set_settings` answers by this many ms (tests). */
@@ -276,6 +278,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
   let clipboard: string | null = opts.clipboard === null ? null : inputByName(opts.clipboard ?? 'demo');
   let maximized = false;
   let settingsError: string | null = null;
+  let openError: string | null = null;
   let scansFail = false;
   let settingsDelay = 0;
   let nextId = 100;
@@ -339,6 +342,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
           clipboard = String(args.text);
           return null;
         case COMMANDS.openTextFile:
+          if (openError !== null) throw openError;
           return { name: 'staging-notes.txt', text: demoInput() };
         case COMMANDS.saveTextFile:
           return true;
@@ -413,6 +417,9 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
     },
     rejectSettings: (message) => {
       settingsError = message;
+    },
+    rejectOpen: (message) => {
+      openError = message;
     },
     failScans: (on) => {
       scansFail = on;

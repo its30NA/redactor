@@ -368,8 +368,13 @@ class Workspace {
       this.#replaceAll(file.text);
       this.fileName = file.name;
       toasts.show({ tone: 'info', title: `Opened ${file.name}`, detail: plural(file.text.length, 'character') });
-    } catch {
-      toasts.show({ tone: 'error', title: 'Could not open the file', detail: 'Text files up to 20 MB, UTF-8 or UTF-16.' });
+    } catch (e) {
+      // The shell says why in a fixed sentence (too large, not text, unreadable), never content.
+      toasts.show({
+        tone: 'error',
+        title: 'Could not open the file',
+        detail: typeof e === 'string' && e.trim() ? e : 'Text files up to 20 MiB, UTF-8 or UTF-16.',
+      });
     }
   }
 
@@ -383,7 +388,7 @@ class Workspace {
     while (this.#pendingRescan) await this.#pendingRescan;
     if (this.busy) await this.#scheduler.idle();
     if (this.tooLarge) {
-      toasts.show({ tone: 'error', title: 'Too large to scan', detail: 'Nothing was copied. Split the text into parts under 20 MB.' });
+      toasts.show({ tone: 'error', title: 'Too large to scan', detail: 'Nothing was copied. Split the text into parts under 20 MiB.' });
       return null;
     }
     if (!this.response || this.stale) {

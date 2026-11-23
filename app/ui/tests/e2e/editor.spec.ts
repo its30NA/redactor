@@ -210,12 +210,26 @@ test.describe('editor', () => {
     await expect(page.getByTestId('input-count')).toHaveText('0 chars');
   });
 
+  test('a_file_that_cannot_be_opened_says_why', async ({ page, problems: _ }) => {
+    await openApp(page);
+    for (const why of ['The file is larger than 20 MiB.', 'That is not a text file (UTF-8 or UTF-16).']) {
+      await page.evaluate((m) => window.__REDACTOR_MOCK__?.rejectOpen(m), why);
+      await page.keyboard.press('Control+o');
+      const toast = page.locator('.toast', { hasText: 'Could not open the file' }).last();
+      await expect(toast).toContainText(why);
+    }
+    // Anything but a sentence from the shell gets the general hint.
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.rejectOpen(''));
+    await page.keyboard.press('Control+o');
+    await expect(page.locator('.toast', { hasText: 'Text files up to 20 MiB, UTF-8 or UTF-16.' })).toBeVisible();
+  });
+
   test('too_large_input_shows_the_cap_and_copies_nothing', async ({ page, problems: _ }) => {
     test.setTimeout(60_000);
     await openApp(page, '?clipboard=huge');
     await page.getByRole('button', { name: /Paste & scrub/ }).click();
     await expect(page.getByTestId('too-large')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId('too-large')).toContainText('Redactor scans up to 20 MB');
+    await expect(page.getByTestId('too-large')).toContainText('Redactor scans up to 20 MiB');
     await page.getByTestId('copy-safe').click();
     await expect(page.locator('.toast', { hasText: 'Too large to scan' })).toBeVisible();
     expect((await mockCalls(page)).some((c) => c.cmd === 'copy_text')).toBe(false);
