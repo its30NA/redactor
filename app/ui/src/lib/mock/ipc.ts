@@ -58,6 +58,9 @@ export interface MockOptions {
 /** How long a `slow` app_info takes. */
 export const APP_INFO_SLOW_MS = 2500;
 
+/** With `clipboardNeedsFocus`: how long a scrub waits for the window before it runs. */
+export const FOCUS_WAIT_MS = 1000;
+
 export interface MockBackend {
   calls: MockCall[];
   settings: Settings;
@@ -306,11 +309,16 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
 
   /**
    * Like the shell: redacted text replaces the clipboard, and the result comes as the
-   * clipboard-scrubbed event, with the number of this press.
+   * clipboard-scrubbed event, with the number of this press. Where the clipboard needs focus,
+   * the press first tells that it waits for the window (clipboard-scrub-waiting), then runs.
    */
   const scrubNow = async (): Promise<void> => {
-    const text = clipboard ?? '';
     const press = ++presses;
+    if (opts.clipboardNeedsFocus) {
+      void emit('clipboard-scrub-waiting', { press });
+      await delay(FOCUS_WAIT_MS);
+    }
+    const text = clipboard ?? '';
     let result: ScrubResult = { status: 'empty', removed: 0, byLabel: [], historyCleaned: false, press };
     if (text !== '') {
       const { sensitivity, pii, stripInvisible } = settings;

@@ -78,6 +78,11 @@ export const getSettings = (): Promise<Settings> => invoke(COMMANDS.getSettings)
 export const setSettings = (settings: Settings): Promise<Settings> =>
   invoke(COMMANDS.setSettings, { settings });
 
+/**
+ * What this build and desktop can do. The first call also tells the shell that the page listens
+ * for its events: what a `--scrub-clipboard` start held back for the window is released then, so
+ * call it only once the scrub listeners are in place.
+ */
 export const appInfo = (): Promise<AppInfo> => invoke(COMMANDS.appInfo);
 
 /** Scrub the clipboard the way the hotkey does; the result comes as the `clipboard-scrubbed` event. */

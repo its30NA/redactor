@@ -131,3 +131,14 @@ test.describe('before app_info answers', () => {
   });
 });
 
+test.describe('a scrub where the clipboard needs focus', () => {
+  test('waiting_then_the_result_replaces_it', async ({ page, problems: _ }) => {
+    // Started with `--scrub-clipboard`: the mock tells the wait, then the result, like the shell.
+    await page.goto('/?os=linux&hotkey=portal&focus=1&scrub&clipboard=empty');
+    const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to clean the clipboard…" });
+    await expect(waiting).toBeVisible();
+    await expect(page.locator('.toast', { hasText: 'Nothing to scrub' })).toBeVisible();
+    await expect(waiting).toHaveCount(0);
+  });
+});
+
