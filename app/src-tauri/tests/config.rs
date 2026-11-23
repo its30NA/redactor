@@ -154,6 +154,13 @@ fn hardening_flags_are_set() {
     assert_eq!(conf["bundle"]["macOS"]["minimumSystemVersion"], "13.0");
 }
 
+/// The shell finds the single-instance socket by this identifier (`platform::IDENTIFIER`).
+#[test]
+fn the_identifier_in_the_code_is_the_config_s() {
+    let conf = read_json("tauri.conf.json");
+    assert_eq!(conf["identifier"], redactor_app::platform::IDENTIFIER);
+}
+
 #[test]
 fn webview2_browser_args_are_pinned() {
     let args: Vec<&str> = redactor_app::browser_args::BROWSER_ARGS

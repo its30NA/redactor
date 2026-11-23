@@ -40,16 +40,21 @@ pub fn run() -> Result<(), platform::Unavailable> {
     let shared: Shared = Arc::new(AppState::new(settings, settings_file, platform));
     let reopen = shared.platform.reopen;
 
-    let app = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    if platform::single_instance_usable(platform::IDENTIFIER) {
         // Must come first: a second launch focuses this window, or cleans the clipboard when
         // it carries `--scrub-clipboard`, and exits.
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if cli::scrub_requested(&args) {
                 hotkey_pressed(app);
             } else {
                 show_main(app);
             }
-        }))
+        }));
+    } else {
+        eprintln!("{SINGLE_INSTANCE_OFF}");
+    }
+    let app = builder
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -159,6 +164,9 @@ pub fn run() -> Result<(), platform::Unavailable> {
     });
     Ok(())
 }
+
+/// Another user holds the single-instance socket: Redactor starts without it.
+const SINGLE_INSTANCE_OFF: &str = "Redactor starts without its single-instance check: another user owns its socket in /tmp, so a second launch opens a second window.";
 
 /// The hotkey's start where the desktop binds it: that can take long (a person may be reading
 /// the desktop's dialog), so it runs on a thread of its own, never on the main thread. It holds

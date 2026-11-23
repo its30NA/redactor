@@ -159,6 +159,40 @@ pub fn native() -> Result<Platform, Unavailable> {
     Err(unsupported::UNAVAILABLE)
 }
 
+/// The app's identifier, as `tauri.conf.json` has it (a test checks they agree).
+pub const IDENTIFIER: &str = "io.github.its30na.redactor";
+
+/// True when the single-instance plugin may run: a second launch then hands its arguments to
+/// this one and exits. On macOS the plugin talks over a socket at a fixed path in `/tmp`
+/// ([`single_instance_socket`]), and exits the new launch as soon as anything there accepts a
+/// connection: another user of the same Mac could make every start of Redactor exit. There it
+/// is used only when that path is missing or ours. Elsewhere it is always used.
+#[cfg(target_os = "macos")]
+pub fn single_instance_usable(identifier: &str) -> bool {
+    macos::single_instance_usable(identifier)
+}
+
+/// True: only macOS puts the plugin's socket where another user can take it.
+#[cfg(not(target_os = "macos"))]
+pub fn single_instance_usable(_identifier: &str) -> bool {
+    true
+}
+
+/// Where tauri-plugin-single-instance 2.5 keeps its socket on macOS (without its `semver`
+/// feature): `/tmp/<identifier with . and - as _>_si.sock`.
+pub fn single_instance_socket(identifier: &str) -> std::path::PathBuf {
+    let name = identifier.replace(['.', '-'], "_");
+    std::path::PathBuf::from(format!("/tmp/{name}_si.sock"))
+}
+
+/// The socket may be trusted: there is none yet (`owner` is `None`), or `own` user made it.
+pub fn socket_is_ours(owner: Option<u32>, own: u32) -> bool {
+    match owner {
+        None => true,
+        Some(uid) => uid == own,
+    }
+}
+
 /// Switches core dumps off for this process and every process it starts (the web view's helper
 /// processes inherit the limit). A crash aborts the process, and a core file would put its memory
 /// on disk: clipboard text, both panes, the session secrets. The limit stops the kernel writing a
@@ -178,13 +212,35 @@ pub fn no_core_dumps() {
 #[cfg(not(target_os = "linux"))]
 pub fn no_core_dumps() {}
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
-    use rustix::process::{getrlimit, Resource, Rlimit};
+    use super::*;
 
     #[test]
+    fn the_single_instance_socket_is_trusted_only_when_missing_or_ours() {
+        assert!(socket_is_ours(None, 501), "missing: the plugin makes it");
+        assert!(socket_is_ours(Some(501), 501), "left from our own run");
+        assert!(!socket_is_ours(Some(502), 501), "another user's");
+        assert!(!socket_is_ours(Some(0), 501), "root's");
+    }
+
+    #[test]
+    fn the_single_instance_socket_is_where_the_plugin_puts_it() {
+        assert_eq!(
+            single_instance_socket(IDENTIFIER),
+            std::path::Path::new("/tmp/io_github_its30na_redactor_si.sock")
+        );
+        assert_eq!(
+            single_instance_socket("a.b-c"),
+            std::path::Path::new("/tmp/a_b_c_si.sock")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn no_core_dumps_sets_the_core_limit_to_zero() {
-        super::no_core_dumps();
+        use rustix::process::{getrlimit, Resource, Rlimit};
+        no_core_dumps();
         assert_eq!(
             getrlimit(Resource::Core),
             Rlimit {

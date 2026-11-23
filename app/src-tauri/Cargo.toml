@@ -100,6 +100,10 @@ objc2-app-kit = { version = "=0.3.2", default-features = false, features = [
 objc2-web-kit = { version = "=0.3.2", default-features = false, features = [
     "std", "objc2-app-kit", "WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore",
 ] }
+# Our own user id, to trust the single-instance socket only when it is ours
+# (`platform::single_instance_usable`), without `unsafe`. In the lock already, with what it needs
+# on macOS.
+rustix = { version = "1.1.6", features = ["process"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # `tests/x11_hotkey.rs` checks the layer the global-shortcut plugin hands the hotkey to.

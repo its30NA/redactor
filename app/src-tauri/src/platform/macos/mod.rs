@@ -45,6 +45,18 @@ pub fn platform() -> Platform {
     }
 }
 
+/// [`super::single_instance_usable`]: the plugin's socket path is free, or a file of ours (left
+/// by our own run). A path we cannot even look at is not trusted.
+pub fn single_instance_usable(identifier: &str) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let owner = match std::fs::symlink_metadata(super::single_instance_socket(identifier)) {
+        Ok(meta) => Some(meta.uid()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => return false,
+    };
+    super::socket_is_ours(owner, rustix::process::getuid().as_raw())
+}
+
 /// A click on the Dock icon, or opening the app again while it runs.
 fn asks_for_the_window(event: &tauri::RunEvent) -> bool {
     matches!(event, tauri::RunEvent::Reopen { .. })
