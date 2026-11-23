@@ -77,12 +77,16 @@
   let hotkeyError = $state<string | null>(null);
   let pending = $state<string | null>(null);
 
+  /** Counts tries, so a slow answer to an earlier one cannot overwrite the line of a later one. */
+  let hotkeyAttempt = 0;
+
   function startCapture(e: MouseEvent) {
     // WebKit on a Mac does not focus a clicked button; the keys must still reach this one.
     (e.currentTarget as HTMLElement).focus();
     capturing = true;
     pending = null;
     hotkeyError = null;
+    hotkeyAttempt++;
   }
 
   function onHotkeyKey(e: KeyboardEvent) {
@@ -108,7 +112,12 @@
     capturing = false;
     pending = null;
     hotkeyError = null;
-    update({ hotkey: combo });
+    // A key the shell refuses (another app holds it, the desktop said no) stays said under the
+    // key until the next try: the toast leaves after a few seconds.
+    const attempt = ++hotkeyAttempt;
+    void settings.update({ hotkey: combo }).then((refused) => {
+      if (attempt === hotkeyAttempt) hotkeyError = refused;
+    });
   }
 
   async function copyCommand() {

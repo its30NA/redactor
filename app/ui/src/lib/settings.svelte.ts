@@ -36,17 +36,20 @@ class SettingsStore {
     }
   }
 
-  async update(patch: Partial<Settings>): Promise<void> {
+  /** Resolves to null once saved, or to why the shell refused (a toast says it too). */
+  async update(patch: Partial<Settings>): Promise<string | null> {
     const before = this.value;
     const next = { ...before, ...patch };
     this.value = next;
     try {
       this.value = await setSettings(next);
+      return null;
     } catch (err) {
       this.value = before;
       // The shell rejects with a plain message (for example a hotkey another app holds).
       const detail = typeof err === 'string' && err.trim() ? err : undefined;
       toasts.show({ tone: 'error', title: 'Setting not saved', detail });
+      return detail ?? 'Setting not saved.';
     }
   }
 }

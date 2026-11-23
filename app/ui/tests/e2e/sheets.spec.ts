@@ -303,6 +303,29 @@ test.describe('Settings sheet', () => {
     await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
   });
 
+  test('a hotkey the shell refuses says why under the key until the next try', async ({ page, problems: _ }) => {
+    const refusal = 'Your desktop did not accept Ctrl+Alt+K. No hotkey is set now; pick another in Settings.';
+    await openApp(page);
+    await page.evaluate((m) => window.__REDACTOR_MOCK__?.rejectSettings(m), refusal);
+    await page.getByTestId('settings-open').click();
+    const sheet = page.getByRole('dialog', { name: 'Settings' });
+    const hotkey = sheet.getByTestId('hotkey');
+    await hotkey.click();
+    await page.keyboard.press('Control+Alt+K');
+    const alert = sheet.getByRole('alert');
+    await expect(alert).toHaveText(refusal);
+    // The toast leaves on its own; the line under the key stays.
+    await expect(page.locator('.toast', { hasText: 'Setting not saved' })).toHaveCount(0, { timeout: 8000 });
+    await expect(alert).toHaveText(refusal);
+    // The next try starts clean, and a key the shell takes leaves no line.
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.rejectSettings(null));
+    await hotkey.click();
+    await expect(alert).toHaveCount(0);
+    await page.keyboard.press('Control+Alt+J');
+    await expect.poll(async () => (await lastSettings(page))?.hotkey).toBe('Ctrl+Alt+J');
+    await expect(alert).toHaveCount(0);
+  });
+
   test('switches and choices save', async ({ page, problems: _ }) => {
     await openApp(page);
     await page.getByTestId('settings-open').click();

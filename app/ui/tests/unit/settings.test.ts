@@ -38,3 +38,14 @@ test('a saved setting shows no toast', async () => {
   expect(settings.value.pii).toBe(true);
   expect(toasts.items).toEqual([]);
 });
+
+test("update answers with the shell's message, or null once saved", async () => {
+  backend.rejectSettings('Your desktop did not accept Ctrl+Alt+K. No hotkey is set now; pick another in Settings.');
+  await expect(settings.update({ hotkey: 'Ctrl+Alt+K' })).resolves.toBe(
+    'Your desktop did not accept Ctrl+Alt+K. No hotkey is set now; pick another in Settings.',
+  );
+  backend.rejectSettings('   ');
+  await expect(settings.update({ pii: true })).resolves.toBe('Setting not saved.');
+  backend.rejectSettings(null);
+  await expect(settings.update({ pii: true })).resolves.toBeNull();
+});
