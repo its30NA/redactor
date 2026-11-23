@@ -6,9 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The desktop app on macOS and Linux (X11 and Wayland), as a preview: unattested test builds with no
+  release download yet. The [threat model](docs/THREAT_MODEL.md#macos-and-linux-preview-what-is-different)
+  lists what differs from Windows.
+- `--scrub-clipboard`: starting the app with it scrubs the clipboard like the hotkey, through the running
+  copy or in a new one. Where the desktop lets no app hold a key, Settings shows this command with the
+  app's full path and a Copy button, to bind in the desktop's keyboard settings.
+- Scrub notices in the window, next to the desktop notification: the result of every scrub, "Waiting for
+  Redactor's window to scrub the clipboard…" where the clipboard needs the window in front, and "Not
+  scrubbed" or "Clipboard not scrubbed" with a **Scrub now** button. A failed notice leaves after a later
+  result or 10 minutes.
+- The command palette has "Scrub the clipboard now", also over an open sheet. Esc on a focused notice
+  dismisses only that notice.
+- A hotkey that could not be set at start, or that the desktop dropped, shows as "Not active: pick another
+  key." in Settings, and the window says so with an **Open Settings** button.
+
 ### Changed
 
-- The desktop shell reaches the operating system through one platform layer. No change in behaviour.
+- The desktop shell reaches the operating system through one platform layer.
+- The hotkey scrub removes zero-width, bidi and tag characters from a copy with no secret in it, as
+  `scrub clipboard` does, and says "Hidden characters removed" (with **Strip invisible characters** on,
+  the default).
+- "Scrub" is the verb in every app text ("Scrub now", "Not scrubbed"), and the window's notice and the
+  desktop notification use the same words for the same result.
+- A scan that could not be verified and removed nothing says "Check before pasting", not "Clipboard
+  scrubbed".
+- A file that cannot be opened says why, and the size cap reads 20 MiB everywhere.
 - CI builds and tests the app shell on Linux and macOS too, and checks the dependency policy for both with
   the shell included. On Linux this allows the ISC licence and five advisories inside Tauri's GTK3 and D-Bus
   stack, each with its reason in `deny.toml`.
@@ -19,6 +44,21 @@ All notable changes to this project are documented here. The format follows
   DerivedData, a timestamped release folder) is no longer a Random String in Balanced. A path is judged by
   the names in it, not as one run with its slashes; a random name inside a path and a secret with slashes
   in it are found as before, and Paranoid reports what it reported.
+- The idle wipe counts time asleep, so text and remembered secrets do not outlive a night's sleep.
+- A settings file that cannot be read is kept as `settings.json.bad` instead of being overwritten at the
+  next save, and the window says so. Settings that cannot be saved say so once instead of failing
+  silently.
+- A key refused in Settings says why under the key until the next try.
+- The welcome card and the shield promise wait until the app knows what the desktop can do.
+- A notice meant to stay until dismissed is no longer pushed out by newer ones.
+
+### Security
+
+- The window loads `http://tauri.localhost` only without a port and never over https.
+- Opening a pipe, a device or a file that keeps growing no longer reads without limit: only regular files
+  are read, up to 20 MiB.
+- On macOS and Linux the settings file is readable by you alone (0600, in a 0700 folder), and a crash
+  writes no core file with the app's memory in it.
 
 ## [2.1.1] - 2026-11-22
 
