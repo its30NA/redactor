@@ -5,7 +5,7 @@
 //! is up. A desktop shortcut that runs the app with `--scrub-clipboard` is then a hotkey.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Asks the app to scrub the clipboard.
 pub const SCRUB_FLAG: &str = "--scrub-clipboard";
@@ -15,21 +15,38 @@ pub fn scrub_requested(args: &[String]) -> bool {
     args.iter().skip(1).any(|a| a == SCRUB_FLAG)
 }
 
-/// The program a desktop shortcut runs to scrub the clipboard: the AppImage file when the app
-/// runs from one (`$APPIMAGE`, an absolute path; the executable itself then sits in a mount that
-/// changes with each start), else this executable. `None` when neither is a Unicode path.
-pub fn program_path(exe: Option<PathBuf>, appimage: Option<OsString>) -> Option<String> {
-    let appimage = appimage
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .and_then(|p| p.into_os_string().into_string().ok());
-    appimage.or_else(|| exe?.into_os_string().into_string().ok())
+/// What the AppImage runtime tells the app it starts: the AppImage file (`$APPIMAGE`) and where
+/// it is mounted (`$APPDIR`). Both are inherited by anything the app starts.
+pub struct AppImage {
+    pub file: OsString,
+    pub mount: OsString,
+}
+
+/// The program a desktop shortcut runs to scrub the clipboard: the AppImage file when this
+/// executable runs from that AppImage's mount (the executable then sits in a mount that changes
+/// with each start), else this executable. The AppImage's paths count only when absolute: one
+/// inherited from another program or set by hand names some other file. `None` when the path
+/// chosen is not Unicode.
+pub fn program_path(exe: Option<PathBuf>, appimage: Option<AppImage>) -> Option<String> {
+    let exe = exe?;
+    let file = appimage
+        .filter(|a| {
+            let mount = Path::new(&a.mount);
+            mount.is_absolute() && exe.starts_with(mount)
+        })
+        .map(|a| PathBuf::from(a.file))
+        .filter(|f| f.is_absolute())
+        .and_then(|f| f.into_os_string().into_string().ok());
+    file.or_else(|| exe.into_os_string().into_string().ok())
 }
 
 /// [`program_path`] for this process.
 pub fn this_program() -> Option<String> {
     #[cfg(target_os = "linux")]
-    let appimage = std::env::var_os("APPIMAGE");
+    let appimage = std::env::var_os("APPIMAGE").map(|file| AppImage {
+        file,
+        mount: std::env::var_os("APPDIR").unwrap_or_default(),
+    });
     #[cfg(not(target_os = "linux"))]
     let appimage = None;
     program_path(std::env::current_exe().ok(), appimage)
@@ -51,19 +68,52 @@ mod tests {
         assert_eq!(program_path(None, None), None);
     }
 
+    /// An AppImage and its mount, as the AppImage runtime sets them.
+    #[cfg(unix)]
+    fn appimage(file: &str, mount: &str) -> Option<AppImage> {
+        Some(AppImage {
+            file: file.into(),
+            mount: mount.into(),
+        })
+    }
+
+    // AppImages are Linux only: the paths in these tests are absolute only on Unix.
+    #[cfg(unix)]
     #[test]
     fn an_appimage_names_its_own_file() {
         let exe = Some(PathBuf::from("/tmp/.mount_RedactXyz/usr/bin/Redactor"));
         assert_eq!(
-            program_path(exe.clone(), Some("/home/me/Apps/Redactor.AppImage".into())).as_deref(),
+            program_path(
+                exe.clone(),
+                appimage("/home/me/Apps/Redactor.AppImage", "/tmp/.mount_RedactXyz")
+            )
+            .as_deref(),
             Some("/home/me/Apps/Redactor.AppImage")
         );
         // Only an absolute path counts: anything else is not where the file is.
         for odd in ["", "Redactor.AppImage", "./Redactor.AppImage"] {
             assert_eq!(
-                program_path(exe.clone(), Some(odd.into())).as_deref(),
+                program_path(exe.clone(), appimage(odd, "/tmp/.mount_RedactXyz")).as_deref(),
                 Some("/tmp/.mount_RedactXyz/usr/bin/Redactor"),
                 "{odd:?}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_appimage_counts_only_when_this_executable_runs_from_its_mount() {
+        let exe = Some(PathBuf::from("/opt/redactor/Redactor"));
+        // Inherited from an AppImage that started this one, or set by hand.
+        for mount in ["/tmp/.mount_RedactXyz", "", "opt", "/opt/redact"] {
+            assert_eq!(
+                program_path(
+                    exe.clone(),
+                    appimage("/home/me/Apps/Redactor.AppImage", mount)
+                )
+                .as_deref(),
+                Some("/opt/redactor/Redactor"),
+                "{mount:?}"
             );
         }
     }
@@ -75,7 +125,14 @@ mod tests {
         let odd = OsString::from_vec(b"/opt/Red\xffactor".to_vec());
         assert_eq!(program_path(Some(PathBuf::from(odd.clone())), None), None);
         assert_eq!(
-            program_path(Some(PathBuf::from("/opt/Redactor")), Some(odd)).as_deref(),
+            program_path(
+                Some(PathBuf::from("/opt/Redactor")),
+                Some(AppImage {
+                    file: odd,
+                    mount: "/opt".into()
+                })
+            )
+            .as_deref(),
             Some("/opt/Redactor"),
             "an AppImage path that is not Unicode falls back to the executable"
         );
