@@ -1,7 +1,8 @@
 # Install Redactor on a Mac
 
 > **Preview.** The Mac app works and is tested by machines on macOS 15 and 26, but it is not released yet and
-> few people have used it by hand. Tell us what you find.
+> few people have used it by hand. What you get here is an unattested test build: not a release download,
+> not signed by an Apple developer account, with no checksum and no build attestation. Tell us what you find.
 
 About 5 minutes. Needs macOS 13 or later.
 
@@ -14,7 +15,9 @@ Click the **Apple menu** (top left) > **About This Mac**.
 
 ## 2. Get the app
 
-Until the release, the Mac app is built by GitHub for every change and kept for 7 days:
+Until the release, the Mac app is a test build that GitHub makes for every change and keeps for 7 days.
+There is no checksum or attestation to check it against, so download it only from this repository's own
+Actions page:
 
 1. Sign in to GitHub and open the repository's [**Actions**](https://github.com/its30NA/redactor/actions/workflows/ci.yml?query=branch%3Aport)
    page, then click the newest run with a green tick.
@@ -24,6 +27,7 @@ Until the release, the Mac app is built by GitHub for every change and kept for 
    have **Redactor**.
 
 No GitHub account? Someone who has one can download it and send you the zip (AirDrop or a USB stick).
+Only take it from someone you trust: nothing lets you check that the zip is the one GitHub built.
 
 ## 3. Install
 
@@ -38,7 +42,9 @@ No GitHub account? Someone who has one can download it and send you the zip (Air
 On macOS 13 or 14 there is a shortcut instead: right-click **Redactor** > **Open** > **Open**.
 
 If the Mac says the app **"is damaged"**: that is the same check being stricter. Someone comfortable with the
-Terminal can run `xattr -dr com.apple.quarantine /Applications/Redactor.app` once, then open it again.
+Terminal can run `xattr -dr com.apple.quarantine /Applications/Redactor.app` once, then open it again. That
+line switches off macOS's own check of the download, so run it only on a zip you took from the Actions
+page yourself.
 
 ## 4. Try it
 
@@ -47,8 +53,10 @@ Terminal can run `xattr -dr com.apple.quarantine /Applications/Redactor.app` onc
    replaced by a placeholder.
 3. Click the copy icon above the middle pane (**Copy safe text**), or press **Shift+Cmd+C**, and paste the safe
    text wherever you wanted to send it.
-4. The shortcut **Control+Option+R** cleans whatever is on the clipboard, from any app, without opening the
+4. The shortcut **Control+Option+R** scrubs whatever is on the clipboard, from any app, without opening the
    window. Newer macOS versions may ask once whether Redactor may paste from other apps: click **Allow**.
+   If it could not scrub, the window says **Clipboard not scrubbed** with a **Scrub now** button. The
+   command palette (**Cmd+K**) has **Scrub the clipboard now** too.
 
 Closing the window keeps Redactor in the menu bar (top right). Click its icon for the menu; **Quit** or
 **Cmd+Q** ends it. Clicking Redactor in the Dock brings the window back.
@@ -67,12 +75,15 @@ Copies from password managers are left alone, and locking the Mac or putting it 
   scrubbed** and leave the clipboard as it was. This has not been tried on a real Mac yet; if it says
   "Nothing to scrub" instead, the raw text is still there, so please tell us. To change your answer later,
   look for Redactor under **System Settings** > **Privacy & Security**.
-- **The shortcut's keys keep their Windows names.** Settings shows **Ctrl+Alt+R** for Control+Option+R.
+- **Some messages still use the Windows key names.** The welcome card and Settings show the shortcut as
+  Control, Option and Command, but a message the app writes about a key it could not set still says Ctrl
+  and Alt (for example "Ctrl+Alt+R").
 - **No warning when another app has the same shortcut.** macOS does not tell Redactor. If the shortcut
   does nothing, pick another one in Settings.
-- **The preview is not a release download.** It is signed only ad hoc (not by an Apple developer account)
-  and comes with no checksum and no build attestation, so you cannot check that the zip is the one GitHub
-  built. Download it only from this repository's Actions page, or build it yourself. The
+- **The preview is an unattested test build, not a release download.** It is signed only ad hoc (not by
+  an Apple developer account) and comes with no checksum and no build attestation, so you cannot check
+  that the zip is the one GitHub built. Download it only from this repository's Actions page, or build it
+  yourself. The
   [threat model](../THREAT_MODEL.md#macos-and-linux-preview-what-is-different) lists what else differs on
   a Mac.
 
