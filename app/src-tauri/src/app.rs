@@ -17,6 +17,7 @@ use crate::clipscrub::{self, ClipStatus, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
+use crate::os::Os;
 use crate::pending::{Take, Timer, When};
 use crate::platform::{self, HotkeyMode};
 use crate::settings::{Settings, SettingsFile};
@@ -189,6 +190,7 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
     let st = state::state(app);
     // Where the OS cannot hide the window, it is never marked as hidden.
     let protected = st.platform.shield && settings.content_protection;
+    let os = st.platform.os;
     let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Redactor")
         .inner_size(1280.0, 800.0)
@@ -200,17 +202,21 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
         .browser_extensions_enabled(false)
         .additional_browser_args(crate::browser_args::BROWSER_ARGS)
         .devtools(cfg!(debug_assertions))
-        .on_navigation(allowed_origin)
+        .on_navigation(move |url| allowed_origin(url, os))
         .on_new_window(|_url, _features| NewWindowResponse::Deny);
     let window = st.platform.webview.prepare(builder).build()?;
     st.platform.webview.harden(&window);
     Ok(window)
 }
 
-/// Only the app's own origin (and the dev server in debug builds) may load in the window.
-fn allowed_origin(url: &tauri::Url) -> bool {
+/// Only the app's own origin (and the dev server in debug builds) may load in the window. Where
+/// the OS serves the app over http (`Os::serves_app_over_http`) that is `http://tauri.localhost`
+/// with no port; `useHttpsScheme` is off, so never https.
+fn allowed_origin(url: &tauri::Url, os: Os) -> bool {
     match (url.scheme(), url.host_str()) {
-        ("http" | "https", Some("tauri.localhost" | "isolation.localhost")) => true,
+        ("http", Some("tauri.localhost" | "isolation.localhost")) => {
+            os.serves_app_over_http() && url.port().is_none()
+        }
         ("tauri" | "isolation", _) => true,
         ("http", Some("localhost")) => cfg!(debug_assertions) && url.port() == Some(5173),
         _ => false,
@@ -507,5 +513,48 @@ pub fn toggle_shield(app: &AppHandle) {
     });
     if let Ok(applied) = toggled {
         let _ = app.emit("settings-changed", applied);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_app_s_own_origin_may_load() {
+        let all = [Os::Windows, Os::Mac, Os::Linux];
+        let table: [(&str, &[Os]); 14] = [
+            ("tauri://localhost/index.html", &all),
+            ("isolation://localhost/", &all),
+            // Only WebView2 serves the app from this host, and without a port.
+            ("http://tauri.localhost/index.html", &[Os::Windows]),
+            ("http://isolation.localhost/", &[Os::Windows]),
+            ("http://tauri.localhost:8080/", &[]),
+            ("http://isolation.localhost:1/", &[]),
+            // `useHttpsScheme` is off: the app is never served over https.
+            ("https://tauri.localhost/", &[]),
+            ("https://isolation.localhost/", &[]),
+            ("http://localhost/", &[]),
+            ("http://localhost:8080/", &[]),
+            ("https://localhost:5173/", &[]),
+            ("https://example.com/", &[]),
+            ("file:///etc/passwd", &[]),
+            ("http://tauri.localhost.example.com/", &[]),
+        ];
+        for (url, allowed_on) in table {
+            let parsed: tauri::Url = url.parse().unwrap();
+            for os in all {
+                assert_eq!(
+                    allowed_origin(&parsed, os),
+                    allowed_on.contains(&os),
+                    "{url} on {os:?}"
+                );
+            }
+        }
+        // The dev server, in debug builds only.
+        let dev: tauri::Url = "http://localhost:5173/".parse().unwrap();
+        for os in all {
+            assert_eq!(allowed_origin(&dev, os), cfg!(debug_assertions), "{os:?}");
+        }
     }
 }

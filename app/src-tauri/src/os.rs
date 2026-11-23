@@ -19,4 +19,10 @@ impl Os {
             _ => None,
         }
     }
+
+    /// True where the web view serves the app from `http://tauri.localhost` rather than the
+    /// `tauri://` scheme: WebView2 on Windows. macOS and Linux use `tauri://localhost`.
+    pub fn serves_app_over_http(self) -> bool {
+        self == Os::Windows
+    }
 }
