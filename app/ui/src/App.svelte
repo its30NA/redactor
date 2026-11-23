@@ -4,6 +4,7 @@
   import { cubicOut } from 'svelte/easing';
   import Bookmark from '@lucide/svelte/icons/bookmark';
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
+  import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import Copy from '@lucide/svelte/icons/copy';
   import Eraser from '@lucide/svelte/icons/eraser';
@@ -30,7 +31,7 @@
   import Workspace from './components/Workspace.svelte';
   import { appInfo, onEvent } from './lib/api';
   import { hotkeyState, listenForAppStatus } from './lib/app-status.svelte';
-  import { listenForClipboardScrubs } from './lib/clipboard-notices';
+  import { listenForClipboardScrubs, scrubClipboardNow } from './lib/clipboard-notices';
   import { appearance, applyAppearance } from './lib/appearance.svelte';
   import { actionFor, keyOsFrom, keysFor, type Action } from './lib/keys';
   import { shieldNote } from './lib/platform';
@@ -232,6 +233,14 @@
 
   const commands = $derived<Command[]>([
     { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste', keyOs), hint: 'clipboard', run: () => run('paste') },
+    {
+      // The tray item's scrub, in place. Ctrl+K reaches it over an open sheet too.
+      id: 'scrub-clipboard',
+      label: 'Scrub the clipboard now',
+      icon: ClipboardCheck,
+      hint: 'clean hotkey tray',
+      run: scrubClipboardNow,
+    },
     { id: 'copy', label: 'Copy safe text', icon: Copy, keys: keysFor('copySafe', keyOs), disabled: !workspace.ready, run: () => run('copySafe') },
     { id: 'open', label: 'Open a text file', icon: FolderOpen, keys: keysFor('open', keyOs), hint: 'file load', run: () => run('open') },
     { id: 'save', label: 'Save a safe copy', icon: Save, keys: keysFor('save', keyOs), hint: 'file export', disabled: !workspace.ready, run: () => run('save') },

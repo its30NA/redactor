@@ -56,11 +56,16 @@ function replacePending(id: number | null): void {
   pending = id;
 }
 
-/** An explicit scrub of whatever the clipboard holds now, for a scrub that did not happen. */
-const cleanNow: ToastAction = {
-  label: 'Clean now',
-  run: () => void scrubClipboard().catch(() => toasts.show({ tone: 'error', title: 'Clipboard not scrubbed' })),
-};
+/**
+ * An explicit scrub of whatever the clipboard holds now: the tray item's scrub, through the
+ * shell. Its result comes as the `clipboard-scrubbed` event; only a refused call is told here.
+ */
+export function scrubClipboardNow(): void {
+  void scrubClipboard().catch(() => toasts.show({ tone: 'error', title: 'Clipboard not scrubbed' }));
+}
+
+/** The same scrub as a toast's button, for a scrub that did not happen. */
+const cleanNow: ToastAction = { label: 'Clean now', run: scrubClipboardNow };
 
 /**
  * The press an event names, or null when it names none (an expiry from a shell that does not

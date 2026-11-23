@@ -100,6 +100,51 @@ test.describe('shortcuts', () => {
     await expect(palette).toBeHidden();
   });
 
+  test('the_palette_scrubs_the_clipboard_while_a_sheet_is_open', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await page.getByTestId('settings-open').click();
+    await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+    await page.keyboard.press('Control+k');
+    const palette = page.getByTestId('palette');
+    await expect(palette).toBeVisible();
+    await page.keyboard.type('scrub the clipboard');
+    await expect(palette.getByRole('option')).toHaveText(['Scrub the clipboard now']);
+    await page.keyboard.press('Enter');
+    await expect(palette).toBeHidden();
+    // The same scrub as the tray item and the toast's button: through the shell, result as a toast.
+    await expect.poll(async () => (await called(page, 'scrub_clipboard')).length).toBe(1);
+    await expect(page.locator('.toast', { hasText: 'Clipboard scrubbed' })).toBeVisible();
+  });
+
+  test('esc_dismisses_a_focused_toast_and_nothing_else', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-expired', { press: 1 }));
+    const expired = page.locator('.toast');
+    await expect(expired).toHaveCount(1);
+    await page.getByTestId('settings-open').focus();
+    await expired.getByRole('button').first().focus();
+    await page.keyboard.press('Escape');
+    await expect(expired).toHaveCount(0);
+    expect((await called(page, 'scrub_clipboard')).length).toBe(0);
+    // Focus goes back to where it was before the toast took it.
+    await expect(page.getByTestId('settings-open')).toBeFocused();
+  });
+
+  test('esc_on_a_toast_leaves_an_open_sheet_open', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await page.getByTestId('settings-open').click();
+    const sheet = page.getByRole('dialog', { name: 'Settings' });
+    await expect(sheet).toBeVisible();
+    await page.evaluate(() =>
+      window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'error', removed: 0, byLabel: [], historyCleaned: false, press: 1 }),
+    );
+    const failed = page.locator('.toast', { hasText: 'Clipboard not scrubbed' });
+    await failed.getByRole('button', { name: 'Dismiss' }).focus();
+    await page.keyboard.press('Escape');
+    await expect(failed).toHaveCount(0);
+    await expect(sheet).toBeVisible();
+  });
+
   test('esc_closes_sheets', async ({ page, problems: _ }) => {
     await openApp(page);
     await page.getByTestId('remembered-open').click();
