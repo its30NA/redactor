@@ -37,6 +37,10 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
   characters, variation selectors, fillers and the like), the interlinear annotation controls,
   bidirectional controls and tag characters are removed and Unicode is normalized before detection, so
   splitting a token with them does not hide it, and the output is stripped of them by default. They are also reported as a warning.
+  The app's clipboard scrub (the hotkey, the tray, **Scrub now** and `--scrub-clipboard`) strips them too,
+  as `scrub clipboard` does: a copy that has them but no secret is written back without them and the app
+  says "Hidden characters removed". With **Strip invisible characters** off they stay. A scan that could
+  not be verified and removed nothing leaves the clipboard as it was.
 - *Encodings.* Base64, percent-encoding, JSON escapes and hex runs are decoded and rescanned, within a
   depth and byte budget, so a bomb of nested encodings costs bounded work and raises a warning. Copies of
   a value Redactor has already found are searched for in their encoded forms as well (see above).
@@ -50,9 +54,10 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
   takes more than 20 times as long, or if it runs slower than 1 MiB/s; the slowest shape ran at about
   3.9 MiB/s when last measured. The app refuses input over 20 MiB rather than scanning it (clipboard text
   over 20 MiB is measured in place and never copied out), and `scrub scan` skips files over 5 MiB and
-  binary files, each with a line on stderr. A file counts as binary when at least 5 % of its first 8 KiB
-  are control bytes, so a text file with a stray NUL is still scanned. `scrub check` never passes a staged
-  text file it could not read: it blocks the commit instead.
+  binary files, each with a line on stderr. The app opens only regular files and stops reading at 20 MiB,
+  so a pipe, a device or a file that keeps growing cannot hold it. A file counts as binary when at least
+  5 % of its first 8 KiB are control bytes, so a text file with a stray NUL is still scanned. `scrub
+  check` never passes a staged text file it could not read: it blocks the commit instead.
 - *Files in other encodings.* UTF-16 text (what Windows PowerShell 5.1 writes), with or without a
   byte-order mark, is decoded and scanned by `scrub` and the app, not skipped as binary.
 - *Hidden changes in a commit.* `scrub check` lists staged files without rename detection and reads each
@@ -68,7 +73,9 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
 - *UI injection.* The window has a content security policy of `default-src 'none'` with only
   `'self'` for scripts, styles, images and fonts, so no inline script, no `eval`, no remote content.
   The prototype is frozen, navigation is limited to the app's own origin and new windows are denied
-  (`tauri.conf.json`, `app/src-tauri/src/app.rs`, `app/src-tauri/tests/config.rs`). IPC goes through
+  (`tauri.conf.json`, `app/src-tauri/src/app.rs`, `app/src-tauri/tests/config.rs`). That origin is
+  `tauri://localhost` on macOS and Linux and `http://tauri.localhost` on Windows, there only without a
+  port; https and any other host are refused. IPC goes through
   the isolation pattern, whose hook (`app/isolation/index.js`) lets through only the UI's own calls,
   with their argument names, types and sizes checked; anything else is turned into a call that fails.
   WebRTC, which the CSP does not govern, is removed from the page. On Windows, WebView2 runs with
@@ -87,8 +94,9 @@ the findings list, the audit log or the JSON output (`crates/redactor-core/tests
   [below](#macos-and-linux-preview-what-is-different)), and it holds settings and the always-redact
   words. Those words are stored as plain text so that they can be shown and edited, and the app says so
   and warns when an entry looks like a password. A settings file the app cannot read is moved aside to
-  `settings.json.bad` next to it, so the next save does not overwrite the list in it; delete that file
-  when you no longer need it.
+  `settings.json.bad` next to it, so the next save does not overwrite the list in it, and the window says
+  so at start; delete that file when you no longer need it. Settings that cannot be saved still apply
+  until the app closes, and the app says so once.
 - The web view keeps no browsing data: WebView2's private mode on Windows, a non-persistent data store
   on macOS, an ephemeral one on Linux (with the files listed below). The UI uses no local storage.
 - The app never keeps anything derived from your passwords: no hashes, no fingerprints, no encrypted
@@ -103,18 +111,26 @@ screenshots and screen sharing. This works with the capture methods Windows cont
 drivers can bypass it. Treat it as a seatbelt, not a wall. It can be switched off in Settings or in the
 tray. macOS and Linux have no such shield.
 
-**Clipboard history (best effort, Windows only).** After the hotkey cleans the clipboard in place, the
-app asks Windows to delete the raw item from the Win+V history. If history is off, the call fails, or the
-cloud clipboard has already synced the raw copy, that copy may survive. Copies that a password manager
-marked as private (`ExcludeClipboardContentFromMonitorProcessing`) are never read and never rewritten. A
-copy made while a scan runs is never overwritten: the app compares the clipboard's sequence number after
+**Clipboard history (best effort, Windows only).** After the hotkey rewrites the clipboard in place
+(secrets or hidden characters removed), the app asks Windows to delete the raw item from the Win+V
+history. If history is off, the call fails, or the cloud clipboard has already synced the raw copy,
+that copy may survive. Copies that a password manager marked as private
+(`ExcludeClipboardContentFromMonitorProcessing`) are never read and never rewritten. A copy made while a
+scan runs is never overwritten: the app compares the clipboard's sequence number after
 opening the clipboard for writing, in the same session that writes, and `scrub clipboard` re-reads and
 compares the text in the same helper process that writes it. The `scrub clipboard` command does not
 touch Win+V history at all.
 
+**A hotkey that does nothing.** A key that could not be set at start (another app holds it, the desktop
+refused it), or that the desktop dropped later, would leave a press without a scrub, and the raw text
+would be pasted. The window says so ("Hotkey not active", "Hotkey stopped working") and Settings shows
+the key as not active until another one works.
+
 **Time limits.** Remembered secrets are zeroed, and both text panes are cleared, when you quit, lock
 the screen, put the computer to sleep, or leave the app idle past the timeout (10 minutes by default,
-selectable). On Linux a lock counts only when the desktop announces it (see below). "Idle" means no
+selectable). Time asleep counts as idle: the timer takes the longer of the monotonic and the wall clock,
+so a suspend longer than the timeout wipes within about 15 seconds of waking, and a wall clock set back
+never delays the wipe. On Linux a lock counts only when the desktop announces it (see below). "Idle" means no
 call from the window to the app's backend: a scan, a copy, a settings change. Reading the output or the
 findings without doing any of those does not count as activity, so the panes are also wiped after the
 timeout while you are reading. The timer runs only while the app holds text or remembered secrets.
@@ -140,10 +156,12 @@ timeout while you are reading. The timer runs only while the app holds text or r
   findings: 335 MiB peak, 585 MiB with `--json`), so a crafted 20 MiB paste can use close to a gigabyte
   for that scan.
 - **Other formats of a clipboard copy.** The hotkey reads and scans only the plain text of a copy. When
-  it removes something, it replaces the whole copy with the safe plain text. When the verdict is clean,
-  it leaves the copy as it is, so its other formats (HTML, RTF and the like) were never looked at: a
-  secret that is only there, in hidden markup say, can still be pasted into an app that takes that
-  format. This holds on every OS.
+  it removes something (a secret or hidden characters), it replaces the whole copy with the safe plain
+  text. When the verdict is clean, it leaves the copy as it is, so its other formats (HTML, RTF and the
+  like) were never looked at: a secret that is only there, in a link target or hidden markup say, can
+  still be pasted into an app that takes that format. This holds on every OS. Dropping the formatting of
+  every clean copy would cost more in daily use than it saves; scanning the HTML format is planned for a
+  later release.
 - **Crash dumps on Windows.** Nothing in the app turns off Windows Error Reporting or the WebView2
   crash reporter. If the app or its web view crashes, the dump can contain the text that was in memory
   (the window's text, remembered secrets), and Windows may keep it on disk. Redactor does not write dumps
@@ -223,16 +241,16 @@ keeps its own history, often on disk. All of these are out of Redactor's reach. 
 where you need it, or turn the history off.
 
 **The primary selection.** On X11 and Wayland, selecting text also puts it in the primary selection,
-which a middle click pastes. Redactor reads and cleans only the clipboard. Text you selected stays
+which a middle click pastes. Redactor reads and scrubs only the clipboard. Text you selected stays
 pasteable with a middle click, raw.
 
 **Desktops where the clipboard needs the window in front** (GNOME, Weston, WSLg). The hotkey or
-`--scrub-clipboard` brings the window forward and cleans when it is in front. Until then the raw text
-is on the clipboard and can be pasted. The wait ends after 30 seconds: the clipboard is left raw, a
-desktop notification says "Not cleaned", and the window shows it with **Clean now** (at once, and again
-when you next bring it forward within 10 minutes). WSLg shows no notifications. The window's toolkit
-(GTK) keeps its own copy of the text it read, which Redactor cannot wipe, and reads a copy over 20 MiB
-in full before the size check refuses it.
+`--scrub-clipboard` brings the window forward and scrubs when it is in front. Until then the raw text
+is on the clipboard and can be pasted. The wait ends after 30 seconds (time asleep counts): the clipboard
+is left raw, a desktop notification says "Not scrubbed", and the window shows it with **Scrub now** (at
+once, and again when you next bring it forward within 10 minutes). WSLg shows no notifications. The
+window's toolkit (GTK) keeps its own copy of the text it read, which Redactor cannot wipe, and reads a
+copy over 20 MiB in full before the size check refuses it.
 
 **When the clean text is pasteable.** On Wayland and on X11 the text Redactor puts on the clipboard lives
 in Redactor: after you quit it is gone, unless a clipboard manager took it over (on X11 it is offered to
@@ -246,17 +264,32 @@ crash does not put its memory (clipboard text, both panes, remembered secrets) i
 systemd-coredump does not store one. Processes the app starts itself inherit the limit, which on Linux
 includes the web view's. Not covered: a crash reporter that does not honour the limit, the system's own
 crash reports on macOS, and the macOS web view's processes, which the system starts rather than
-Redactor, so the limit may not reach them (not checked).
+Redactor, so the limit may not reach them (not checked). On Linux the stronger step, marking the process
+non-dumpable (`PR_SET_DUMPABLE`), would also stop crash reporters that ignore the limit, but it may stop
+the GNOME and KDE shortcut portals from recognising the app and so break the hotkey there. It is not
+taken until a hand test on GNOME or KDE shows it is safe.
 
 **Wipe on lock on Linux.** The panes and remembered secrets are wiped on these signals: logind's
 `PrepareForSleep` (going to sleep), the session's `Lock` and its `LockedHint` turning true, and
 `ActiveChanged` turning true on `org.freedesktop.ScreenSaver`, `org.gnome.ScreenSaver`,
 `org.cinnamon.ScreenSaver`, `org.mate.ScreenSaver` or `org.xfce.ScreenSaver`. If a bus restarts, the app
-listens again; a bus that is not there when the app starts is not watched at all. A locker that
-announces nothing does not trigger the wipe: `swaylock` or `i3lock` started directly, and locking
-Windows while the app runs in WSLg. The idle timer is then the only backstop. On sway, lock through
-logind instead, so the lock is announced: bind your lock key to `loginctl lock-session` and let swayidle
-start the locker (`swayidle -w lock 'swaylock -f'`).
+listens again (after 1 s, then with a pause that doubles up to 30 s while the bus stays away); a bus that
+is not there when the app starts is not watched at all. A locker that announces nothing does not trigger
+the wipe: `swaylock` or `i3lock` started directly, and locking Windows while the app runs in WSLg.
+Suspend and the idle timer are then the only backstops. Settings names the signals it listens to, and
+where neither this session in logind nor any of the screen savers above is found at start, it says "No
+lock signal found on this desktop: a screen lock does not wipe." The check cannot see whether a found
+source will really announce a lock (a screen-saver name may only handle inhibit; on sway with logind,
+`swaylock` started directly still sends nothing). On sway, lock through logind instead, so the lock is
+announced: bind your lock key to `loginctl lock-session` and let swayidle start the locker
+(`swayidle -w lock 'swaylock -f'`).
+
+**The hotkey on Wayland.** Where the desktop has a shortcuts portal, the key is bound through it.
+Portal signals count only from the bus name's current owner, so another program on the session bus
+cannot fake a press, a bind or a loss. When the desktop drops the shortcut, the app says so once (a
+desktop notification and a notice in the window) and does not bind again by itself. Where there is no
+portal, the user binds the command Settings shows in the desktop's keyboard settings: the full path of
+the running program, so a different `redactor` earlier on the `PATH` is not what runs.
 
 **Wipe on lock on macOS.** The screen-locked notification (which Apple does not document), displays
 going to sleep, the Mac going to sleep and switching to another user all wipe. Tested with posted
@@ -281,11 +314,13 @@ the single-instance check, says so once on stderr, and a second launch opens a s
 user therefore cannot stop Redactor from starting. Not tried on a real Mac. On Linux the plugin uses your
 own session bus instead.
 
-**The previews are not release downloads.** The macOS app is a CI build, kept for 7 days, signed only ad
-hoc (not by an Apple developer account, not notarized); the Linux app is built from source. They come
-with no `SHA256SUMS` and no build attestation, so the defence against a tampered download described
-[below](#the-unsigned-binary-and-smartscreen) does not cover them yet. Download the build only from this
-repository's own Actions page, or build it yourself.
+**The previews are unattested test builds, not release downloads.** The macOS app is a CI build, kept
+for 7 days, signed only ad hoc (not by an Apple developer account, not notarized), and opened by
+clearing macOS's checks; the Linux app has no download at all and is built from source. They come with
+no `SHA256SUMS` and no build attestation, so the defence against a tampered download described
+[below](#the-unsigned-binary-and-smartscreen) does not cover them. Download the build only from this
+repository's own Actions page, or build it yourself. Release builds with checksums and attestations for
+both come with the packaging work after the preview.
 
 **Advisory exceptions.** The Linux build pulls in Tauri's GTK3 and D-Bus stack, which has five open
 advisories that `cargo deny` is told to accept (`deny.toml`). Each is re-checked at every Tauri update and
