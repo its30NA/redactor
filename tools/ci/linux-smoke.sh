@@ -80,9 +80,11 @@ cleanup() {
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
   wait 2>/dev/null || true
   cp "$work"/*.log "$out/logs/" 2>/dev/null || true
-  rm -rf "$work"
+  remove_work "$work"
 }
-trap cleanup EXIT
+# `|| true`: errexit is off inside the clean-up, so it runs to the end and never changes the exit
+# status of the script.
+trap 'cleanup || true' EXIT
 
 # wait_for <seconds> <command...>: poll every 100 ms until the command succeeds.
 wait_for() {

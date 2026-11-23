@@ -14,6 +14,9 @@
 # its status: for starting the app by hand or a smoke test on the throwaway display.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# remove_work; the wait_for below is this script's own.
+# shellcheck source=tools/ci/lib.sh
+. tools/ci/lib.sh
 
 tests=(x11_clipboard x11_hotkey linux_webview linux_desktop)
 
@@ -52,9 +55,11 @@ cleanup() {
   local p
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
   wait 2>/dev/null || true
-  rm -rf "$work"
+  remove_work "$work"
 }
-trap cleanup EXIT
+# `|| true`: errexit is off inside the clean-up, so it runs to the end and never changes the exit
+# status of the script.
+trap 'cleanup || true' EXIT
 
 # wait_for <seconds> <command...>: poll every 100 ms until the command succeeds.
 wait_for() {

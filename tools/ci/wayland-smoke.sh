@@ -118,9 +118,11 @@ cleanup() {
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
   wait 2>/dev/null || true
   cp "$work"/*.log "$out/logs/" 2>/dev/null || true
-  rm -rf "$work"
+  remove_work "$work"
 }
-trap cleanup EXIT
+# `|| true`: errexit is off inside the clean-up, so it runs to the end and never changes the exit
+# status of the script.
+trap 'cleanup || true' EXIT
 
 # The app's settings and caches go to a throwaway tree, never the user's.
 for d in config data cache state; do mkdir -p "$work/xdg/$d"; done

@@ -161,9 +161,11 @@ cleanup() {
   local p
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
   wait 2>/dev/null || true
-  rm -rf "$work"
+  remove_work "$work"
 }
-trap cleanup EXIT
+# `|| true`: errexit is off inside the clean-up, so it runs to the end and never changes the exit
+# status of the script.
+trap 'cleanup || true' EXIT
 
 fail() {
   echo "wayland-tests: $1" >&2

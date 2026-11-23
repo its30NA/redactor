@@ -54,3 +54,30 @@ data_left() {
     done
   ) | sort -u
 }
+
+# remove_work <dir>: remove a script's temporary folder, for its EXIT trap. Never fails, so the
+# clean-up cannot change the script's exit status; a folder it cannot remove is named on stderr.
+# A bus with the machine's services activates the document portal on the first portal call,
+# and it mounts a FUSE file system on $XDG_RUNTIME_DIR/doc that it may still hold for a moment
+# after the bus is gone. Every mount under <dir> is unmounted (lazily) first, so rm never walks
+# into it or fails on it; then rm is tried for up to 5 s.
+remove_work() {
+  local dir=$1 tries=10 mount
+  [ -n "$dir" ] && [ -e "$dir" ] || return 0
+  dir=$(realpath -- "$dir" 2>/dev/null) || return 0
+  while :; do
+    # Field 5 of mountinfo is the mount point; the deepest goes first.
+    while read -r mount; do
+      fusermount3 -u -z "$mount" 2>/dev/null || fusermount -u -z "$mount" 2>/dev/null ||
+        umount -l "$mount" 2>/dev/null || true
+    done < <(awk -v d="$dir" '$5 == d || index($5, d "/") == 1 { print $5 }' \
+      /proc/self/mountinfo 2>/dev/null | sort -r)
+    rm -rf -- "$dir" 2>/dev/null && return 0
+    tries=$((tries - 1))
+    if [ "$tries" -eq 0 ]; then
+      echo "warning: $dir was not removed: $(rm -rf -- "$dir" 2>&1 | head -n 1)" >&2
+      return 0
+    fi
+    sleep 0.5
+  done
+}
