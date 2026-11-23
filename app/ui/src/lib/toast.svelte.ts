@@ -39,7 +39,16 @@ class Toasts {
       duration: input.duration ?? 3600,
       action: input.action,
     };
-    this.items = [...this.items, item].slice(-MAX_VISIBLE);
+    // Over the limit, the oldest earlier toast that leaves on its own makes room; one that stays
+    // until dismissed (a clipboard left raw) goes only when every earlier one does.
+    const earlier = [...this.items];
+    while (earlier.length >= MAX_VISIBLE) {
+      const drop = earlier.find((t) => t.duration > 0) ?? earlier[0]!;
+      earlier.splice(earlier.indexOf(drop), 1);
+      clearTimeout(this.#timers.get(drop.id));
+      this.#timers.delete(drop.id);
+    }
+    this.items = [...earlier, item];
     if (item.duration > 0) {
       this.#timers.set(
         item.id,
