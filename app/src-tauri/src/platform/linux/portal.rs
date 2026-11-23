@@ -18,6 +18,12 @@
 //! again on its own, since that could put the desktop's dialog in front of the user. The next
 //! bind, from Settings, opens a fresh session.
 //!
+//! Match rules filter broadcasts only: any program on the session bus can send a signal straight
+//! to our unique name, and the request and session paths are easy to guess. So a portal signal
+//! counts only when the bus says it comes from the unique name that owns the portal's name now
+//! (asked at the start, then kept up to date from `NameOwnerChanged`, which counts only when it
+//! comes from the bus itself).
+//!
 //! Where there is no portal, the app uses `CommandHotkey` instead (`portal_version` decides).
 
 use std::collections::HashMap;
@@ -157,6 +163,9 @@ struct Shared {
     presses: OnceLock<mpsc::Sender<()>>,
     /// What a lost hotkey does.
     lost: OnceLock<Press>,
+    /// The unique name that owns the portal's name: the only sender whose portal signals count.
+    /// `None` while no one owns it.
+    portal: Mutex<Option<String>>,
 }
 
 /// The session the portal is believed to hold for us.
@@ -227,6 +236,9 @@ impl PortalHotkey {
                  member='NameOwnerChanged',arg0='{PORTAL}'"
             ),
         )?;
+        // After the rule above, so a change after this answer is read as a signal. The reading
+        // thread starts below, so no change it reads is overwritten by this older answer.
+        *lock(&shared.portal) = name_owner(&bus, PORTAL);
         {
             let shared = shared.clone();
             std::thread::Builder::new()
@@ -494,6 +506,15 @@ fn remove_match(bus: &Connection, rule: &str) -> zbus::Result<()> {
     bus_call(bus, "RemoveMatch", rule)
 }
 
+/// The unique name that owns `name` on the bus; `None` when no one does or the bus does not say.
+fn name_owner(bus: &Connection, name: &str) -> Option<String> {
+    bus.call_method(Some(DBUS), DBUS_PATH, Some(DBUS), "GetNameOwner", &(name,))
+        .ok()?
+        .body()
+        .deserialize::<String>()
+        .ok()
+}
+
 fn bus_call(bus: &Connection, method: &str, rule: &str) -> zbus::Result<()> {
     bus.call_method(Some(DBUS), DBUS_PATH, Some(DBUS), method, &(rule,))
         .map(drop)
@@ -501,7 +522,8 @@ fn bus_call(bus: &Connection, method: &str, rule: &str) -> zbus::Result<()> {
 
 /// One message read from the connection: a `Response` goes to the call waiting for it, an
 /// `Activated` of our shortcut on the current session goes to the press thread, and a `Closed`
-/// of the current session or a portal that leaves the bus loses the session.
+/// of the current session or a portal that leaves the bus loses the session. Portal signals
+/// count only from the portal's owner, `NameOwnerChanged` only from the bus.
 fn dispatch(shared: &Shared, msg: &Message) {
     if msg.message_type() != Type::Signal {
         return;
@@ -512,7 +534,14 @@ fn dispatch(shared: &Shared, msg: &Message) {
     else {
         return;
     };
+    let sender = header.sender().map(|s| s.as_str());
+    let from_portal = || {
+        lock(&shared.portal)
+            .as_deref()
+            .is_some_and(|owner| sender == Some(owner))
+    };
     match (iface.as_str(), member.as_str()) {
+        (REQUEST | SHORTCUTS | SESSION, _) if !from_portal() => {}
         (REQUEST, "Response") => {
             let Some(waiter) = lock(&shared.waiting).remove(path.as_str()) else {
                 return;
@@ -547,15 +576,16 @@ fn dispatch(shared: &Shared, msg: &Message) {
             }
         }
         // Only the bus itself says who owns a name.
-        (DBUS, "NameOwnerChanged")
-            if path.as_str() == DBUS_PATH
-                && header.sender().is_some_and(|s| s.as_str() == DBUS) =>
-        {
-            let Ok((name, old, _new)) = msg.body().deserialize::<(String, String, String)>() else {
+        (DBUS, "NameOwnerChanged") if path.as_str() == DBUS_PATH && sender == Some(DBUS) => {
+            let Ok((name, old, new)) = msg.body().deserialize::<(String, String, String)>() else {
                 return;
             };
+            if name != PORTAL {
+                return;
+            }
+            *lock(&shared.portal) = Some(new).filter(|n| !n.is_empty());
             // The portal that held our session left the bus: its sessions went with it.
-            if name == PORTAL && !old.is_empty() {
+            if !old.is_empty() {
                 shared.lose();
             }
         }

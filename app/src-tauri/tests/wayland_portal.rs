@@ -1,7 +1,7 @@
 //! The hotkey through the desktop's GlobalShortcuts portal, against `tools/ci/mock_portal.py`:
 //! a bind that the desktop accepts, refuses or never answers, a bind call that never returns, a
-//! press, a rebind, a session the desktop closes, a portal that restarts, and a bus with no portal
-//! at all.
+//! press, a rebind, a session the desktop closes, a portal that restarts, signals another program
+//! forges, and a bus with no portal at all.
 //!
 //! These tests own the portal name on the session bus they run on, so they are `#[ignore]`d and
 //! panic unless the bus is the private one `tools/ci/wayland-tests.sh` started (it writes the
@@ -14,6 +14,7 @@
 #[path = "support/wayland_session.rs"]
 mod wayland_session;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
@@ -21,10 +22,12 @@ use std::time::{Duration, Instant};
 use redactor_app::hotkey::Hotkey;
 use redactor_app::os::Os;
 use redactor_app::platform::linux::command_hotkey::CommandHotkey;
-use redactor_app::platform::linux::portal::{portal_version, session_bus_with, PortalHotkey};
+use redactor_app::platform::linux::portal::{
+    portal_version, request_path, session_bus_with, PortalHotkey,
+};
 use redactor_app::platform::{GlobalHotkey, HotkeyMode, HotkeyTaken};
 use zbus::blocking::Connection;
-use zbus::zvariant::OwnedObjectPath;
+use zbus::zvariant::{OwnedObjectPath, Value};
 
 const PORTAL: &str = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
@@ -386,6 +389,110 @@ fn binding_again_after_a_loss_works() {
     assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
     press(&bus);
     expect_one_press(&s.presses);
+}
+
+/// Another program on the same bus sends the portal's signals straight to the hotkey's unique
+/// name (match rules filter only broadcasts): a press, a closed session, a portal that left, and
+/// the answer to a bind. None of them counts.
+#[test]
+#[ignore = "needs the mock portal on a private bus: tools/ci/wayland-tests.sh"]
+fn forged_portal_signals_are_dropped() {
+    let bus = mock_bus("ok");
+    let s = started_hotkey(CALL, REQUEST, Duration::from_secs(1));
+    assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
+    let open = sessions(&bus, &s.owner);
+    assert_eq!(open.len(), 1, "one session: {open:?}");
+    let session = open[0].0.clone();
+    let portal_owner: String = bus
+        .call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "GetNameOwner",
+            &(PORTAL,),
+        )
+        .expect("the mock owns the portal name")
+        .body()
+        .deserialize()
+        .expect("a unique name");
+
+    let forger = Connection::session().expect("a second connection on the private bus");
+    let to = Some(s.owner.as_str());
+    let no_options = HashMap::<String, Value>::new();
+    forger
+        .emit_signal(
+            to,
+            PORTAL_PATH,
+            "org.freedesktop.portal.GlobalShortcuts",
+            "Activated",
+            &(&session, SHORTCUT, 0u64, &no_options),
+        )
+        .expect("send a forged Activated");
+    assert!(
+        s.presses.recv_timeout(QUIET).is_err(),
+        "a forged Activated scrubbed"
+    );
+    forger
+        .emit_signal(
+            to,
+            session.as_str(),
+            "org.freedesktop.portal.Session",
+            "Closed",
+            &(&no_options,),
+        )
+        .expect("send a forged Closed");
+    forger
+        .emit_signal(
+            to,
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameOwnerChanged",
+            &(PORTAL, portal_owner.as_str(), ""),
+        )
+        .expect("send a forged NameOwnerChanged");
+    assert!(
+        s.losses.recv_timeout(QUIET).is_err(),
+        "a forged Closed or NameOwnerChanged was told as a loss"
+    );
+    press(&bus);
+    expect_one_press(&s.presses);
+
+    // A bind the desktop never answers, and a forged answer for every request path a token
+    // could name.
+    bus.call_method(
+        Some(PORTAL),
+        PORTAL_PATH,
+        Some(MOCK),
+        "SetBind",
+        &("never",),
+    )
+    .expect("set the mock to never");
+    s.hotkey.unbind();
+    let (done_tx, done) = mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let _ = done_tx.send(s.hotkey.bind(&hotkey("Ctrl+Alt+R")));
+        });
+        let accepted = HashMap::<String, Value>::new();
+        let deadline = Instant::now() + BIND + Duration::from_secs(5);
+        let result = loop {
+            for n in 0..500 {
+                let path = request_path(&s.owner, &format!("redactor_{n}"));
+                let _ = forger.emit_signal(
+                    to,
+                    path.as_str(),
+                    "org.freedesktop.portal.Request",
+                    "Response",
+                    &(0u32, &accepted),
+                );
+            }
+            match done.recv_timeout(Duration::from_millis(20)) {
+                Ok(result) => break result,
+                Err(_) => assert!(Instant::now() < deadline, "the bind never ended"),
+            }
+        };
+        assert_eq!(result, Err(HotkeyTaken), "a forged Response bound the key");
+    });
 }
 
 #[test]
