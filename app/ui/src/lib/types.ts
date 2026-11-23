@@ -108,6 +108,11 @@ export interface ScrubWaiting {
   press: number;
 }
 
+/** The `clipboard-scrub-expired` event: the press that waited for the window in vain. */
+export interface ScrubExpired {
+  press: number;
+}
+
 /**
  * A secret remembered for this session only (lead's contract change of 2026-11-06, replacing
  * the persistent "My secrets" store). Held in the shell's memory, wiped on quit, lock and idle.
@@ -183,8 +188,8 @@ export interface AppEvents {
   'clipboard-scrubbed': ScrubResult;
   /** A hotkey scrub waits for the window to come to the front (the clipboard needs focus). */
   'clipboard-scrub-waiting': ScrubWaiting;
-  /** That scrub waited in vain and did not run. */
-  'clipboard-scrub-expired': null;
+  /** That scrub waited in vain and did not run; null from a shell that does not name the press. */
+  'clipboard-scrub-expired': ScrubExpired | null;
   /** Also clears the session secrets. */
   wipe: { reason: WipeReason };
   'session-changed': SessionSecret[];

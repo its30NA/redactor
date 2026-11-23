@@ -230,7 +230,7 @@ test.describe('clipboard-scrubbed event', () => {
     await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-waiting', { press: 1 }));
     const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to clean the clipboard…" });
     await expect(waiting).toBeVisible();
-    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-expired', null));
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-expired', { press: 1 }));
     await expect(waiting).toHaveCount(0);
     const expired = page.locator('.toast', { hasText: 'Not cleaned' });
     await expect(expired).toContainText("Redactor's window did not come to the front in time.");

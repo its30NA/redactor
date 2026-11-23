@@ -8,7 +8,7 @@
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { onEvent, scrubClipboard } from './api';
 import { toasts, type ToastAction } from './toast.svelte';
-import type { ScrubResult, ScrubWaiting } from './types';
+import type { ScrubExpired, ScrubResult, ScrubWaiting } from './types';
 
 /** The wait or expiry toast on screen, if any: a newer press or result replaces it. */
 let pending: number | null = null;
@@ -62,12 +62,26 @@ const cleanNow: ToastAction = {
   run: () => void scrubClipboard().catch(() => toasts.show({ tone: 'error', title: 'Clipboard not scrubbed' })),
 };
 
+/**
+ * The press an event names, or null when it names none (an expiry from a shell that does not
+ * say) or the payload is not what the shell sends: events are not validated at runtime, and a
+ * NaN in the state would leave a wait that no result ends.
+ */
+function pressOf(payload: unknown): number | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const press = (payload as { press?: unknown }).press;
+  return typeof press === 'number' && Number.isSafeInteger(press) && press >= 0 ? press : null;
+}
+
 const secrets = (n: number) => `${n} ${n === 1 ? 'secret' : 'secrets'} removed`;
 
 function showResult(s: ScrubResult): void {
-  covered = Math.max(covered, s.press);
-  if (s.press >= pendingPress) replacePending(null);
-  if (failed !== null && (s.press > failed.press || s.status === 'error')) retireFailed();
+  if (typeof s !== 'object' || s === null) return;
+  // A result that names no press is taken as the newest: it ends the wait rather than strand it.
+  const press = pressOf(s);
+  if (press !== null) covered = Math.max(covered, press);
+  if (press === null || press >= pendingPress) replacePending(null);
+  if (failed !== null && (press === null || press > failed.press || s.status === 'error')) retireFailed();
   const history = s.historyCleaned ? ' · history cleaned' : '';
   switch (s.status) {
     case 'cleaned':
@@ -106,19 +120,29 @@ function showResult(s: ScrubResult): void {
         const timer = setTimeout(() => {
           if (failed?.id === id) retireFailed();
         }, FAILED_FOR);
-        failed = { id, press: s.press, timer };
+        failed = { id, press: press ?? covered, timer };
       }
       break;
   }
 }
 
-function showWaiting({ press }: ScrubWaiting): void {
-  if (press <= covered) return;
+function showWaiting(w: ScrubWaiting): void {
+  const press = pressOf(w);
+  // No press, a press a result covered, or one older than (or the same as) the wait or expiry
+  // on screen: a notice that came late or out of order is no news.
+  if (press === null || press <= covered || press <= pendingPress) return;
   replacePending(toasts.show({ tone: 'info', title: "Waiting for Redactor's window to clean the clipboard…", duration: 0 }));
   pendingPress = press;
 }
 
-function showExpired(): void {
+/** `null` (or no valid press): a shell that does not name the press; the expiry is told as before. */
+function showExpired(e: ScrubExpired | null): void {
+  const press = pressOf(e);
+  if (press !== null) {
+    // A result covered that press, or a newer press waits: the expiry is no news.
+    if (press <= covered || press < pendingPress) return;
+    pendingPress = press;
+  }
   if (expired !== null && toasts.items.some((t) => t.id === expired)) return;
   expired = toasts.show({
     tone: 'warning',

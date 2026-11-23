@@ -19,6 +19,7 @@ import {
   type ScanRequest,
   type ScanResponse,
   type ScanStats,
+  type ScrubExpired,
   type ScrubResult,
   type ScrubWaiting,
   type SessionSecret,
@@ -168,6 +169,9 @@ export const scrubResult = object<ScrubResult>({ ...clipboardScrubShape, press: 
 
 /** The `clipboard-scrub-waiting` event. */
 export const scrubWaiting = object<ScrubWaiting>({ press: uint });
+
+/** The `clipboard-scrub-expired` event: the press that waited in vain (null from an older shell). */
+export const scrubExpired = nullable(object<ScrubExpired>({ press: uint }));
 
 /** A session secret: id, label and time only; never the value, not even its length. */
 export const sessionSecret = object<SessionSecret>({

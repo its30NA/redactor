@@ -8,7 +8,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { listenForClipboardScrubs } from '../../src/lib/clipboard-notices';
 import { installMockBackend, type MockBackend } from '../../src/lib/mock/ipc';
 import { toasts } from '../../src/lib/toast.svelte';
-import type { ClipboardStatus, ScrubResult } from '../../src/lib/types';
+import type { ClipboardStatus, ScrubExpired, ScrubResult, ScrubWaiting } from '../../src/lib/types';
 
 let backend: MockBackend;
 let unlisten: UnlistenFn[];
@@ -230,6 +230,95 @@ describe('a result of an earlier scrub', () => {
   test('a scrub that covers later presses too ends the wait', async () => {
     await backend.emit('clipboard-scrub-waiting', { press: 2 });
     await backend.emit('clipboard-scrubbed', result('clean', 0, 3));
+    expect(titles()).toEqual(['Clipboard is clean']);
+  });
+});
+
+describe('an expiry that names its press', () => {
+  test('an expiry of an earlier press leaves the wait for a newer press on screen', async () => {
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    await backend.emit('clipboard-scrub-expired', { press: 1 });
+    expect(titles()).toEqual([WAITING]);
+  });
+
+  test('an expiry of a press a result already covered is no news', async () => {
+    await backend.emit('clipboard-scrub-waiting', { press: 1 });
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
+    await backend.emit('clipboard-scrub-expired', { press: 1 });
+    expect(titles()).toEqual(['Clipboard is clean']);
+  });
+
+  test('an expiry of the press that waits replaces the wait', async () => {
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    await backend.emit('clipboard-scrub-expired', { press: 2 });
+    expect(titles()).toEqual(['Not cleaned']);
+    // Its wait, told late, does not come back.
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    expect(titles()).toEqual(['Not cleaned']);
+  });
+
+  test('a result of that press ends the expiry notice', async () => {
+    await backend.emit('clipboard-scrub-expired', { press: 3 });
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 2));
+    expect(titles()).toEqual(['Not cleaned', 'Clipboard is clean']);
+    await backend.emit('clipboard-scrubbed', result('cleaned', 1, 3));
+    expect(titles()).toEqual(['Clipboard is clean', 'Clipboard scrubbed']);
+  });
+});
+
+describe('a waiting notice out of order', () => {
+  test('a wait for an earlier press cannot take the place of a later one', async () => {
+    await backend.emit('clipboard-scrub-waiting', { press: 3 });
+    await backend.emit('clipboard-scrub-waiting', { press: 2 });
+    // The result of press 2 must not end the wait of press 3.
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 2));
+    expect(titles()).toEqual([WAITING, 'Clipboard is clean']);
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 3));
+    expect(titles()).toEqual(['Clipboard is clean', 'Clipboard is clean']);
+  });
+});
+
+describe('a payload without a valid press', () => {
+  const bad = [undefined, null, -1, 1.5, Number.NaN, '2', Number.MAX_SAFE_INTEGER + 2];
+
+  for (const press of bad) {
+    test(`a result with press ${String(press)} ends the wait and leaves the state sound`, async () => {
+      await backend.emit('clipboard-scrub-waiting', { press: 2 });
+      await backend.emit('clipboard-scrubbed', { ...result('clean'), press } as unknown as ScrubResult);
+      expect(titles()).toEqual(['Clipboard is clean']);
+      // The next press still waits and its result still ends the wait.
+      await backend.emit('clipboard-scrub-waiting', { press: 3 });
+      expect(titles()).toEqual(['Clipboard is clean', WAITING]);
+      await backend.emit('clipboard-scrubbed', result('cleaned', 1, 3));
+      expect(titles()).toEqual(['Clipboard is clean', 'Clipboard scrubbed']);
+    });
+
+    test(`a wait with press ${String(press)} shows nothing and breaks nothing`, async () => {
+      await backend.emit('clipboard-scrub-waiting', { press } as unknown as ScrubWaiting);
+      expect(titles()).toEqual([]);
+      await backend.emit('clipboard-scrub-waiting', { press: 1 });
+      await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
+      expect(titles()).toEqual(['Clipboard is clean']);
+    });
+
+    test(`an expiry with press ${String(press)} is told like one without a press`, async () => {
+      await backend.emit('clipboard-scrub-waiting', { press: 1 });
+      await backend.emit('clipboard-scrub-expired', { press } as unknown as ScrubExpired);
+      expect(titles()).toEqual(['Not cleaned']);
+      await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
+      expect(titles()).toEqual(['Clipboard is clean']);
+    });
+  }
+
+  test('a wait with no payload at all is ignored', async () => {
+    await backend.emit('clipboard-scrub-waiting', null as unknown as ScrubWaiting);
+    expect(titles()).toEqual([]);
+  });
+
+  test('a failed result without a press is retired by the next result', async () => {
+    await backend.emit('clipboard-scrubbed', { ...result('error'), press: undefined } as unknown as ScrubResult);
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
     expect(titles()).toEqual(['Clipboard is clean']);
   });
 });

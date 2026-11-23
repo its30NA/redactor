@@ -53,6 +53,11 @@ describe('fixtures', () => {
     expect(schema.scrubResult(scrub, 'r')).toEqual(['r.press: missing']);
     expect(schema.scrubWaiting({ press: 3 }, 'w')).toEqual([]);
     expect(schema.scrubWaiting(null, 'w')).not.toEqual([]);
+    // The expiry names the press that waited in vain; a shell from before that sends null.
+    expect(schema.scrubExpired({ press: 3 }, 'e')).toEqual([]);
+    expect(schema.scrubExpired(null, 'e')).toEqual([]);
+    expect(schema.scrubExpired({}, 'e')).toEqual(['e.press: missing']);
+    expect(schema.scrubExpired({ press: -1 }, 'e')).not.toEqual([]);
   });
 
   test('validators reject a finding that carries a value field', () => {
