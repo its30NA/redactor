@@ -76,7 +76,8 @@ fn x11_platform() -> Result<Platform, Unavailable> {
 /// the window is in front. The hotkey goes through the desktop's shortcuts portal where the
 /// session bus has one, else through a desktop shortcut that runs `--scrub-clipboard`; which
 /// one is asked at its first use, so a second start (which hands its arguments to the running
-/// app and exits before `setup`) never waits for the session bus.
+/// app and exits before `setup`) never waits for the portal. It does ask the session bus for a
+/// tray, at most for the tray probe's short deadline.
 fn wayland_platform() -> Result<Platform, Unavailable> {
     let globals = wayland::globals().map_err(|_| NO_COMPOSITOR)?;
     let focused_only = std::env::var_os(FOCUSED_ONLY).is_some_and(|v| v == "1");

@@ -343,3 +343,33 @@ fn host_registered_reads_the_watcher() {
     );
     assert!(!tray::host_registered(&bus), "no host is registered");
 }
+
+/// A watcher that owns its name but never answers (a hung panel): every start, a second one that
+/// hands `--scrub-clipboard` over included, asks it before anything else. The answer is "no
+/// tray", within the probe's deadline.
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn a_watcher_that_never_answers_means_no_tray_in_time() {
+    private_buses();
+    let bus = Connection::session().expect("connect to the private session bus");
+    // A connection without an object server answers no method call.
+    let silent = Connection::session().expect("connect the silent watcher");
+    silent
+        .request_name(WATCHER)
+        .expect("the silent watcher owns its name");
+    assert!(name_has_owner(&bus, WATCHER));
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(tray::available());
+    });
+    let limit = Duration::from_secs(5);
+    match rx.recv_timeout(limit) {
+        Ok(shown) => assert!(!shown, "a watcher that never answers is no tray"),
+        Err(_) => panic!("the tray probe still waited for the watcher after {limit:?}"),
+    }
+    drop(silent);
+    wait_until("the silent watcher's name is released", || {
+        !name_has_owner(&bus, WATCHER)
+    });
+}

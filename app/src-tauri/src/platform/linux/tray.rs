@@ -6,11 +6,20 @@
 //! tray crate panics, and with `panic = "abort"` the app would end without a word. So the app
 //! asks for both before it builds a tray.
 
+use std::time::Duration;
+
 use zbus::blocking::Connection;
 use zbus::zvariant::OwnedValue;
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const WATCHER_PATH: &str = "/StatusNotifierWatcher";
+
+/// How long a start waits for the session bus to say whether a host is registered, connecting
+/// included. Every start asks, also a second one that only hands `--scrub-clipboard` to the
+/// running app (with a desktop shortcut, each press is one), so a bus or watcher that hangs must
+/// not hold up the press for long. A watcher that works answers in milliseconds; two seconds
+/// leave room for a desktop still busy logging in. Too late means no tray for this run.
+const PROBE: Duration = Duration::from_secs(2);
 
 /// The libraries the tray crate (`libappindicator-sys` 0.9.0) tries, in its order.
 const LIBRARIES: [&str; 4] = [
@@ -53,8 +62,11 @@ fn library_loads() -> bool {
     })
 }
 
-/// Whether this desktop shows a tray: the session bus answers, a host is registered, and the
-/// tray library loads.
+/// Whether this desktop shows a tray: the session bus answers within [`PROBE`], a host is
+/// registered, and the tray library loads.
 pub fn available() -> bool {
-    Connection::session().is_ok_and(|conn| host_registered(&conn)) && library_loads()
+    let host = super::within(PROBE, || {
+        Some(Connection::session().is_ok_and(|conn| host_registered(&conn)))
+    });
+    host == Some(true) && library_loads()
 }
