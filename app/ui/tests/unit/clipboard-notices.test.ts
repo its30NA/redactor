@@ -3,7 +3,7 @@
  * The window's toasts for a hotkey, tray or `--scrub-clipboard` scrub: the result, the wait for
  * the window, and the scrub that expired before the window came to the front.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { listenForClipboardScrubs } from '../../src/lib/clipboard-notices';
 import { installMockBackend, type MockBackend } from '../../src/lib/mock/ipc';
@@ -56,6 +56,35 @@ describe('scrub results', () => {
     toasts.act(notice.id);
     expect(backend.calls.at(-1)?.cmd).toBe('scrub_clipboard');
     expect(toasts.items.some((t) => t.id === notice.id)).toBe(false);
+  });
+
+  test('a later result replaces a failed one', async () => {
+    await backend.emit('clipboard-scrubbed', result('error', 0, 1));
+    await backend.emit('clipboard-scrubbed', result('cleaned', 1, 2));
+    expect(titles()).toEqual(['Clipboard scrubbed']);
+    // A later failure replaces an earlier one: one notice, not two.
+    await backend.emit('clipboard-scrubbed', result('error', 0, 3));
+    await backend.emit('clipboard-scrubbed', result('error', 0, 4));
+    expect(titles()).toEqual(['Clipboard scrubbed', 'Clipboard not scrubbed']);
+  });
+
+  test('a result of the same press leaves the failed notice', async () => {
+    await backend.emit('clipboard-scrubbed', result('error', 0, 2));
+    await backend.emit('clipboard-scrubbed', result('clean', 0, 1));
+    expect(titles()).toEqual(['Clipboard not scrubbed', 'Clipboard is clean']);
+  });
+
+  test('a failed scrub older than 10 min is gone', async () => {
+    vi.useFakeTimers();
+    try {
+      await backend.emit('clipboard-scrubbed', result('error'));
+      vi.advanceTimersByTime(10 * 60_000 - 1);
+      expect(titles()).toEqual(['Clipboard not scrubbed']);
+      vi.advanceTimersByTime(1);
+      expect(titles()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('a clipboard too large to scrub has no retry and leaves on its own', async () => {

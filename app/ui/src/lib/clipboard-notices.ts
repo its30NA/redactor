@@ -2,7 +2,8 @@
  * The window's toasts for a hotkey, tray or `--scrub-clipboard` scrub. Where the clipboard needs
  * the window in front, a press first waits for it: the wait shows until the result or the expiry
  * replaces it. An expiry stays until dismissed (the desktop may drop its notification) and offers
- * "Clean now", an explicit scrub of whatever the clipboard holds then; so does a failed scrub.
+ * "Clean now", an explicit scrub of whatever the clipboard holds then; so does a failed scrub,
+ * until a later result replaces it or it is ten minutes old.
  */
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { onEvent, scrubClipboard } from './api';
@@ -33,6 +34,23 @@ let expired: number | null = null;
  */
 let covered = 0;
 
+/**
+ * The "Clipboard not scrubbed" toast on screen, if any, and the press its scrub covered. A result
+ * of a later press retires it (a later failure replaces it), and it leaves on its own after
+ * `FAILED_FOR`, so a window that sat in the tray for hours does not show a stale warning.
+ */
+let failed: { id: number; press: number; timer: ReturnType<typeof setTimeout> } | null = null;
+
+/** How long a failed scrub's toast stays at most: the shell's UNSEEN_FOR for an expiry. */
+const FAILED_FOR = 10 * 60_000;
+
+function retireFailed(): void {
+  if (failed === null) return;
+  clearTimeout(failed.timer);
+  toasts.dismiss(failed.id);
+  failed = null;
+}
+
 function replacePending(id: number | null): void {
   if (pending !== null) toasts.dismiss(pending);
   pending = id;
@@ -49,6 +67,7 @@ const secrets = (n: number) => `${n} ${n === 1 ? 'secret' : 'secrets'} removed`;
 function showResult(s: ScrubResult): void {
   covered = Math.max(covered, s.press);
   if (s.press >= pendingPress) replacePending(null);
+  if (failed !== null && (s.press > failed.press || s.status === 'error')) retireFailed();
   const history = s.historyCleaned ? ' · history cleaned' : '';
   switch (s.status) {
     case 'cleaned':
@@ -74,14 +93,21 @@ function showResult(s: ScrubResult): void {
       toasts.show({ tone: 'warning', title: 'Left alone', detail: 'The clipboard text is larger than 20 MiB.' });
       break;
     case 'error':
-      // The clipboard is still raw: stay until dismissed (the desktop may drop its notification).
-      toasts.show({
-        tone: 'error',
-        title: 'Clipboard not scrubbed',
-        detail: 'It could not be read, or it changed during the scrub.',
-        duration: 0,
-        action: cleanNow,
-      });
+      // The clipboard is still raw: stay until dismissed (the desktop may drop its notification),
+      // a later result, or FAILED_FOR.
+      {
+        const id = toasts.show({
+          tone: 'error',
+          title: 'Clipboard not scrubbed',
+          detail: 'It could not be read, or it changed during the scrub.',
+          duration: 0,
+          action: cleanNow,
+        });
+        const timer = setTimeout(() => {
+          if (failed?.id === id) retireFailed();
+        }, FAILED_FOR);
+        failed = { id, press: s.press, timer };
+      }
       break;
   }
 }
@@ -110,6 +136,8 @@ export function listenForClipboardScrubs(): Promise<UnlistenFn>[] {
   pendingPress = 0;
   expired = null;
   covered = 0;
+  if (failed !== null) clearTimeout(failed.timer);
+  failed = null;
   return [
     onEvent('clipboard-scrubbed', showResult),
     onEvent('clipboard-scrub-waiting', showWaiting),
