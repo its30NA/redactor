@@ -13,6 +13,14 @@ There are two ways to use it: the **desktop app** for Windows, and the **`scrub`
 Windows, Linux and macOS. Both use the same engine. Download links and checksum steps are in the
 [README](../README.md#download).
 
+The desktop app for **macOS and Linux** is a preview: not released yet, with no checksums. To try it,
+follow [Install on a Mac](install/macos.md) or [Install on Linux](install/linux.md); they also say how
+the clipboard hotkey works there. This guide is written for Windows. On a Mac, `Ctrl` in the app's own
+shortcuts is `Cmd`, and the hotkey `Ctrl+Alt+R` is Control+Option+R. Some protections work differently
+or are missing (no screen-capture shield, no clipboard history cleaning, on Linux a wipe on lock only
+when the desktop announces the lock): the
+[threat model](THREAT_MODEL.md#macos-and-linux-preview-what-is-different) lists each difference.
+
 ## The desktop app
 
 ### Paste and scrub
