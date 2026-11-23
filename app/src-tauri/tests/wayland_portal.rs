@@ -1,6 +1,7 @@
 //! The hotkey through the desktop's GlobalShortcuts portal, against `tools/ci/mock_portal.py`:
 //! a bind that the desktop accepts, refuses or never answers, a bind call that never returns, a
-//! press, a rebind, and a bus with no portal at all.
+//! press, a rebind, a session the desktop closes, a portal that restarts, and a bus with no portal
+//! at all.
 //!
 //! These tests own the portal name on the session bus they run on, so they are `#[ignore]`d and
 //! panic unless the bus is the private one `tools/ci/wayland-tests.sh` started (it writes the
@@ -76,23 +77,38 @@ fn mock_bus(bind: &str) -> Connection {
     bus
 }
 
-/// A portal hotkey on its own connection (method calls give up after `call`), started, whose
-/// presses arrive on the receiver. Returns its unique bus name too, which names its sessions at
-/// the mock.
-fn started_hotkey(
-    call: Duration,
-    request: Duration,
-    bind: Duration,
-) -> (PortalHotkey, String, mpsc::Receiver<()>) {
+/// A portal hotkey on its own connection (method calls give up after `call`), started.
+struct Started {
+    hotkey: PortalHotkey,
+    /// Its unique bus name, which names its sessions at the mock.
+    owner: String,
+    /// One message per press.
+    presses: mpsc::Receiver<()>,
+    /// One message per time the hotkey is told it was lost.
+    losses: mpsc::Receiver<()>,
+}
+
+fn started_hotkey(call: Duration, request: Duration, bind: Duration) -> Started {
     assert_private_bus();
     let conn = session_bus_with(call).expect("connect to the private session bus");
     let owner = conn.unique_name().expect("a unique name").to_string();
     let hotkey = PortalHotkey::with_timeouts(conn, request, bind).expect("the portal hotkey");
-    let (tx, rx) = mpsc::channel();
-    hotkey.start(Arc::new(move || {
-        let _ = tx.send(());
-    }));
-    (hotkey, owner, rx)
+    let (press_tx, presses) = mpsc::channel();
+    let (lost_tx, losses) = mpsc::channel();
+    hotkey.start(
+        Arc::new(move || {
+            let _ = press_tx.send(());
+        }),
+        Arc::new(move || {
+            let _ = lost_tx.send(());
+        }),
+    );
+    Started {
+        hotkey,
+        owner,
+        presses,
+        losses,
+    }
 }
 
 /// The owner's open sessions at the mock, each with the trigger it asked for.
@@ -109,6 +125,46 @@ fn press(bus: &Connection) {
         .expect("press at the mock");
 }
 
+/// The desktop closes the owner's sessions.
+fn close_sessions(bus: &Connection, owner: &str) {
+    bus.call_method(
+        Some(PORTAL),
+        PORTAL_PATH,
+        Some(MOCK),
+        "CloseSessions",
+        &(owner,),
+    )
+    .expect("close the sessions at the mock");
+}
+
+/// The portal drops its name and every session and takes the name again.
+fn restart(bus: &Connection) {
+    bus.call_method(Some(PORTAL), PORTAL_PATH, Some(MOCK), "Restart", &())
+        .expect("restart the mock");
+}
+
+/// One press reaches the callback, and only one.
+fn expect_one_press(presses: &mpsc::Receiver<()>) {
+    presses
+        .recv_timeout(PRESS)
+        .expect("the press did not reach the callback within 2 s");
+    assert!(
+        presses.recv_timeout(QUIET).is_err(),
+        "one press, one callback"
+    );
+}
+
+/// The loss is told once, and only once.
+fn expect_one_loss(losses: &mpsc::Receiver<()>, after: &str) {
+    losses
+        .recv_timeout(PRESS)
+        .unwrap_or_else(|_| panic!("{after}: the loss was not told within 2 s"));
+    assert!(
+        losses.recv_timeout(QUIET).is_err(),
+        "{after}: one loss, one notice"
+    );
+}
+
 fn hotkey(s: &str) -> Hotkey {
     Hotkey::parse(s, Os::Linux).unwrap()
 }
@@ -118,7 +174,12 @@ fn hotkey(s: &str) -> Hotkey {
 fn bind_then_press_calls_back() {
     let bus = mock_bus("ok");
     assert_eq!(portal_version(&bus), Some(1));
-    let (hk, owner, presses) = started_hotkey(CALL, REQUEST, BIND);
+    let Started {
+        hotkey: hk,
+        owner,
+        presses,
+        ..
+    } = started_hotkey(CALL, REQUEST, BIND);
     assert_eq!(hk.mode(), HotkeyMode::Portal);
     assert_eq!(hk.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
     let open = sessions(&bus, &owner);
@@ -139,7 +200,12 @@ fn bind_then_press_calls_back() {
 #[ignore = "needs the mock portal on a private bus: tools/ci/wayland-tests.sh"]
 fn refused_bind_is_taken() {
     let bus = mock_bus("refuse");
-    let (hk, owner, presses) = started_hotkey(CALL, REQUEST, BIND);
+    let Started {
+        hotkey: hk,
+        owner,
+        presses,
+        ..
+    } = started_hotkey(CALL, REQUEST, BIND);
     assert_eq!(hk.bind(&hotkey("Ctrl+Alt+R")), Err(HotkeyTaken));
     assert!(
         sessions(&bus, &owner)
@@ -159,7 +225,7 @@ fn refused_bind_is_taken() {
 fn bind_cancelled_mid_wait_times_out() {
     let _bus = mock_bus("never");
     let wait = Duration::from_millis(500);
-    let (hk, _owner, _presses) = started_hotkey(CALL, REQUEST, wait);
+    let hk = started_hotkey(CALL, REQUEST, wait).hotkey;
     let started = Instant::now();
     assert_eq!(hk.bind(&hotkey("Ctrl+Alt+R")), Err(HotkeyTaken));
     let took = started.elapsed();
@@ -182,7 +248,11 @@ fn bind_call_without_reply_gives_up_at_the_call_deadline() {
         "a bus without a call deadline is refused"
     );
     let call = Duration::from_secs(1);
-    let (hk, _owner, presses) = started_hotkey(call, REQUEST, BIND);
+    let Started {
+        hotkey: hk,
+        presses,
+        ..
+    } = started_hotkey(call, REQUEST, BIND);
     let started = Instant::now();
     assert_eq!(hk.bind(&hotkey("Ctrl+Alt+R")), Err(HotkeyTaken));
     let took = started.elapsed();
@@ -210,7 +280,12 @@ fn bind_call_without_reply_gives_up_at_the_call_deadline() {
 #[ignore = "needs the mock portal on a private bus: tools/ci/wayland-tests.sh"]
 fn rebind_closes_the_old_session() {
     let bus = mock_bus("ok");
-    let (hk, owner, presses) = started_hotkey(CALL, REQUEST, BIND);
+    let Started {
+        hotkey: hk,
+        owner,
+        presses,
+        ..
+    } = started_hotkey(CALL, REQUEST, BIND);
     assert_eq!(hk.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
     let first = sessions(&bus, &owner);
     assert_eq!(first.len(), 1, "one session: {first:?}");
@@ -230,6 +305,87 @@ fn rebind_closes_the_old_session() {
         presses.recv_timeout(QUIET).is_err(),
         "one press, one callback"
     );
+}
+
+#[test]
+#[ignore = "needs the mock portal on a private bus: tools/ci/wayland-tests.sh"]
+fn a_closed_session_is_told_once_and_presses_stop() {
+    let bus = mock_bus("ok");
+    let s = started_hotkey(CALL, REQUEST, BIND);
+    assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
+    press(&bus);
+    expect_one_press(&s.presses);
+
+    close_sessions(&bus, &s.owner);
+    expect_one_loss(&s.losses, "the desktop closed the session");
+    press(&bus);
+    assert!(
+        s.presses.recv_timeout(QUIET).is_err(),
+        "no press after the session closed"
+    );
+    // The same loss, seen again: not told a second time.
+    restart(&bus);
+    assert!(
+        s.losses.recv_timeout(QUIET).is_err(),
+        "a loss already told is not told again"
+    );
+}
+
+#[test]
+#[ignore = "needs the mock portal on a private bus: tools/ci/wayland-tests.sh"]
+fn a_portal_restart_is_told_once() {
+    let bus = mock_bus("ok");
+    let s = started_hotkey(CALL, REQUEST, BIND);
+    assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
+    restart(&bus);
+    expect_one_loss(&s.losses, "the portal restarted");
+}
+
+#[test]
+#[ignore = "needs the mock portal on a private bus: tools/ci/wayland-tests.sh"]
+fn nothing_bound_is_never_told_as_lost() {
+    let bus = mock_bus("ok");
+    let s = started_hotkey(CALL, REQUEST, BIND);
+    // The session the start opened, never bound.
+    close_sessions(&bus, &s.owner);
+    restart(&bus);
+    assert!(
+        s.losses.recv_timeout(QUIET).is_err(),
+        "no key was bound, so none was lost"
+    );
+    // Unbound by the app: not a loss either.
+    assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
+    s.hotkey.unbind();
+    restart(&bus);
+    assert!(
+        s.losses.recv_timeout(QUIET).is_err(),
+        "a key the app unbound is not lost"
+    );
+}
+
+#[test]
+#[ignore = "needs the mock portal on a private bus: tools/ci/wayland-tests.sh"]
+fn binding_again_after_a_loss_works() {
+    let bus = mock_bus("ok");
+    let s = started_hotkey(CALL, REQUEST, BIND);
+    assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
+    close_sessions(&bus, &s.owner);
+    expect_one_loss(&s.losses, "the desktop closed the session");
+
+    // Settings sets the key again: a fresh session, and presses arrive.
+    assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
+    let open = sessions(&bus, &s.owner);
+    assert_eq!(open.len(), 1, "one fresh session: {open:?}");
+    assert_eq!(open[0].1, "CTRL+ALT+r");
+    press(&bus);
+    expect_one_press(&s.presses);
+
+    // A second loss is told again, and the key binds again after it too.
+    restart(&bus);
+    expect_one_loss(&s.losses, "the portal restarted");
+    assert_eq!(s.hotkey.bind(&hotkey("Ctrl+Alt+R")), Ok(()));
+    press(&bus);
+    expect_one_press(&s.presses);
 }
 
 #[test]

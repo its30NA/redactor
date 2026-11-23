@@ -11,6 +11,9 @@ a hung portal). Test-only methods on org.redactor.Mock:
   Press(s id)            sends Activated(session, id) for every open session that bound id
   SetBind(s mode)        changes how the next BindShortcuts ends
   Sessions(s owner)      the owner's open sessions and the trigger each one asked for
+  CloseSessions(s owner) closes the owner's sessions as the desktop does: Closed, then gone
+  Restart()              drops the name and every session and owns the name again, as a
+                         restarted xdg-desktop-portal does; replies once the name is back
 
 Started as `/usr/bin/python3 tools/ci/mock_portal.py` (a pyenv python3 has no gi). Refuses to
 run unless DBUS_SESSION_BUS_ADDRESS is the script's private bus. Prints "ready" once it owns the
@@ -29,7 +32,9 @@ BUS_NAME = "org.freedesktop.portal.Desktop"
 PATH = "/org/freedesktop/portal/desktop"
 SHORTCUTS = "org.freedesktop.portal.GlobalShortcuts"
 REQUEST = "org.freedesktop.portal.Request"
+SESSION = "org.freedesktop.portal.Session"
 MOCK = "org.redactor.Mock"
+DBUS = "org.freedesktop.DBus"
 BIND_MODES = ("ok", "refuse", "never", "silent")
 
 PORTAL_XML = """
@@ -65,6 +70,10 @@ PORTAL_XML = """
       <arg type="s" name="owner" direction="in"/>
       <arg type="a(os)" name="sessions" direction="out"/>
     </method>
+    <method name="CloseSessions">
+      <arg type="s" name="owner" direction="in"/>
+    </method>
+    <method name="Restart"/>
   </interface>
 </node>
 """
@@ -94,6 +103,21 @@ def private_bus_or_exit():
     if not os.environ.get("REDACTOR_TEST_BUS") or not address or mark != address:
         print("mock_portal: not the private bus of tools/ci/wayland-tests.sh", file=sys.stderr)
         sys.exit(2)
+
+
+def bus_call(conn, method, args, reply):
+    """A method call on the bus itself; its one return value."""
+    return conn.call_sync(
+        DBUS, "/org/freedesktop/DBus", DBUS, method, args, GLib.VariantType(reply),
+        Gio.DBusCallFlags.NONE, -1, None,
+    ).unpack()[0]
+
+
+def own_name(conn):
+    """Owns the portal name, or says why not. 4: do not queue; 1: now the primary owner."""
+    if bus_call(conn, "RequestName", GLib.Variant("(su)", (BUS_NAME, 4)), "(u)") != 1:
+        print("mock_portal: could not own %s" % BUS_NAME, file=sys.stderr, flush=True)
+        sys.exit(1)
 
 
 def sender_part(sender):
@@ -154,6 +178,21 @@ class Portal:
                 if s["owner"] == args[0]
             ]
             invocation.return_value(GLib.Variant("(a(os))", (found,)))
+        elif iface == MOCK and method == "CloseSessions":
+            for session, state in sorted(self.sessions.items()):
+                if state["owner"] == args[0]:
+                    # Unicast to the owner, as xdg-desktop-portal sends it.
+                    self.conn.emit_signal(
+                        state["owner"], session, SESSION, "Closed", GLib.Variant("(a{sv})", ({},))
+                    )
+                    self.drop(session)
+            invocation.return_value(None)
+        elif iface == MOCK and method == "Restart":
+            bus_call(self.conn, "ReleaseName", GLib.Variant("(s)", (BUS_NAME,)), "(u)")
+            for session in list(self.sessions):
+                self.drop(session)
+            own_name(self.conn)
+            invocation.return_value(None)
         else:
             invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
 
@@ -216,13 +255,16 @@ class Portal:
                     ),
                 )
 
+    def drop(self, session):
+        """The session object is gone; nothing more is sent for it."""
+        self.conn.unregister_object(self.sessions.pop(session)["reg"])
+
     def on_session_call(self, conn, sender, path, iface, method, params, invocation):
         state = self.sessions.get(path)
         if method != "Close" or state is None or state["owner"] != sender:
             invocation.return_dbus_error("org.freedesktop.DBus.Error.AccessDenied", "not your session")
             return
-        conn.unregister_object(state["reg"])
-        del self.sessions[path]
+        self.drop(path)
         invocation.return_value(None)
 
     def on_get(self, conn, sender, path, iface, prop):
@@ -241,20 +283,10 @@ def main():
     portal = Portal(conn, bind_mode)
     for iface in Gio.DBusNodeInfo.new_for_xml(PORTAL_XML).interfaces:
         conn.register_object(PATH, iface, portal.on_call, portal.on_get, None)
-    loop = GLib.MainLoop()
-    status = []
-
-    def acquired(_conn, _name):
-        print("ready", flush=True)
-
-    def lost(_conn, _name):
-        print("mock_portal: lost or could not own %s" % BUS_NAME, file=sys.stderr, flush=True)
-        status.append(1)
-        loop.quit()
-
-    Gio.bus_own_name_on_connection(conn, BUS_NAME, Gio.BusNameOwnerFlags.DO_NOT_QUEUE, acquired, lost)
-    loop.run()
-    sys.exit(status[0] if status else 0)
+    # Owned by hand, not through Gio's name watcher, so Restart can drop and take it again.
+    own_name(conn)
+    print("ready", flush=True)
+    GLib.MainLoop().run()
 
 
 if __name__ == "__main__":

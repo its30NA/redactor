@@ -11,6 +11,13 @@
 //! to a second thread, which runs the press callback. Signals carry no clipboard content and
 //! nothing here logs.
 //!
+//! The desktop can drop a bound key without being asked: it closes the session (`Closed`), or
+//! xdg-desktop-portal restarts and its sessions are gone with it (`NameOwnerChanged`). The app
+//! also loses the key when this connection breaks. Each loss of a bound key is told to the user
+//! once (the `on_lost` callback; a desktop notification in the app), and the key is not bound
+//! again on its own, since that could put the desktop's dialog in front of the user. The next
+//! bind, from Settings, opens a fresh session.
+//!
 //! Where there is no portal, the app uses `CommandHotkey` instead (`portal_version` decides).
 
 use std::collections::HashMap;
@@ -35,6 +42,8 @@ const REQUEST: &str = "org.freedesktop.portal.Request";
 const SESSION: &str = "org.freedesktop.portal.Session";
 const REGISTRY: &str = "org.freedesktop.host.portal.Registry";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
+const DBUS: &str = "org.freedesktop.DBus";
+const DBUS_PATH: &str = "/org/freedesktop/DBus";
 const APP_ID: &str = "io.github.its30na.redactor";
 /// The one shortcut the app binds.
 const SHORTCUT_ID: &str = "scrub-clipboard";
@@ -46,6 +55,10 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a bind may take: a person may be reading GNOME's dialog.
 const BIND_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// What the user is told when the desktop drops the bound key.
+const LOST: &str =
+    "The hotkey stopped working: the desktop closed its shortcut. Set it again in Settings.";
 
 /// What a press does, without the app around it.
 pub type Press = Arc<dyn Fn() + Send + Sync>;
@@ -138,10 +151,21 @@ struct Shared {
     waiting: Mutex<HashMap<String, mpsc::Sender<Response>>>,
     /// The reading thread has ended (the connection broke): no `Response` comes any more.
     dead: AtomicBool,
-    /// The session whose `Activated` counts.
-    active: Mutex<Option<OwnedObjectPath>>,
+    /// The session whose `Activated` counts, and whether a bind on it was accepted.
+    active: Mutex<Current>,
     /// To the thread that runs the press callback: a slow press never holds up a `Response`.
     presses: OnceLock<mpsc::Sender<()>>,
+    /// What a lost hotkey does.
+    lost: OnceLock<Press>,
+}
+
+/// The session the portal is believed to hold for us.
+#[derive(Default)]
+struct Current {
+    /// The session whose `Activated` counts. `None` once it is closed or lost.
+    session: Option<OwnedObjectPath>,
+    /// The portal accepted a bind on it and nothing has undone that: losing it is told.
+    bound: bool,
 }
 
 /// A portal session and whether a bind has used it.
@@ -192,6 +216,17 @@ impl PortalHotkey {
                  interface='{SHORTCUTS}',member='Activated'"
             ),
         )?;
+        add_match(
+            &bus,
+            &format!("type='signal',sender='{PORTAL}',interface='{SESSION}',member='Closed'"),
+        )?;
+        add_match(
+            &bus,
+            &format!(
+                "type='signal',sender='{DBUS}',path='{DBUS_PATH}',interface='{DBUS}',\
+                 member='NameOwnerChanged',arg0='{PORTAL}'"
+            ),
+        )?;
         {
             let shared = shared.clone();
             std::thread::Builder::new()
@@ -209,10 +244,12 @@ impl PortalHotkey {
         })
     }
 
-    /// Hands over what a press does, tells the portal who we are and opens the first session.
-    /// Called once, before the first `bind`. A failure here is retried by the next `bind`.
-    /// Presses run one at a time, on a thread of their own.
-    pub fn start(&self, on_press: Press) {
+    /// Hands over what a press does and what a lost key does, tells the portal who we are and
+    /// opens the first session. Called once, before the first `bind`. A failure here is retried
+    /// by the next `bind`. Presses run one at a time, on a thread of their own; `on_lost` runs on
+    /// a thread of its own, once per loss of a bound key.
+    pub fn start(&self, on_press: Press, on_lost: Press) {
+        let _ = self.shared.lost.set(on_lost);
         let (tx, rx) = mpsc::channel::<()>();
         if self.shared.presses.set(tx).is_ok() {
             let _ = std::thread::Builder::new()
@@ -257,10 +294,16 @@ impl PortalHotkey {
                 &(&path, vec![(SHORTCUT_ID, shortcut)], "", options),
             )
         });
-        match response {
-            Some((0, _)) => Ok(()),
-            _ => Err(HotkeyTaken),
+        if !matches!(response, Some((0, _))) {
+            return Err(HotkeyTaken);
         }
+        // Accepted, unless the session was lost while the desktop answered.
+        let mut current = lock(&self.shared.active);
+        if current.session.as_ref() != Some(&path) {
+            return Err(HotkeyTaken);
+        }
+        current.bound = true;
+        Ok(())
     }
 
     /// Closes the session, so the bound key is free again, and opens a fresh one for the next
@@ -271,11 +314,11 @@ impl PortalHotkey {
         self.open_session(&mut session);
     }
 
-    /// The session for the next bind: the current one if no bind used it yet, else a fresh
-    /// one. `None` when the portal does not open one.
+    /// The session for the next bind: the current one if no bind used it yet and it was not
+    /// lost, else a fresh one. `None` when the portal does not open one.
     fn open_session(&self, slot: &mut Option<Session>) -> Option<OwnedObjectPath> {
         match slot {
-            Some(s) if !s.used => return Some(s.path.clone()),
+            Some(s) if !s.used && self.shared.is_current(&s.path) => return Some(s.path.clone()),
             Some(_) => self.close_session(slot),
             None => {}
         }
@@ -302,7 +345,10 @@ impl PortalHotkey {
             Value::ObjectPath(p) => OwnedObjectPath::from(p.clone()),
             _ => return None,
         };
-        *lock(&self.shared.active) = Some(path.clone());
+        *lock(&self.shared.active) = Current {
+            session: Some(path.clone()),
+            bound: false,
+        };
         *slot = Some(Session {
             path: path.clone(),
             used: false,
@@ -314,8 +360,8 @@ impl PortalHotkey {
         let Some(s) = slot.take() else {
             return;
         };
-        // From here on a press for it no longer counts.
-        *lock(&self.shared.active) = None;
+        // From here on a press for it no longer counts, and its end is no loss.
+        *lock(&self.shared.active) = Current::default();
         let _ = self
             .bus
             .call_method(Some(PORTAL), &s.path, Some(SESSION), "Close", &());
@@ -379,8 +425,12 @@ impl GlobalHotkey for PortalHotkey {
     }
 
     fn listen(&self, app: &AppHandle, on_press: Arc<dyn Fn(&AppHandle) + Send + Sync>) {
+        let lost = app.clone();
         let app = app.clone();
-        self.start(Arc::new(move || on_press(&app)));
+        self.start(
+            Arc::new(move || on_press(&app)),
+            Arc::new(move || crate::app::notify(&lost, LOST)),
+        );
     }
 }
 
@@ -397,16 +447,38 @@ impl Shared {
         waiting.insert(path.to_string(), tx);
         Some(rx)
     }
+
+    /// Whether `path` is the session still believed open.
+    fn is_current(&self, path: &OwnedObjectPath) -> bool {
+        lock(&self.active).session.as_ref() == Some(path)
+    }
+
+    /// The session is gone: no press counts any more and no session is believed bound. A bound
+    /// key is told as lost, once: the next loss is told only after another accepted bind. The
+    /// callback runs on a thread of its own, so the reading thread never waits for it.
+    fn lose(&self) {
+        let was_bound = std::mem::take(&mut *lock(&self.active)).bound;
+        if !was_bound {
+            return;
+        }
+        if let Some(on_lost) = self.lost.get() {
+            let on_lost = on_lost.clone();
+            let _ = std::thread::Builder::new()
+                .name("portal-lost".into())
+                .spawn(move || on_lost());
+        }
+    }
 }
 
 /// The reading thread: hands on every message until the connection breaks, then wakes every
-/// call still waiting (their senders are dropped) and turns new ones away.
+/// call still waiting (their senders are dropped), turns new ones away and loses the session.
 fn read_until_broken(shared: &Shared, messages: impl IntoIterator<Item = zbus::Result<Message>>) {
     for msg in messages.into_iter().map_while(Result::ok) {
         dispatch(shared, &msg);
     }
     shared.dead.store(true, Ordering::SeqCst);
     lock(&shared.waiting).clear();
+    shared.lose();
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -423,18 +495,13 @@ fn remove_match(bus: &Connection, rule: &str) -> zbus::Result<()> {
 }
 
 fn bus_call(bus: &Connection, method: &str, rule: &str) -> zbus::Result<()> {
-    bus.call_method(
-        Some("org.freedesktop.DBus"),
-        "/org/freedesktop/DBus",
-        Some("org.freedesktop.DBus"),
-        method,
-        &(rule,),
-    )
-    .map(drop)
+    bus.call_method(Some(DBUS), DBUS_PATH, Some(DBUS), method, &(rule,))
+        .map(drop)
 }
 
 /// One message read from the connection: a `Response` goes to the call waiting for it, an
-/// `Activated` of our shortcut on the current session goes to the press thread.
+/// `Activated` of our shortcut on the current session goes to the press thread, and a `Closed`
+/// of the current session or a portal that leaves the bus loses the session.
 fn dispatch(shared: &Shared, msg: &Message) {
     if msg.message_type() != Type::Signal {
         return;
@@ -461,12 +528,35 @@ fn dispatch(shared: &Shared, msg: &Message) {
                 return;
             };
             let current = lock(&shared.active)
+                .session
                 .as_ref()
                 .is_some_and(|a| a.as_str() == session.as_str());
             if id == SHORTCUT_ID && current {
                 if let Some(presses) = shared.presses.get() {
                     let _ = presses.send(());
                 }
+            }
+        }
+        (SESSION, "Closed") => {
+            let current = lock(&shared.active)
+                .session
+                .as_ref()
+                .is_some_and(|a| a.as_str() == path.as_str());
+            if current {
+                shared.lose();
+            }
+        }
+        // Only the bus itself says who owns a name.
+        (DBUS, "NameOwnerChanged")
+            if path.as_str() == DBUS_PATH
+                && header.sender().is_some_and(|s| s.as_str() == DBUS) =>
+        {
+            let Ok((name, old, _new)) = msg.body().deserialize::<(String, String, String)>() else {
+                return;
+            };
+            // The portal that held our session left the bus: its sessions went with it.
+            if name == PORTAL && !old.is_empty() {
+                shared.lose();
             }
         }
         _ => {}
@@ -518,6 +608,28 @@ mod tests {
             Err(mpsc::RecvTimeoutError::Disconnected)
         ));
         assert!(shared.wait_for("/b").is_none(), "nothing would arrive");
+    }
+
+    #[test]
+    fn a_broken_connection_tells_a_bound_key_as_lost_once() {
+        let shared = Shared::default();
+        let (tx, losses) = mpsc::channel();
+        let _ = shared.lost.set(Arc::new(move || {
+            let _ = tx.send(());
+        }));
+        *lock(&shared.active) = Current {
+            session: OwnedObjectPath::try_from("/s").ok(),
+            bound: true,
+        };
+        let broken = std::iter::once(Err(zbus::Error::Failure("gone".into())));
+        read_until_broken(&shared, broken);
+        assert!(losses.recv_timeout(Duration::from_secs(5)).is_ok(), "told");
+        assert!(lock(&shared.active).session.is_none(), "no session counts");
+        shared.lose();
+        assert!(
+            losses.recv_timeout(Duration::from_millis(300)).is_err(),
+            "told once"
+        );
     }
 
     #[test]
