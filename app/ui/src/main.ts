@@ -12,7 +12,7 @@ import App from './App.svelte';
 async function boot(): Promise<void> {
   // `--mode mock` (npm run dev, the Playwright build) runs against the fixture backend.
   // The condition is static, so production bundles contain no mock code at all.
-  // Query: ?clipboard=demo|harsh|large|huge|empty  ?session=empty  ?latency=ms  ?firstrun  ?os=macos|linux  ?hotkey=portal|command  ?focus=1 (the last two with os)  ?scrub (started with --scrub-clipboard)  ?appinfo=slow|fail  ?exe=path (with os)  ?hotkeyrefused  ?settingsbad  ?savefail
+  // Query: ?clipboard=demo|harsh|large|huge|empty  ?session=empty  ?latency=ms  ?firstrun  ?os=macos|linux  ?hotkey=portal|command  ?focus=1 (the last two with os)  ?scrub (started with --scrub-clipboard)  ?appinfo=slow|fail  ?exe=path (with os)  ?hotkeyrefused  ?settingsbad  ?savefail  ?nolock (with os)
   if (import.meta.env.MODE === 'mock' && !isTauri()) {
     const { installMockBackend } = await import('./lib/mock/ipc');
     const q = new URLSearchParams(location.search);
@@ -34,6 +34,7 @@ async function boot(): Promise<void> {
       hotkeyRefused: q.has('hotkeyrefused'),
       settingsUnreadable: q.has('settingsbad'),
       saveFails: q.has('savefail'),
+      noLockSignal: q.has('nolock'),
     });
   }
   const target = document.getElementById('app');

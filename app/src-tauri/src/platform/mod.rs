@@ -45,6 +45,13 @@ pub trait LockWatcher: Send + Sync {
     /// Starts watching for session lock and sleep. `on_event` runs on the watcher's own
     /// thread. Called once per process.
     fn spawn(&self, on_event: Box<dyn Fn(WipeReason) + Send + Sync>);
+
+    /// Whether the watcher has anything that reports a screen lock (`app_info.lockWatched`);
+    /// `None` while that is not known after waiting up to `wait`. Where the OS itself reports
+    /// the lock (Windows, macOS) it is always true.
+    fn listens(&self, _wait: std::time::Duration) -> Option<bool> {
+        Some(true)
+    }
 }
 
 /// Webview settings the Tauri builder does not expose.

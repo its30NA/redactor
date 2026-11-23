@@ -246,11 +246,20 @@ pub struct AppInfo {
     /// it, the desktop refused it), the desktop dropped it, or a new one was refused and none is
     /// held. Changes come as the `app-status` event.
     hotkey_active: bool,
+    /// Something reports a screen lock here: false where no lock source could be subscribed at
+    /// all (Linux: no logind session for this process, no screen saver on the session bus), so a
+    /// lock does not wipe and suspend and idle still do. Left out while that is not known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lock_watched: Option<bool>,
     /// The program a desktop shortcut runs with `--scrub-clipboard`; left out when its path is
     /// not Unicode.
     #[serde(skip_serializing_if = "Option::is_none")]
     executable: Option<String>,
 }
+
+/// How long `app_info` waits at most for the lock watcher to know whether it has a lock source
+/// (it asks the buses right at start; a bus that does not answer leaves the field out).
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// The page asks for this once it listens for the shell's events, so it also hands over a scrub
 /// result and the notices that came before, and runs a `--scrub-clipboard` held for the page.
@@ -276,6 +285,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> 
             hotkey: st.platform.hotkey.mode(),
             clipboard_needs_focus: st.platform.clipboard.needs_focus(),
             hotkey_active: st.hotkey_active.load(Ordering::SeqCst),
+            lock_watched: st.platform.lock.listens(LOCK_WAIT),
             executable: crate::cli::this_program(),
         }
     })

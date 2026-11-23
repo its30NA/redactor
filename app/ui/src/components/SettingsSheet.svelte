@@ -17,6 +17,7 @@
     hotkeyMode,
     hotkeyNote,
     lockDesc,
+    lockNote,
     lockTitle,
     scrubCommand,
     scrubRowDesc,
@@ -41,6 +42,7 @@
   const howHotkey = $derived(hotkeyNote(info));
   const needsFocus = $derived(focusNote(info));
   const inactive = $derived(hotkeyInactiveNote(info));
+  const noLock = $derived(lockNote(info));
   const command = $derived(scrubCommand(info));
 
   const themeOptions: SegmentOption<ThemeSetting>[] = [
@@ -227,6 +229,7 @@
         onchange={(wipeOnLock) => update({ wipeOnLock })}
       />
     </div>
+    {#if noLock}<p class="row-desc note" data-testid="lock-note">{noLock}</p>{/if}
   </section>
 
   <section class="group">

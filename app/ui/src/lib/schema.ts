@@ -221,6 +221,7 @@ export const appInfo = object<AppInfo>({
   hotkey: optional(oneOf<HotkeyMode>('keys', 'portal', 'command')),
   clipboardNeedsFocus: optional(bool),
   hotkeyActive: optional(bool),
+  lockWatched: optional(bool),
   executable: optional(str),
 });
 

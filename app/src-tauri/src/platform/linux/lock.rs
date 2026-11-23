@@ -2,16 +2,21 @@
 //!
 //! Two threads, each on its own D-Bus connection. On the system bus, logind:
 //! `PrepareForSleep(true)` on the manager, and `Lock` and a `LockedHint` change on this
-//! process's own session. On the session bus, a screen saver's `ActiveChanged(true)`. A bus that
-//! cannot be reached at the start ends its thread quietly; the app then wipes on idle and from
-//! the tray only. A bus that was watched and goes away (its connection breaks, the bus restarts)
-//! is subscribed to again, after a pause that grows from [`RETRY`] to [`RETRY_MAX`] while it
-//! stays away, for as long as the app runs. Signals carry no content and nothing here logs.
+//! process's own session. On the session bus, a screen saver's `ActiveChanged(true)`. Only what
+//! sends these is heard: a locker started on its own (swaylock, i3lock) that tells neither logind
+//! nor a screen saver does not wipe. A bus that cannot be reached at the start ends its thread
+//! quietly. Whether either bus has a lock source at all (this process's logind session, a screen
+//! saver that owns its name) is known shortly after the start ([`LockWatcher::listens`]);
+//! without one, a screen lock does not wipe here, and suspend, idle and the tray still do. A bus
+//! that was watched and goes away (its connection breaks, the bus restarts) is subscribed to
+//! again, after a pause that grows from [`RETRY`] to [`RETRY_MAX`] while it stays away, for as
+//! long as the app runs. Signals carry no content and nothing here logs.
 //! (Named `lock.rs`; `session.rs` is the desktop session type.)
 
+use std::cell::Cell;
 use std::collections::HashMap;
-use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use zbus::blocking::{connection, Connection, MessageIterator};
 use zbus::message::Type;
@@ -57,19 +62,60 @@ const RETRY_MAX: Duration = Duration::from_secs(30);
 type Callback = Arc<dyn Fn(WipeReason) + Send + Sync>;
 
 /// Watches logind and the screen savers.
-pub struct LogindLock;
+#[derive(Default)]
+pub struct LogindLock {
+    found: Mutex<Found>,
+}
 
 impl LockWatcher for LogindLock {
     fn spawn(&self, on_event: Box<dyn Fn(WipeReason) + Send + Sync>) {
-        drop(Self::watch(on_event));
+        let buses = Self::watch(on_event);
+        self.found.lock().unwrap_or_else(|e| e.into_inner()).buses = Some(buses);
+    }
+
+    fn listens(&self, wait: Duration) -> Option<bool> {
+        self.found
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .within(wait)
+    }
+}
+
+/// Whether a lock source was found, from each bus's first try.
+#[derive(Default)]
+struct Found {
+    /// One message per bus: whether it has a lock source. Its sender ends with that bus's try.
+    buses: Option<mpsc::Receiver<bool>>,
+    /// Kept once known.
+    verdict: Option<bool>,
+}
+
+impl Found {
+    /// True as soon as one bus has a lock source; false once every bus said it has none (or its
+    /// thread is gone); `None` while that is not known after `wait`, or before the watch starts.
+    fn within(&mut self, wait: Duration) -> Option<bool> {
+        if self.verdict.is_none() {
+            let buses = self.buses.as_ref()?;
+            let deadline = Instant::now() + wait;
+            self.verdict = loop {
+                match buses.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(true) => break Some(true),
+                    Ok(false) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break Some(false),
+                    Err(mpsc::RecvTimeoutError::Timeout) => return None,
+                }
+            };
+        }
+        self.verdict
     }
 }
 
 impl LogindLock {
     /// Starts watching, as `spawn` does. The receiver gets one message per bus once that bus is
-    /// watched or given up on at the first try, so a test can emit signals only after both are
-    /// subscribed. Both bus addresses and `XDG_SESSION_ID` are read before this returns.
-    pub fn watch(on_event: Box<dyn Fn(WipeReason) + Send + Sync>) -> mpsc::Receiver<()> {
+    /// watched or given up on at the first try (whether it has a lock source), so a test can
+    /// emit signals only after both are subscribed. Both bus addresses and `XDG_SESSION_ID` are
+    /// read before this returns.
+    pub fn watch(on_event: Box<dyn Fn(WipeReason) + Send + Sync>) -> mpsc::Receiver<bool> {
         let on_event: Callback = Arc::from(on_event);
         let (ready, rx) = mpsc::channel();
         let system = Address::system().ok();
@@ -81,18 +127,22 @@ impl LogindLock {
                 .name("lock-logind".into())
                 .spawn(move || {
                     let Some(system) = system else {
-                        let _ = ready.send(());
+                        let _ = ready.send(false);
                         return;
                     };
+                    // Lock signals come only for this process's own session.
+                    let found = &Cell::new(false);
                     keep_watching(
                         || {
                             let (messages, own) = watch_logind(system.clone(), session_id.clone())?;
+                            found.set(own.is_some());
                             Ok(messages
                                 .map_while(Result::ok)
                                 .filter_map(move |msg| logind_reason(&msg, own.as_ref())))
                         },
+                        // Moves the sender, so it ends with the first try.
                         move || {
-                            let _ = ready.send(());
+                            let _ = ready.send(found.get());
                         },
                         |r| on_event(r),
                         pause,
@@ -103,17 +153,20 @@ impl LogindLock {
             .name("lock-screensaver".into())
             .spawn(move || {
                 let Some(session) = session else {
-                    let _ = ready.send(());
+                    let _ = ready.send(false);
                     return;
                 };
+                let found = &Cell::new(false);
                 keep_watching(
                     || {
-                        Ok(watch_screen_savers(session.clone())?
+                        let (messages, any) = watch_screen_savers(session.clone())?;
+                        found.set(any);
+                        Ok(messages
                             .map_while(Result::ok)
                             .filter_map(|msg| screen_saver_reason(&msg)))
                     },
                     move || {
-                        let _ = ready.send(());
+                        let _ = ready.send(found.get());
                     },
                     |r| on_event(r),
                     pause,
@@ -237,8 +290,9 @@ fn watch_logind(
     Ok((messages, own))
 }
 
-/// Subscribes to the screen savers' `ActiveChanged`.
-fn watch_screen_savers(address: Address) -> zbus::Result<MessageIterator> {
+/// Subscribes to the screen savers' `ActiveChanged`, and says whether any screen saver owns its
+/// name on the bus now (each one's name is its interface's).
+fn watch_screen_savers(address: Address) -> zbus::Result<(MessageIterator, bool)> {
     let conn = connect(address)?;
     let messages = MessageIterator::from(&conn);
     for iface in SCREEN_SAVERS {
@@ -247,7 +301,22 @@ fn watch_screen_savers(address: Address) -> zbus::Result<MessageIterator> {
             &format!("type='signal',interface='{iface}',member='ActiveChanged'"),
         )?;
     }
-    Ok(messages)
+    let any = SCREEN_SAVERS.iter().any(|name| has_owner(&conn, name));
+    Ok((messages, any))
+}
+
+/// True when a program owns `name` on the bus.
+fn has_owner(conn: &Connection, name: &str) -> bool {
+    conn.call_method(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        Some("org.freedesktop.DBus"),
+        "NameHasOwner",
+        &(name,),
+    )
+    .ok()
+    .and_then(|reply| reply.body().deserialize::<bool>().ok())
+    .unwrap_or(false)
 }
 
 /// The interface and member of a signal, `None` for any other message.
@@ -365,6 +434,54 @@ mod tests {
         assert_eq!(subscribed, 1, "one try");
         assert_eq!(ready, 1, "ready all the same");
         assert!(pauses.is_empty(), "no retry");
+    }
+
+    /// `Found` over a channel the test feeds as the two buses would.
+    fn found() -> (Found, mpsc::Sender<bool>, mpsc::Sender<bool>) {
+        let (logind, rx) = mpsc::channel();
+        let screen_saver = logind.clone();
+        let f = Found {
+            buses: Some(rx),
+            verdict: None,
+        };
+        (f, logind, screen_saver)
+    }
+
+    const NOW: Duration = Duration::from_millis(20);
+
+    #[test]
+    fn one_bus_with_a_lock_source_is_enough() {
+        let (mut f, logind, screen_saver) = found();
+        logind.send(false).unwrap();
+        screen_saver.send(true).unwrap();
+        assert_eq!(f.within(NOW), Some(true));
+        drop((logind, screen_saver));
+        assert_eq!(f.within(NOW), Some(true), "kept");
+    }
+
+    #[test]
+    fn no_lock_source_on_either_bus_is_known_once_both_have_spoken() {
+        let (mut f, logind, screen_saver) = found();
+        logind.send(false).unwrap();
+        drop(logind);
+        assert_eq!(f.within(NOW), None, "the session bus has not answered yet");
+        screen_saver.send(false).unwrap();
+        drop(screen_saver);
+        assert_eq!(f.within(NOW), Some(false));
+    }
+
+    #[test]
+    fn a_bus_thread_that_never_ran_counts_as_none() {
+        let (mut f, logind, screen_saver) = found();
+        drop(logind);
+        drop(screen_saver);
+        assert_eq!(f.within(NOW), Some(false));
+    }
+
+    #[test]
+    fn before_the_watch_starts_nothing_is_known() {
+        assert_eq!(Found::default().within(NOW), None);
+        assert_eq!(LogindLock::default().listens(NOW), None);
     }
 
     #[test]

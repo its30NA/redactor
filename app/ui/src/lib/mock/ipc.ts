@@ -57,6 +57,8 @@ export interface MockOptions {
   appInfo?: 'slow' | 'fail';
   /** With `os`: the program app_info names; unset is `MOCK_EXECUTABLE`. */
   executable?: string;
+  /** With `os`: nothing on this desktop reports a screen lock (app_info.lockWatched false). */
+  noLockSignal?: boolean;
   /** The hotkey could not be registered at start: app_info says so, with a notice at the first app_info. */
   hotkeyRefused?: boolean;
   /** The settings file could not be used at start (kept as settings.json.bad): a notice at the first app_info. */
@@ -430,6 +432,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
                 ...(opts.clipboardNeedsFocus ? { clipboardNeedsFocus: true } : {}),
                 executable: opts.executable ?? MOCK_EXECUTABLE,
                 hotkeyActive: backend.hotkeyActive,
+                lockWatched: !opts.noLockSignal,
               }
             : { ...fixture('app-info'), hotkeyActive: backend.hotkeyActive };
         case COMMANDS.scrubClipboard:

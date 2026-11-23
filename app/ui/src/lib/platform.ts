@@ -15,9 +15,15 @@ export const lockDesc = (os: KeyOs): string =>
   pick(
     os,
     'Win+L or the screen saver lock.',
-    "The desktop's screen lock, or suspend.",
+    'Lock signals from logind or a screen saver, and suspend. Lockers that send none go unseen.',
     'The lock screen, display sleep, or sleep.',
   );
+
+/** Under the lock row where nothing reports a screen lock (app_info.lockWatched false), or null. */
+export const lockNote = (info: Pick<AppInfo, 'lockWatched'> | null): string | null =>
+  info?.lockWatched === false
+    ? 'No lock signal found on this desktop: a screen lock does not wipe. Suspend and the idle timer still do.'
+    : null;
 
 export const lockShort = (os: KeyOs): string =>
   pick(os, 'when Windows locks', 'when the screen locks', 'when the Mac locks');

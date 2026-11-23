@@ -8,6 +8,7 @@ import {
   hotkeyMode,
   hotkeyNote,
   lockDesc,
+  lockNote,
   lockShort,
   lockTitle,
   scrubRowDesc,
@@ -42,7 +43,7 @@ describe('platform texts', () => {
       'lockDesc',
       lockDesc,
       'Win+L or the screen saver lock.',
-      "The desktop's screen lock, or suspend.",
+      'Lock signals from logind or a screen saver, and suspend. Lockers that send none go unseen.',
       'The lock screen, display sleep, or sleep.',
     ],
     ['lockShort', lockShort, 'when Windows locks', 'when the screen locks', 'when the Mac locks'],
@@ -136,6 +137,18 @@ describe('hotkeyNote', () => {
     expect(hotkeyNote(info({ hotkey: 'command' }))).toBe(
       'This desktop does not let apps set a hotkey. Add a shortcut in its keyboard settings that runs:',
     ));
+});
+
+describe('lockNote', () => {
+  test('no lock source at all: a screen lock does not wipe', () =>
+    expect(lockNote(info({ lockWatched: false }))).toBe(
+      'No lock signal found on this desktop: a screen lock does not wipe. Suspend and the idle timer still do.',
+    ));
+  test('a lock source, a missing field and no app_info yet: no note', () => {
+    expect(lockNote(info({ lockWatched: true }))).toBeNull();
+    expect(lockNote(info())).toBeNull();
+    expect(lockNote(null)).toBeNull();
+  });
 });
 
 describe('hotkeyInactiveNote', () => {

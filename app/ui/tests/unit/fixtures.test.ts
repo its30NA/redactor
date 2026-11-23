@@ -59,6 +59,12 @@ describe('fixtures', () => {
     expect(schema.appStatus({ hotkeyActive: false, notice: 'other' }, 's')).not.toEqual([]);
   });
 
+  test('app_info: whether a lock is heard may be absent (not known in time)', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, lockWatched: false }, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, lockWatched: 0 }, 'i')).toEqual(['i.lockWatched: expected boolean']);
+  });
+
   test('app_info: the program path may be absent (a path that is not Unicode)', () => {
     const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
     expect(schema.appInfo({ ...base, executable: '/opt/redactor/Redactor' }, 'i')).toEqual([]);

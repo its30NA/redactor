@@ -178,6 +178,12 @@ export interface AppInfo {
    */
   hotkeyActive?: boolean;
   /**
+   * Something reports a screen lock here. False where no lock source could be subscribed at all
+   * (Linux: no logind session, no screen saver on the session bus): a lock does not wipe, suspend
+   * and the idle timer still do. Absent: not known in time.
+   */
+  lockWatched?: boolean;
+  /**
    * The program a desktop shortcut runs with `--scrub-clipboard`: this executable, or the
    * AppImage file. Absent where its path is not Unicode.
    */

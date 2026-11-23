@@ -58,7 +58,7 @@ fn x11_platform() -> Result<Platform, Unavailable> {
         name: "linux",
         os: Os::Linux,
         clipboard: Arc::new(clipboard),
-        lock: Box::new(lock::LogindLock),
+        lock: Box::new(lock::LogindLock::default()),
         webview: Box::new(webview::WebKitHardening),
         hotkey: Box::new(PluginHotkey),
         // Asked once, at start-up: a tray host that appears later is picked up at the next start.
@@ -97,7 +97,7 @@ fn wayland_platform() -> Result<Platform, Unavailable> {
         name: "linux",
         os: Os::Linux,
         clipboard,
-        lock: Box::new(lock::LogindLock),
+        lock: Box::new(lock::LogindLock::default()),
         webview: Box::new(webview::WebKitHardening),
         hotkey: Box::new(ProbedHotkey::new(wayland_hotkey)),
         // Asked once, at start-up: a tray host that appears later is picked up at the next start.

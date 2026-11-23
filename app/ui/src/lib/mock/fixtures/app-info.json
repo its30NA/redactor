@@ -6,5 +6,6 @@
   "tray": true,
   "shield": true,
   "hotkeyActive": true,
+  "lockWatched": true,
   "executable": "C:\\Program Files\\Redactor\\Redactor.exe"
 }

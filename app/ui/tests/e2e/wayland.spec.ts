@@ -17,6 +17,9 @@ const SCRUB_ROW = 'From any app, without opening the window.';
 const SCRUB_ROW_FOCUS = 'From any app. On this desktop the window comes to the front first.';
 const FIRST_RUN_HOTKEY = 'Cleans the clipboard in place, without opening this window.';
 const FIRST_RUN_HOTKEY_FOCUS = 'Brings this window forward, then cleans the clipboard.';
+const LOCK_DESC = 'Lock signals from logind or a screen saver, and suspend. Lockers that send none go unseen.';
+const LOCK_NOTE =
+  'No lock signal found on this desktop: a screen lock does not wipe. Suspend and the idle timer still do.';
 
 /** Open the app as that desktop, open Settings and wait until app_info has answered (the shield row turns off). */
 async function openSettings(page: Page, query: string) {
@@ -74,6 +77,18 @@ test.describe('Wayland', () => {
     await expect(sheet.getByTestId('hotkey-note')).toHaveCount(0);
     await expect(sheet.getByTestId('focus-note')).toHaveCount(0);
     await expect(sheet.getByTestId('copy-command')).toHaveCount(0);
+  });
+
+  test('the_lock_row_names_what_is_heard_and_notes_a_desktop_with_no_lock_signal', async ({ page, problems: _ }) => {
+    const sheet = await openSettings(page, '?os=linux&nolock');
+    await expect(sheet).toContainText(LOCK_DESC);
+    await expect(sheet.getByTestId('lock-note')).toHaveText(LOCK_NOTE);
+    // The wipe on suspend still works: the switch stays usable.
+    await expect(sheet.getByRole('switch', { name: 'Wipe when the screen locks' })).toBeEnabled();
+    // Where logind or a screen saver is there, no note.
+    const heard = await openSettings(page, '?os=linux');
+    await expect(heard).toContainText(LOCK_DESC);
+    await expect(heard.getByTestId('lock-note')).toHaveCount(0);
   });
 
   test('the_first_run_card_shows_no_keycaps_where_the_desktop_runs_a_command', async ({ page, problems: _ }) => {

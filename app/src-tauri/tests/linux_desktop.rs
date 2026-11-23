@@ -210,7 +210,8 @@ fn no_bus_is_not_an_error() {
     for (var, _) in &saved {
         std::env::set_var(var, &nowhere);
     }
-    LogindLock.spawn(Box::new(move |reason| {
+    let watcher = LogindLock::default();
+    watcher.spawn(Box::new(move |reason| {
         let _ = tx.send(reason);
     }));
     for (var, value) in saved {
@@ -223,6 +224,28 @@ fn no_bus_is_not_an_error() {
         rx.recv_timeout(Duration::from_millis(500)).is_err(),
         "no bus, no event"
     );
+    assert_eq!(
+        watcher.listens(WAIT),
+        Some(false),
+        "no bus, no lock source: Settings says a screen lock does not wipe"
+    );
+}
+
+/// A screen saver that owns its name on the session bus is a lock source, whatever logind has.
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn a_screen_saver_on_the_session_bus_is_a_lock_source() {
+    private_buses();
+    let saver = Connection::session().expect("connect to the private session bus");
+    saver
+        .request_name("org.gnome.ScreenSaver")
+        .expect("own org.gnome.ScreenSaver");
+    let watcher = LogindLock::default();
+    watcher.spawn(Box::new(|_| {}));
+    assert_eq!(watcher.listens(WAIT), Some(true));
+    saver
+        .release_name("org.gnome.ScreenSaver")
+        .expect("release org.gnome.ScreenSaver");
 }
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
