@@ -9,7 +9,7 @@
   import Segmented, { type SegmentOption } from './Segmented.svelte';
   import Sheet from './Sheet.svelte';
   import Toggle from './Toggle.svelte';
-  import { hotkeyFrom, hotkeyProblem, keyOsFrom, modifiersOf } from '../lib/keys';
+  import { hotkeyCaps, hotkeyFrom, hotkeyProblem, keyOsFrom, modifiersOf } from '../lib/keys';
   import { copyText } from '../lib/api';
   import {
     focusNote,
@@ -110,7 +110,7 @@
     }
     const problem = hotkeyProblem(combo, keyOs);
     if (problem) {
-      hotkeyError = `${combo}: ${problem}`;
+      hotkeyError = `${hotkeyCaps(combo, keyOs).join('+')}: ${problem}`;
       pending = null;
       return;
     }
@@ -134,7 +134,8 @@
     }
   }
 
-  const shownKeys = $derived((capturing ? (pending ?? '') : settings.value.hotkey).split('+').filter(Boolean));
+  // Shown with this OS's key names (Control, Option on a Mac); stored as the shell names them.
+  const shownKeys = $derived(hotkeyCaps(capturing ? (pending ?? '') : settings.value.hotkey, keyOs));
 </script>
 
 <Sheet bind:open title="Settings" description={settingsNote(keyOs)} width={460}>
@@ -252,7 +253,7 @@
           }}
           aria-label={capturing
             ? 'Press the new shortcut, or Esc to cancel'
-            : `Hotkey ${settings.value.hotkey}${inactive ? ', not active' : ''}. Change`}
+            : `Hotkey ${hotkeyCaps(settings.value.hotkey, keyOs).join('+')}${inactive ? ', not active' : ''}. Change`}
           data-testid="hotkey"
         >
           <Keyboard size={14} strokeWidth={1.9} aria-hidden="true" />

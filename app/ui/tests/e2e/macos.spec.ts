@@ -125,6 +125,26 @@ test.describe('macOS', () => {
     await expect.poll(async () => (await lastSettings(page))?.hotkey).toBe('Ctrl+Alt+K');
   });
 
+  test('the_hotkey_says_control_and_option_and_stays_stored_as_before', async ({ page, problems: _ }) => {
+    await openApp(page, '?os=macos&firstrun');
+    const card = page.getByTestId('first-run');
+    await expect(card.locator('.kbd')).toHaveAttribute('aria-label', 'Control+Option+R');
+    await expect(card.locator('kbd')).toHaveText(['Control', 'Option', 'R']);
+    await card.getByRole('button', { name: 'Get started' }).click();
+    await page.getByTestId('settings-open').click();
+    const hotkey = page.getByTestId('hotkey');
+    await expect(hotkey).toHaveAttribute('aria-label', 'Hotkey Control+Option+R. Change');
+    await expect(hotkey.locator('kbd')).toHaveText(['Control', 'Option', 'R']);
+    await hotkey.click();
+    await page.keyboard.press('Control+Alt+Meta+K');
+    await expect.poll(async () => (await lastSettings(page))?.hotkey).toBe('Ctrl+Alt+Cmd+K');
+    await expect(hotkey.locator('kbd')).toHaveText(['Control', 'Option', 'Command', 'K']);
+    // A refused key names the keys the Mac way too.
+    await hotkey.click();
+    await page.keyboard.press('Shift+Meta+3');
+    await expect(page.getByRole('alert')).toHaveText('Shift+Command+3: macOS keeps this one.');
+  });
+
   for (const size of SIZES) {
     test(`macos_empty_dark_${size.width}`, async ({ page, problems: _ }) => {
       await page.setViewportSize(size);

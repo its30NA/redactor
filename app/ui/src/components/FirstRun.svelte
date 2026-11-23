@@ -11,7 +11,7 @@
   import Dialog from './Dialog.svelte';
   import Kbd from './Kbd.svelte';
   import Mark from './Mark.svelte';
-  import type { KeyOs } from '../lib/keys';
+  import { hotkeyCaps, type KeyOs } from '../lib/keys';
   import type { AppInfo } from '../lib/types';
   import { firstRunHotkeyDesc, hotkeyCommandLine, thisComputer } from '../lib/platform';
   import { settings } from '../lib/settings.svelte';
@@ -58,7 +58,7 @@
             <p class="title">Scrub from anywhere</p>
             <p class="desc" data-testid="hotkey-command-line">{commandLine}</p>
           {:else}
-            <p class="title">Scrub from anywhere <Kbd keys={settings.value.hotkey.split('+')} /></p>
+            <p class="title">Scrub from anywhere <Kbd keys={hotkeyCaps(settings.value.hotkey, os)} /></p>
             <p class="desc" data-testid="hotkey-desc">{firstRunHotkeyDesc(info)}</p>
           {/if}
         </div>

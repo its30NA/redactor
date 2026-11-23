@@ -121,6 +121,19 @@ const NAMED_KEYS = ['Insert', 'Delete', 'Home', 'End', 'PageUp', 'PageDown', 'Ba
 /** How the meta key is written in a hotkey: Cmd on macOS, Super on Linux; Windows keeps it. */
 const META: Record<KeyOs, string | null> = { macos: 'Cmd', linux: 'Super', windows: null };
 
+/** The Mac's own names for the modifiers a hotkey is stored with (Super: a Linux name copied over). */
+const MAC_NAMES: Record<string, string> = { Ctrl: 'Control', Alt: 'Option', Cmd: 'Command', Super: 'Command' };
+
+/**
+ * A hotkey's keys as this OS names them, for keycaps, labels and messages only: on macOS
+ * Control, Option and Command. Settings and the shell keep the stored names ("Ctrl+Alt+R").
+ */
+export const hotkeyCaps = (combo: string, os: KeyOs): string[] =>
+  combo
+    .split('+')
+    .filter(Boolean)
+    .map((k) => (os === 'macos' ? (MAC_NAMES[k] ?? k) : k));
+
 /** The modifiers held, in the shell's canonical order (Ctrl+Shift+Alt+Cmd/Super). */
 export function modifiersOf(e: KeyLike, os: KeyOs): string[] {
   const meta = META[os];

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import cases from '../../../src-tauri/tests/fixtures/hotkey_cases.json';
 import {
   actionFor,
+  hotkeyCaps,
   hotkeyFrom,
   hotkeyProblem,
   keyOsFrom,
@@ -153,6 +154,18 @@ describe('per OS', () => {
     expect(hotkeyFrom(key('Shift+r', { metaKey: true }), 'linux')).toBe('Shift+Super+R');
     // On Windows the Windows key is the system's: it is left out, as before.
     expect(hotkeyFrom(key('Ctrl+Alt+r', { metaKey: true }), 'windows')).toBe('Ctrl+Alt+R');
+  });
+
+  test('a hotkey is shown with the Mac key names on macOS; what is stored stays as it is', () => {
+    expect(hotkeyCaps('Ctrl+Alt+R', 'macos')).toEqual(['Control', 'Option', 'R']);
+    expect(hotkeyCaps('Ctrl+Shift+Cmd+K', 'macos')).toEqual(['Control', 'Shift', 'Command', 'K']);
+    // A Linux name in settings copied over: the same key on a Mac.
+    expect(hotkeyCaps('Alt+Super+F5', 'macos')).toEqual(['Option', 'Command', 'F5']);
+    // Modifiers held while the new key is being pressed.
+    expect(hotkeyCaps('Ctrl+Alt', 'macos')).toEqual(['Control', 'Option']);
+    expect(hotkeyCaps('', 'macos')).toEqual([]);
+    expect(hotkeyCaps('Ctrl+Alt+R', 'windows')).toEqual(['Ctrl', 'Alt', 'R']);
+    expect(hotkeyCaps('Shift+Super+Delete', 'linux')).toEqual(['Shift', 'Super', 'Delete']);
   });
 
   test('an unknown platform keeps the Windows rules', () => {
