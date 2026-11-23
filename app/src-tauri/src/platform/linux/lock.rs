@@ -3,12 +3,15 @@
 //! Two threads, each on its own D-Bus connection. On the system bus, logind:
 //! `PrepareForSleep(true)` on the manager, and `Lock` and a `LockedHint` change on this
 //! process's own session. On the session bus, a screen saver's `ActiveChanged(true)`. A bus that
-//! cannot be reached ends its thread quietly; the app then wipes on idle and from the tray only.
-//! Signals carry no content and nothing here logs.
+//! cannot be reached at the start ends its thread quietly; the app then wipes on idle and from
+//! the tray only. A bus that was watched and goes away (its connection breaks, the bus restarts)
+//! is subscribed to again, after a pause that grows from [`RETRY`] to [`RETRY_MAX`] while it
+//! stays away, for as long as the app runs. Signals carry no content and nothing here logs.
 //! (Named `lock.rs`; `session.rs` is the desktop session type.)
 
 use std::collections::HashMap;
 use std::sync::{mpsc, Arc};
+use std::time::Duration;
 
 use zbus::blocking::{connection, Connection, MessageIterator};
 use zbus::message::Type;
@@ -46,6 +49,11 @@ pub fn reason(interface: &str, member: &str, flag: Option<bool>) -> Option<WipeR
     }
 }
 
+/// The first pause before a watched bus that went away is subscribed to again.
+const RETRY: Duration = Duration::from_secs(1);
+/// The longest pause between two tries while that bus stays away.
+const RETRY_MAX: Duration = Duration::from_secs(30);
+
 type Callback = Arc<dyn Fn(WipeReason) + Send + Sync>;
 
 /// Watches logind and the screen savers.
@@ -59,8 +67,8 @@ impl LockWatcher for LogindLock {
 
 impl LogindLock {
     /// Starts watching, as `spawn` does. The receiver gets one message per bus once that bus is
-    /// watched or given up on, so a test can emit signals only after both are subscribed.
-    /// Both bus addresses and `XDG_SESSION_ID` are read before this returns.
+    /// watched or given up on at the first try, so a test can emit signals only after both are
+    /// subscribed. Both bus addresses and `XDG_SESSION_ID` are read before this returns.
     pub fn watch(on_event: Box<dyn Fn(WipeReason) + Send + Sync>) -> mpsc::Receiver<()> {
         let on_event: Callback = Arc::from(on_event);
         let (ready, rx) = mpsc::channel();
@@ -72,36 +80,85 @@ impl LogindLock {
             let _ = std::thread::Builder::new()
                 .name("lock-logind".into())
                 .spawn(move || {
-                    let watching = system.and_then(|a| watch_logind(a, session_id).ok());
-                    let _ = ready.send(());
-                    drop(ready);
-                    let Some((messages, own)) = watching else {
+                    let Some(system) = system else {
+                        let _ = ready.send(());
                         return;
                     };
-                    for msg in messages.map_while(Result::ok) {
-                        if let Some(r) = logind_reason(&msg, own.as_ref()) {
-                            on_event(r);
-                        }
-                    }
+                    keep_watching(
+                        || {
+                            let (messages, own) = watch_logind(system.clone(), session_id.clone())?;
+                            Ok(messages
+                                .map_while(Result::ok)
+                                .filter_map(move |msg| logind_reason(&msg, own.as_ref())))
+                        },
+                        move || {
+                            let _ = ready.send(());
+                        },
+                        |r| on_event(r),
+                        pause,
+                    );
                 });
         }
         let _ = std::thread::Builder::new()
             .name("lock-screensaver".into())
             .spawn(move || {
-                let watching = session.and_then(|a| watch_screen_savers(a).ok());
-                let _ = ready.send(());
-                drop(ready);
-                let Some(messages) = watching else {
+                let Some(session) = session else {
+                    let _ = ready.send(());
                     return;
                 };
-                for msg in messages.map_while(Result::ok) {
-                    if let Some(r) = screen_saver_reason(&msg) {
-                        on_event(r);
-                    }
-                }
+                keep_watching(
+                    || {
+                        Ok(watch_screen_savers(session.clone())?
+                            .map_while(Result::ok)
+                            .filter_map(|msg| screen_saver_reason(&msg)))
+                    },
+                    move || {
+                        let _ = ready.send(());
+                    },
+                    |r| on_event(r),
+                    pause,
+                );
             });
         rx
     }
+}
+
+/// Watches one bus for as long as the app runs: `subscribe` connects and subscribes, each event
+/// of its stream goes to `on_event`, and when the stream ends (the connection broke, the bus went
+/// away) it subscribes again. `ready` runs once, after the first try; a first try that fails
+/// gives up (there is no such bus here). Before each new try it waits through `pause`: [`RETRY`]
+/// after a stream that worked, then twice as long after each try that fails, up to
+/// [`RETRY_MAX`]. `pause` returning `false` stops the watch (the tests).
+fn keep_watching<E, I: Iterator<Item = E>>(
+    mut subscribe: impl FnMut() -> zbus::Result<I>,
+    ready: impl FnOnce(),
+    mut on_event: impl FnMut(E),
+    mut pause: impl FnMut(Duration) -> bool,
+) {
+    let first = subscribe();
+    ready();
+    let Ok(mut events) = first else {
+        return;
+    };
+    loop {
+        events.for_each(&mut on_event);
+        let mut wait = RETRY;
+        events = loop {
+            if !pause(wait) {
+                return;
+            }
+            match subscribe() {
+                Ok(events) => break events,
+                Err(_) => wait = (wait * 2).min(RETRY_MAX),
+            }
+        };
+    }
+}
+
+/// The pause between two tries in the app: a sleep, never stopping.
+fn pause(wait: Duration) -> bool {
+    std::thread::sleep(wait);
+    true
 }
 
 fn connect(address: Address) -> zbus::Result<Connection> {
@@ -240,7 +297,75 @@ fn screen_saver_reason(msg: &Message) -> Option<WipeReason> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
+
+    /// `keep_watching` with scripted subscriptions (`Ok` with the events it delivers before its
+    /// stream ends, or `Err`), stopped at the pause after the last one. Returns the events in
+    /// order, how many times it subscribed, how often ready was sent, and each pause.
+    fn run(script: Vec<zbus::Result<Vec<u32>>>) -> (Vec<u32>, usize, usize, Vec<Duration>) {
+        let script = RefCell::new(script.into_iter());
+        let subscribed = RefCell::new(0);
+        let mut events = Vec::new();
+        let mut ready = 0;
+        let mut pauses = Vec::new();
+        keep_watching(
+            || {
+                *subscribed.borrow_mut() += 1;
+                let next = script.borrow_mut().next();
+                next.unwrap_or(Ok(Vec::new())).map(Vec::into_iter)
+            },
+            || ready += 1,
+            |e| events.push(e),
+            |d| {
+                pauses.push(d);
+                script.borrow().len() > 0
+            },
+        );
+        let subscribed = *subscribed.borrow();
+        (events, subscribed, ready, pauses)
+    }
+
+    fn gone() -> zbus::Error {
+        zbus::Error::Failure("no bus".into())
+    }
+
+    #[test]
+    fn an_ended_stream_is_subscribed_again() {
+        let (events, subscribed, ready, pauses) =
+            run(vec![Ok(vec![1, 2]), Ok(vec![3]), Ok(vec![4])]);
+        assert_eq!(events, [1, 2, 3, 4], "every stream is heard");
+        assert_eq!(subscribed, 3, "one subscription per ended stream");
+        assert_eq!(ready, 1, "ready once, after the first subscription");
+        assert_eq!(
+            pauses, [RETRY; 3],
+            "a working subscription starts the backoff over"
+        );
+    }
+
+    #[test]
+    fn a_bus_that_stays_away_is_tried_with_a_growing_capped_pause() {
+        let mut script = vec![Ok(vec![1])];
+        script.extend((0..8).map(|_| Err(gone())));
+        script.push(Ok(vec![2]));
+        let (events, subscribed, ready, pauses) = run(script);
+        assert_eq!(events, [1, 2], "heard again once the bus is back");
+        assert_eq!(subscribed, 10);
+        assert_eq!(ready, 1);
+        let secs: Vec<u64> = pauses.iter().map(Duration::as_secs).collect();
+        assert_eq!(secs, [1, 2, 4, 8, 16, 30, 30, 30, 30, 1]);
+        assert!(pauses.iter().all(|p| *p <= RETRY_MAX));
+    }
+
+    #[test]
+    fn a_bus_missing_at_the_start_is_given_up_on() {
+        let (events, subscribed, ready, pauses) = run(vec![Err(gone()), Ok(vec![1])]);
+        assert!(events.is_empty(), "never subscribed");
+        assert_eq!(subscribed, 1, "one try");
+        assert_eq!(ready, 1, "ready all the same");
+        assert!(pauses.is_empty(), "no retry");
+    }
 
     #[test]
     fn sleep_only_when_going_down() {

@@ -257,20 +257,23 @@ struct MockWatcher {
     bus: Connection,
 }
 
+/// A python3 that has python3-dbusmock: a pyenv or toolcache python3 does not see the system's.
+fn python_with_dbusmock() -> &'static str {
+    ["python3", "/usr/bin/python3"]
+        .into_iter()
+        .find(|p| {
+            Command::new(p)
+                .args(["-c", "import dbusmock"])
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        })
+        .expect("python3-dbusmock is installed")
+}
+
 impl MockWatcher {
     fn start(bus: &Connection) -> Self {
-        // A pyenv or toolcache python3 does not see the system's python3-dbusmock.
-        let python = ["python3", "/usr/bin/python3"]
-            .into_iter()
-            .find(|p| {
-                Command::new(p)
-                    .args(["-c", "import dbusmock"])
-                    .stderr(Stdio::null())
-                    .status()
-                    .is_ok_and(|s| s.success())
-            })
-            .expect("python3-dbusmock is installed");
-        let child = Command::new(python)
+        let child = Command::new(python_with_dbusmock())
             .args([
                 "-m",
                 "dbusmock",
@@ -372,4 +375,129 @@ fn a_watcher_that_never_answers_means_no_tray_in_time() {
     wait_until("the silent watcher's name is released", || {
         !name_has_owner(&bus, WATCHER)
     });
+}
+
+/// A system bus of the test's own at a fixed socket, with a logind mock on it, that the test can
+/// stop and start again: a restarted bus.
+struct OwnSystemBus {
+    socket: std::path::PathBuf,
+    address: String,
+    children: Vec<Child>,
+}
+
+impl OwnSystemBus {
+    fn new() -> Self {
+        let socket = std::env::temp_dir().join(format!("redactor-system-{}", std::process::id()));
+        OwnSystemBus {
+            address: format!("unix:path={}", socket.display()),
+            socket,
+            children: Vec::new(),
+        }
+    }
+
+    /// Starts the bus and the logind mock, with one session that this process belongs to.
+    fn start(&mut self) -> OwnedObjectPath {
+        let _ = std::fs::remove_file(&self.socket);
+        let daemon = Command::new("dbus-daemon")
+            .args(["--session", "--nofork", "--address", &self.address])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start dbus-daemon");
+        self.children.push(daemon);
+        let mut bus = None;
+        wait_until("the own system bus accepts connections", || {
+            bus = zbus::blocking::connection::Builder::address(self.address.as_str())
+                .and_then(|b| b.build())
+                .ok();
+            bus.is_some()
+        });
+        let bus = bus.expect("connected");
+        let mock = Command::new(python_with_dbusmock())
+            .args(["-m", "dbusmock", "--system", "--template", "logind"])
+            .env("DBUS_SYSTEM_BUS_ADDRESS", &self.address)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start the logind mock");
+        self.children.push(mock);
+        wait_until("the logind mock owns its name", || {
+            name_has_owner(&bus, LOGIND)
+        });
+        let session = add_session(&bus, &format!("restart{}", std::process::id()));
+        mock_call(
+            &bus,
+            MANAGER_PATH,
+            MOCK,
+            "AddMethod",
+            &(
+                MANAGER,
+                "GetSessionByPID",
+                "u",
+                "o",
+                format!("ret = '{}'", session.as_str()),
+            ),
+        );
+        session
+    }
+
+    /// Ends the mock and the bus: every connection to it breaks.
+    fn stop(&mut self) {
+        for mut child in self.children.drain(..).rev() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let _ = std::fs::remove_file(&self.socket);
+    }
+
+    fn connect(&self) -> Connection {
+        zbus::blocking::connection::Builder::address(self.address.as_str())
+            .and_then(|b| b.build())
+            .expect("connect to the own system bus")
+    }
+}
+
+impl Drop for OwnSystemBus {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// The system bus goes away and comes back (a restarted dbus-daemon, a logind that restarts with
+/// it): the watcher subscribes again, and the screen lock still wipes.
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn a_lock_still_wipes_after_the_system_bus_restarts() {
+    private_buses();
+    let mut own = OwnSystemBus::new();
+    let session = own.start();
+    let saved = std::env::var_os("DBUS_SYSTEM_BUS_ADDRESS");
+    // The tests run one at a time; `watch` reads the address before it returns.
+    std::env::set_var("DBUS_SYSTEM_BUS_ADDRESS", &own.address);
+    let events = watcher();
+    match saved {
+        Some(v) => std::env::set_var("DBUS_SYSTEM_BUS_ADDRESS", v),
+        None => std::env::remove_var("DBUS_SYSTEM_BUS_ADDRESS"),
+    }
+    mock_call(&own.connect(), session.as_str(), SESSION, "Lock", &());
+    expect(&events, WipeReason::Lock, "Lock before the restart");
+
+    own.stop();
+    std::thread::sleep(Duration::from_millis(300));
+    let session = own.start();
+    let bus = own.connect();
+    // The watcher comes back on its own time: lock until it hears.
+    let limit = Duration::from_secs(20);
+    let deadline = Instant::now() + limit;
+    loop {
+        mock_call(&bus, session.as_str(), SESSION, "Lock", &());
+        if let Ok(got) = events.recv_timeout(Duration::from_millis(250)) {
+            assert_eq!(got, WipeReason::Lock, "after the restart");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no wipe on Lock within {limit:?} after the system bus restarted"
+        );
+    }
 }
