@@ -8,6 +8,7 @@ import type { AppInfo, ClipboardScrub, ScanResponse, SessionSecret, Settings } f
 import appInfo from './fixtures/app-info.json';
 import clipboardCleaned from './fixtures/clipboard-cleaned.json';
 import clipboardProtected from './fixtures/clipboard-protected.json';
+import clipboardStripped from './fixtures/clipboard-stripped.json';
 import scanDemo from './fixtures/scan-demo.json';
 import scanEmpty from './fixtures/scan-empty.json';
 import scanHarsh from './fixtures/scan-harsh.json';
@@ -21,6 +22,7 @@ export const FIXTURES = {
   'app-info': as<AppInfo>(appInfo),
   'clipboard-cleaned': as<ClipboardScrub>(clipboardCleaned),
   'clipboard-protected': as<ClipboardScrub>(clipboardProtected),
+  'clipboard-stripped': as<ClipboardScrub>(clipboardStripped),
   'scan-demo': as<ScanResponse>(scanDemo),
   'scan-empty': as<ScanResponse>(scanEmpty),
   'scan-harsh': as<ScanResponse>(scanHarsh),

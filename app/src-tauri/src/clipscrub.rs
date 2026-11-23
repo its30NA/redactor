@@ -2,9 +2,11 @@
 //!
 //! Rules: a password-manager copy is never read or rewritten (`protected`);
 //! no text (nothing, an image, files) is `empty`; text over 20 MiB is `tooLarge` and is never
-//! copied out of the clipboard; the clipboard is rewritten only when the scan redacted
-//! something, and only if nobody changed the clipboard meanwhile (checked inside the same open
-//! clipboard session that writes). After a rewrite the raw item is removed from the clipboard
+//! copied out of the clipboard; the clipboard is rewritten only when the scan changed the text
+//! (it redacted something, or, with `strip_invisible` on, removed invisible, bidi or tag
+//! characters: `stripped` when that was all, as the CLI's `scrub clipboard` does), and only if
+//! nobody changed the clipboard meanwhile (checked inside the same open clipboard session that
+//! writes). After a rewrite the raw item is removed from the clipboard
 //! history (best effort, `historyCleaned`). When the engine could not verify its output (the
 //! verify loop hit its cap), the redacted text is still written, as it is safer than the
 //! original, but the result is `unverified` and never claims the text is safe to paste.
@@ -206,6 +208,8 @@ pub enum ClipStatus {
     Cleaned,
     /// Rewritten, but the engine could not verify the output: check before pasting.
     Unverified,
+    /// No secrets, but invisible, bidi or tag characters were removed and written back.
+    Stripped,
     Clean,
     Empty,
     Protected,
@@ -255,6 +259,7 @@ impl ClipboardScrub {
                 }
             ),
             ClipStatus::Unverified => "Check before pasting".to_string(),
+            ClipStatus::Stripped => "Hidden characters removed".to_string(),
             ClipStatus::Clean => "Nothing sensitive found".to_string(),
             ClipStatus::Empty => "The clipboard holds no text".to_string(),
             ClipStatus::Protected => {
@@ -268,7 +273,8 @@ impl ClipboardScrub {
     }
 }
 
-/// Scans the clipboard text and rewrites it when something was redacted.
+/// Scans the clipboard text and rewrites it when the scan changed it: something was redacted,
+/// or hidden characters were stripped.
 pub fn scrub(
     cb: &(impl Clipboard + ?Sized),
     engine: &Engine,
@@ -312,7 +318,10 @@ fn scrub_with(
     }
     let resp = scan(&req);
     let removed = resp.removed();
-    if removed == 0 {
+    // As `scrub clipboard` decides: the text is written back whenever the scan changed it, so
+    // hidden characters alone (no findings) are stripped too when the engine strips them. An
+    // unverified scan that removed nothing leaves the clipboard as it was, as the UI says.
+    if removed == 0 && (resp.output == *req.text || !resp.verified) {
         return ClipboardScrub::status(if resp.verified {
             ClipStatus::Clean
         } else {
@@ -326,10 +335,12 @@ fn scrub_with(
     }
     let history_cleaned = cb.delete_from_history(&req.text);
     ClipboardScrub {
-        status: if resp.verified {
-            ClipStatus::Cleaned
-        } else {
+        status: if !resp.verified {
             ClipStatus::Unverified
+        } else if removed == 0 {
+            ClipStatus::Stripped
+        } else {
+            ClipStatus::Cleaned
         },
         removed,
         by_label: resp.stats.by_label,
@@ -462,6 +473,81 @@ mod tests {
         let again = FakeClipboard::new(Fake::Text(now));
         assert_eq!(run(&again).status, ClipStatus::Clean);
         assert_eq!(again.writes.get(), 0);
+    }
+
+    /// Clipboard text with a zero-width space, tag characters and a bidi override, and no
+    /// secret.
+    const HIDDEN: &str = "lunch at\u{200B} noon\u{E0041}\u{E0042} on friday\u{202E}\n";
+    const HIDDEN_CLEANED: &str = "lunch at noon on friday\n";
+
+    #[test]
+    fn hidden_characters_alone_are_stripped_and_written_back() {
+        let cb = FakeClipboard::new(Fake::Text(HIDDEN.into()));
+        let r = run(&cb);
+        assert_eq!(r.status, ClipStatus::Stripped);
+        assert_eq!(r.removed, 0);
+        assert!(r.by_label.is_empty());
+        assert_eq!(cb.writes.get(), 1);
+        assert_eq!(cb.text().unwrap(), HIDDEN_CLEANED);
+        // The raw copy leaves the history, as after any rewrite.
+        assert!(r.history_cleaned);
+        assert!(!cb.history.borrow().iter().any(|t| t == HIDDEN));
+        assert_eq!(r.notice(), "Hidden characters removed");
+        assert_eq!(serde_json::to_value(&r).unwrap()["status"], "stripped");
+
+        // The cleaned text is clean: a second scrub writes nothing.
+        let again = FakeClipboard::new(Fake::Text(HIDDEN_CLEANED.into()));
+        assert_eq!(run(&again).status, ClipStatus::Clean);
+        assert_eq!(again.writes.get(), 0);
+    }
+
+    #[test]
+    fn hidden_characters_stay_when_strip_invisible_is_off() {
+        let keep = Engine::new(EngineConfig {
+            strip_invisible: false,
+            ..EngineConfig::default()
+        })
+        .unwrap();
+        let cb = FakeClipboard::new(Fake::Text(HIDDEN.into()));
+        let r = scrub(&cb, &keep, Sensitivity::Balanced, false, false);
+        assert_eq!(r.status, ClipStatus::Clean);
+        assert_eq!(cb.writes.get(), 0);
+        assert_eq!(cb.text().unwrap(), HIDDEN);
+    }
+
+    #[test]
+    fn secrets_and_hidden_characters_together_are_one_cleaned_result() {
+        let (text, pw) = secret_text();
+        let cb = FakeClipboard::new(Fake::Text(format!("{HIDDEN}{text}")));
+        let r = run(&cb);
+        assert_eq!(r.status, ClipStatus::Cleaned);
+        assert_eq!(r.removed, 1);
+        let now = cb.text().unwrap();
+        assert!(!now.contains(&pw));
+        assert!(now.starts_with(HIDDEN_CLEANED), "{now:?}");
+    }
+
+    #[test]
+    fn an_unverified_scan_that_only_stripped_leaves_the_clipboard() {
+        let cb = FakeClipboard::new(Fake::Text(HIDDEN.into()));
+        let r = scrub_with(&cb, Sensitivity::Balanced, false, true, |req| {
+            let mut resp = bridge::scan(&engine(), req);
+            resp.verified = false;
+            resp
+        });
+        assert_eq!(r.status, ClipStatus::Unverified);
+        assert_eq!(r.removed, 0);
+        assert_eq!(cb.writes.get(), 0);
+        assert_eq!(cb.text().unwrap(), HIDDEN);
+    }
+
+    #[test]
+    fn hidden_characters_in_a_clipboard_that_changed_are_left_alone() {
+        let mut cb = FakeClipboard::new(Fake::Text(HIDDEN.into()));
+        cb.bump_before_write = true;
+        assert_eq!(run(&cb).status, ClipStatus::Error);
+        assert_eq!(cb.writes.get(), 0);
+        assert_eq!(cb.text().unwrap(), HIDDEN);
     }
 
     #[test]

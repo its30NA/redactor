@@ -84,6 +84,14 @@ describe('fixtures', () => {
     expect(schema.scrubExpired({ press: -1 }, 'e')).not.toEqual([]);
   });
 
+  test('the scrub statuses are the ones the shell sends', () => {
+    // As the shell's own test pins them (commands.rs).
+    const scrub = FIXTURES['clipboard-stripped'];
+    for (const status of ['cleaned', 'unverified', 'stripped', 'clean', 'empty', 'protected', 'tooLarge', 'error'])
+      expect(schema.scrubResult({ ...scrub, status, press: 1 }, 'r')).toEqual([]);
+    expect(schema.scrubResult({ ...scrub, status: 'other', press: 1 }, 'r')).not.toEqual([]);
+  });
+
   test('validators reject a finding that carries a value field', () => {
     const scan = FIXTURES['scan-demo'] as ScanResponse;
     const leaky = { ...scan.findings[0], value: 'x' };

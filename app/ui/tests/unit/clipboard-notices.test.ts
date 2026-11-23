@@ -102,6 +102,17 @@ describe('scrub results', () => {
     });
   });
 
+  test('hidden characters removed with no secret say so', async () => {
+    await backend.emit('clipboard-scrubbed', { ...result('stripped'), historyCleaned: true });
+    expect(toasts.items.at(-1)).toMatchObject({
+      tone: 'success',
+      title: 'Hidden characters removed',
+      detail: 'Nothing sensitive found · history cleaned',
+    });
+    await backend.emit('clipboard-scrubbed', result('stripped', 0, 2));
+    expect(toasts.items.at(-1)).toMatchObject({ title: 'Hidden characters removed', detail: 'Nothing sensitive found' });
+  });
+
   test('a clipboard too large to scrub has no retry and leaves on its own', async () => {
     await backend.emit('clipboard-scrubbed', result('tooLarge'));
     const notice = toasts.items.at(-1)!;

@@ -103,6 +103,10 @@ function showResult(s: ScrubResult): void {
             },
       );
       break;
+    case 'stripped':
+      // No secret, but zero-width, bidi or tag characters were removed and written back.
+      toasts.show({ tone: 'success', title: 'Hidden characters removed', detail: `Nothing sensitive found${history}` });
+      break;
     case 'clean':
       toasts.show({ tone: 'info', title: 'Clipboard is clean' });
       break;

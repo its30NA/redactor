@@ -89,7 +89,16 @@ export interface ScanResponse {
  * `unverified`: the engine could not verify its output (check before pasting); the clipboard was
  * rewritten when something was removed, and left as it was when `removed` is 0.
  */
-export type ClipboardStatus = 'cleaned' | 'unverified' | 'clean' | 'empty' | 'protected' | 'tooLarge' | 'error';
+/** `stripped`: no secret, but hidden (zero-width, bidi, tag) characters were removed and written back. */
+export type ClipboardStatus =
+  | 'cleaned'
+  | 'unverified'
+  | 'stripped'
+  | 'clean'
+  | 'empty'
+  | 'protected'
+  | 'tooLarge'
+  | 'error';
 
 export interface ClipboardScrub {
   status: ClipboardStatus;

@@ -27,7 +27,7 @@ import {
   type SessionSecret,
   type Settings,
 } from '../types';
-import { BIG_INPUTS, DEMO_INPUTS, demoInput } from './demo';
+import { BIG_INPUTS, DEMO_INPUTS, HIDDEN_INPUTS, demoInput } from './demo';
 import { fixture, type FixtureName } from './fixtures';
 import { lineAt, render } from './render';
 
@@ -283,9 +283,15 @@ async function scanFor(req: ScanRequest, known: Known[]): Promise<ScanResponse> 
   return scanSmall(req, known);
 }
 
+/**
+ * Zero-width, bidi and tag characters, roughly the engine's set, for the mock's clipboard scrub.
+ * A zero-width joiner stays (emoji sequences).
+ */
+const HIDDEN_CHARS = /[\u00AD\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2069\uFEFF\u{E0000}-\u{E007F}]/gu;
+
 function inputByName(name: string | undefined): string | null {
   if (!name) return null;
-  const make = DEMO_INPUTS[name] ?? BIG_INPUTS[name];
+  const make = DEMO_INPUTS[name] ?? HIDDEN_INPUTS[name] ?? BIG_INPUTS[name];
   return make ? make() : null;
 }
 
@@ -348,8 +354,15 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
       const { sensitivity, pii, stripInvisible } = settings;
       const r = await scanFor({ text, sensitivity, pii, stripInvisible, keep: [], manual: [] }, known());
       const removed = r.findings.length;
-      if (removed > 0) clipboard = r.output;
-      result = removed > 0 ? { ...result, status: 'cleaned', removed, byLabel: r.stats.byLabel } : { ...result, status: 'clean' };
+      // Hidden characters alone are stripped and written back too, with strip invisible on.
+      const stripped = removed === 0 && stripInvisible ? text.replace(HIDDEN_CHARS, '') : text;
+      if (removed > 0) {
+        clipboard = r.output;
+        result = { ...result, status: 'cleaned', removed, byLabel: r.stats.byLabel };
+      } else if (stripped !== text) {
+        clipboard = stripped;
+        result = { ...result, status: 'stripped' };
+      } else result = { ...result, status: 'clean' };
     }
     void emit('clipboard-scrubbed', result);
   };

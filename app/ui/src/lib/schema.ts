@@ -158,7 +158,7 @@ export const scanResponse = object<ScanResponse>({
 });
 
 const clipboardScrubShape = {
-  status: oneOf('cleaned', 'unverified', 'clean', 'empty', 'protected', 'tooLarge', 'error'),
+  status: oneOf('cleaned', 'unverified', 'stripped', 'clean', 'empty', 'protected', 'tooLarge', 'error'),
   removed: uint,
   byLabel: arrayOf(labelCount),
   historyCleaned: bool,

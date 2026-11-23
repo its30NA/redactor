@@ -449,4 +449,21 @@ mod tests {
             serde_json::json!({ "press": 7 })
         );
     }
+
+    /// Every status the `clipboard-scrubbed` event can carry, as the UI's schema lists them.
+    #[test]
+    fn the_scrub_statuses_are_pinned() {
+        for (status, name) in [
+            (ClipStatus::Cleaned, "cleaned"),
+            (ClipStatus::Unverified, "unverified"),
+            (ClipStatus::Stripped, "stripped"),
+            (ClipStatus::Clean, "clean"),
+            (ClipStatus::Empty, "empty"),
+            (ClipStatus::Protected, "protected"),
+            (ClipStatus::TooLarge, "tooLarge"),
+            (ClipStatus::Error, "error"),
+        ] {
+            assert_eq!(serde_json::to_value(status).unwrap(), name);
+        }
+    }
 }

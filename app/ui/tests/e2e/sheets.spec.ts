@@ -219,6 +219,14 @@ test.describe('clipboard-scrubbed event', () => {
     await expect(unverified).toHaveClass(/warning/);
   });
 
+  test('hidden characters removed with no secret say so', async ({ page, problems: _ }) => {
+    // `--scrub-clipboard` on a copy with a zero-width space, tag characters and a bidi override.
+    await openApp(page, '?scrub&clipboard=hidden');
+    const notice = page.locator('.toast', { hasText: 'Hidden characters removed' });
+    await expect(notice).toContainText('Nothing sensitive found');
+    await expect(notice).toHaveClass(/success/);
+  });
+
   test('a scrub asked for at start reaches the window', async ({ page, problems: _ }) => {
     // `--scrub-clipboard` started the app: the result must not come before the page listens.
     await openApp(page, '?scrub&clipboard=empty');
