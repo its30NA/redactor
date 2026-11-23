@@ -5,7 +5,7 @@
 # started from (on WSLg, WAYLAND_DISPLAY is the Windows clipboard); the app's settings go to a
 # throwaway XDG tree. Made-up text only, built at run time; no clipboard text is printed.
 #
-# Usage: tools/ci/wayland-smoke.sh <app-binary>   the checks W1-W7
+# Usage: tools/ci/wayland-smoke.sh <app-binary>   the checks W1-W8
 # Environment:
 #   SMOKE_WEBDRIVER=0   without WebDriver (as CI runs it): the app starts directly and W6 is SKIP
 #   SMOKE_OUT=<dir>     screenshots and logs (default smoke-out, emptied first)
@@ -33,6 +33,9 @@
 #      waits; `swaymsg workspace 1` brings the window back and it is cleaned, once
 #   W7 quit (the window's close request; no tray here) leaves no process, window, socket or
 #      bus name of ours
+#   W8 on disk, the XDG folders hold only settings.json, WebKit's hsts-storage.sqlite and salt
+#      files and the system libraries' caches (data_left in tools/ci/lib.sh), and none of the
+#      passwords copied above (names only, never contents)
 #
 # Prints one line per check, `SMOKE <id> PASS|FAIL|SKIP <detail>`, also into
 # $GITHUB_STEP_SUMMARY, and takes a screenshot (grim) after every check. Exit 1 if any check
@@ -187,10 +190,12 @@ clip_set() {
 clip_get() { timeout 2 wl-paste --no-newline 2>/dev/null; }
 clip_is() { [ "$(clip_get)" = "$1" ]; }
 
-# Made-up text, built at run time: a password line, new for each check.
+# Made-up text, built at run time: a password line, new for each check. W8 looks for each one.
+secrets_used=()
 secret_for() { # secret_for <tag>: sets $secret_value and $secret
   secret_value="Smk$(od -An -N9 -tx1 /dev/urandom | tr -d ' \n')$1"
   secret="DB_PASSWORD=$secret_value"
+  secrets_used+=("$secret_value")
 }
 scrubbed() {
   local c
@@ -489,6 +494,20 @@ else
   fi
 fi
 
+# W8: what the runs above left on disk, once every app process has ended (W7 ends the last one).
+for p in "${groups[@]}"; do kill -TERM -- "-$p" 2>/dev/null || true; done
+for p in "${groups[@]}"; do
+  group_empty() { ! pgrep -g "$p" >/dev/null; }
+  wait_for 10 group_empty || true
+done
+left=$(data_left "$work/xdg" "${secrets_used[@]}")
+if [ -n "$left" ]; then
+  result W8 FAIL "left in the XDG folders: $(printf '%s' "$left" | tr '\n' ';')"
+else
+  kept=$(cd "$work/xdg" && find config data cache state -type f | wc -l)
+  result W8 PASS "$kept files in the XDG folders, all settings.json, hsts-storage.sqlite, salt or a library cache; none holds the ${#secrets_used[@]} passwords"
+fi
+
 total=$((passed + failed + skipped))
 summary="wayland-smoke: $passed passed, $failed failed, $skipped skipped on sway ($socket)"
 echo "$summary"
@@ -508,4 +527,4 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   } >>"$GITHUB_STEP_SUMMARY"
 fi
 # Every check reports exactly once: a run with fewer lines failed somewhere unseen.
-[ "$total" -eq 7 ] && [ "$failed" -eq 0 ]
+[ "$total" -eq 8 ] && [ "$failed" -eq 0 ]

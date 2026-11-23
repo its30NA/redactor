@@ -4,9 +4,10 @@
 # a logind mock. Nothing here reaches the desktop it is started from (on WSLg, DISPLAY is the
 # Windows desktop); the app's settings go to a throwaway XDG tree. Made-up text only.
 #
-# Usage: tools/ci/linux-smoke.sh <app-binary>   the checks S1-S8
+# Usage: tools/ci/linux-smoke.sh <app-binary>   the checks S1-S9
 #        tools/ci/linux-smoke.sh --self-test    the set-up only (display, window manager,
-#                                               clipboard, key grabs, mocks), no app
+#                                               clipboard, key grabs, mocks, the S9 file
+#                                               check), no app
 # Environment:
 #   SMOKE_WEBDRIVER=0   the fallback without WebDriver: S1 is "window visible", S2/S5/S6 are SKIP
 #   SMOKE_OUT=<dir>     screenshots, video and logs (default smoke-out, emptied first)
@@ -18,6 +19,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 root=$PWD
+# data_left; the wait_for below is this script's own.
+# shellcheck source=tools/ci/lib.sh
+. tools/ci/lib.sh
 
 self_test=0
 app=
@@ -145,7 +149,9 @@ export GDK_BACKEND=x11 NO_AT_BRIDGE=1
 # every screenshot is an empty page.
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 
-openbox --sm-disable >"$work/openbox.log" 2>&1 &
+# Its own cache folder: openbox keeps a log there, and the app's XDG tree is S9's to check.
+mkdir -p "$work/openbox-cache"
+XDG_CACHE_HOME="$work/openbox-cache" openbox --sm-disable >"$work/openbox.log" 2>&1 &
 pids+=($!)
 wait_for 10 wmctrl -m || fail "openbox did not start" "$work/openbox.log"
 
@@ -336,6 +342,26 @@ if [ "$self_test" -eq 1 ]; then
   else
     result T6 FAIL "the StatusNotifierWatcher mock did not start (see logs/tray-watcher.log)"
   fi
+
+  # T7 the S9 file check: a tree with only what the app and its libraries may keep passes;
+  # another file, and a kept file that holds the secret, are named (and nothing of their
+  # contents is printed)
+  fake="$work/fake-xdg"
+  mkdir -p "$fake/config/app" "$fake/data/app/storage" "$fake/cache/app" "$fake/cache/fontconfig" "$fake/state"
+  printf '{}' >"$fake/config/app/settings.json"
+  : >"$fake/data/app/hsts-storage.sqlite"
+  : >"$fake/data/app/storage/salt"
+  : >"$fake/cache/fontconfig/fonts.cache"
+  before=$(data_left "$fake" "$secret_value")
+  printf 'x %s y' "$secret_value" >"$fake/config/app/settings.json"
+  : >"$fake/cache/app/other"
+  after=$(data_left "$fake" "$secret_value")
+  want=$(printf '%s\n' "cache/app/other" "config/app/settings.json (holds a secret)")
+  if [ -z "$before" ] && [ "$after" = "$want" ] && [[ $after != *"$secret_value"* ]]; then
+    result T7 PASS "the file check passes a clean tree and names an extra file and a file with the secret"
+  else
+    result T7 FAIL "clean tree: '${before:-nothing}'; with an extra file and the secret: '${after:-nothing}'"
+  fi
 else
   # The app under test. Each launch gets its own process group, so the clean-up reaches the
   # WebKit processes too.
@@ -505,6 +531,22 @@ else
         fi
       fi
     fi
+  fi
+
+  # S9: what the runs above left on disk, once every app process has ended. In the XDG folders
+  # only settings.json, WebKit's hsts-storage.sqlite and salt files and the system libraries'
+  # caches (data_left in tools/ci/lib.sh), and the password used above in none of them.
+  for p in "${groups[@]}"; do kill -TERM -- "-$p" 2>/dev/null || true; done
+  for p in "${groups[@]}"; do
+    group_empty() { ! pgrep -g "$p" >/dev/null; }
+    wait_for 10 group_empty || true
+  done
+  left=$(data_left "$work/xdg" "$secret_value")
+  if [ -n "$left" ]; then
+    result S9 FAIL "left in the XDG folders: $(printf '%s' "$left" | tr '\n' ';')"
+  else
+    kept=$(cd "$work/xdg" && find config data cache state -type f | wc -l)
+    result S9 PASS "$kept files in the XDG folders, all settings.json, hsts-storage.sqlite, salt or a library cache; none holds the password"
   fi
 fi
 

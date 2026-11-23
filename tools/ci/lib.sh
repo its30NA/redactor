@@ -30,3 +30,27 @@ show_log() {
   tail -n 40 "$file"
   echo "::endgroup::"
 }
+
+# data_left <xdg-root> <secret...>: what an app run left under <xdg-root>/{config,data,cache,state}
+# that it should not have. The app may keep its settings.json, and WebKit its (empty)
+# hsts-storage.sqlite and files named `salt`. The system libraries the window loads keep their
+# own caches in XDG_CACHE_HOME, made of fonts, GPU shaders and plugin lists, never of what the
+# app shows: fontconfig, mesa_shader_cache (mesa_shader_cache_db in newer Mesa) and
+# gstreamer-1.0; those folders are named here one by one, so any other folder still counts.
+# Prints one line per other regular file, then one per file of any kind (those caches too)
+# that holds one of the secrets. Names only, relative to <xdg-root>, never contents; nothing
+# when there is nothing to say.
+data_left() {
+  local xdg=$1
+  shift
+  (
+    cd "$xdg" || exit 0
+    find config data cache state -type f ! -name settings.json ! -name hsts-storage.sqlite \
+      ! -name salt ! -path 'cache/fontconfig/*' ! -path 'cache/mesa_shader_cache/*' \
+      ! -path 'cache/mesa_shader_cache_db/*' ! -path 'cache/gstreamer-1.0/*' -print 2>/dev/null || true
+    local s
+    for s in "$@"; do
+      { grep -rlaF -e "$s" config data cache state 2>/dev/null || true; } | sed 's/$/ (holds a secret)/'
+    done
+  ) | sort -u
+}
