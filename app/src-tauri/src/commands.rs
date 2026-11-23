@@ -81,12 +81,7 @@ pub async fn open_text_file(app: AppHandle, state: State<'_, Shared>) -> Res<Opt
         let path = picked
             .into_path()
             .map_err(|_| "The file could not be read.".to_string())?;
-        let meta =
-            std::fs::metadata(&path).map_err(|_| "The file could not be read.".to_string())?;
-        if meta.len() > bridge::MAX_INPUT_BYTES as u64 {
-            return Err(textfile::FileError::TooLarge.to_string());
-        }
-        let bytes = std::fs::read(&path).map_err(|_| "The file could not be read.".to_string())?;
+        let bytes = textfile::read_bounded(&path).map_err(|e| e.to_string())?;
         let text = textfile::decode(bytes).map_err(|e| e.to_string())?;
         Ok(Some(OpenedFile {
             name: textfile::display_name(&path),
