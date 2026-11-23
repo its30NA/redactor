@@ -13,14 +13,14 @@ use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_notification::NotificationExt;
 
 use crate::cli;
-use crate::clipscrub::{self, ClipboardScrub};
+use crate::clipscrub::{self, ClipStatus, ClipboardScrub};
 use crate::commands;
 use crate::engines::Profile;
 use crate::hotkey::{self, Hotkey};
 use crate::pending::{Take, Timer, When};
 use crate::platform::{self, HotkeyMode};
 use crate::settings::{Settings, SettingsFile};
-use crate::state::{self, AppState, Shared};
+use crate::state::{self, AppState, Shared, Start};
 use crate::tray;
 use crate::wipe::WipeReason;
 
@@ -368,23 +368,32 @@ fn main_is_focused(app: &AppHandle) -> bool {
 }
 
 /// Scrubs the clipboard on a new thread and shows the result as a notification. While a scrub
-/// waits to run already, it covers this call too: nothing more starts.
+/// waits to run already, it covers this call too: nothing more starts. If the thread cannot
+/// start, the user and the window hear that the clipboard was not scrubbed.
 fn scrub_and_notify(app: &AppHandle) {
     let st = state::state(app);
-    if !st.scrubs.enqueue() {
-        return;
-    }
     let handle = app.clone();
-    let spawned = std::thread::Builder::new()
-        .name("clipboard-scrub".into())
-        .spawn(move || {
-            let r = state::state(&handle)
-                .scrubs
-                .run(|| scrub_clipboard_now(&handle));
-            notify(&handle, &r.notice());
-        });
-    if spawned.is_err() {
-        st.scrubs.not_started();
+    let start = st.scrubs.start(|| {
+        std::thread::Builder::new()
+            .name("clipboard-scrub".into())
+            .spawn(move || {
+                let r = state::state(&handle)
+                    .scrubs
+                    .run(|| scrub_clipboard_now(&handle));
+                notify(&handle, &r.notice());
+            })
+            .is_ok()
+    });
+    if start == Start::Failed {
+        let r = ClipboardScrub {
+            status: ClipStatus::Error,
+            removed: 0,
+            by_label: Vec::new(),
+            history_cleaned: false,
+        };
+        // Every press so far counted on a scrub that never runs.
+        commands::emit_scrub(app, &r, st.presses.load(Ordering::SeqCst));
+        notify(app, &r.notice());
     }
 }
 

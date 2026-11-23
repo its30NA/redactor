@@ -106,16 +106,40 @@ pub struct ScrubQueue {
     running: Mutex<()>,
 }
 
+/// What became of a scrub asked for with [`ScrubQueue::start`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Start {
+    /// A scrub thread started; it tells the user.
+    Started,
+    /// A scrub waits to run already and covers this call.
+    Covered,
+    /// The scrub thread could not start: no scrub runs for this call, nor for any call that
+    /// counted on it meanwhile. The caller tells the user, for every press so far.
+    Failed,
+}
+
 impl ScrubQueue {
-    /// A scrub is asked for. True: none waits, the caller starts one ([`ScrubQueue::run`] on a
-    /// thread of its own). False: one waits already; it reads the clipboard after this call, so
-    /// it covers this one too.
-    pub fn enqueue(&self) -> bool {
+    /// A scrub is asked for. Unless one waits already, `spawn` starts a thread that calls
+    /// [`ScrubQueue::run`] and says whether it started.
+    pub fn start(&self, spawn: impl FnOnce() -> bool) -> Start {
+        if !self.enqueue() {
+            return Start::Covered;
+        }
+        if spawn() {
+            return Start::Started;
+        }
+        self.not_started();
+        Start::Failed
+    }
+
+    /// True: none waits, the caller starts one. False: one waits already; it reads the clipboard
+    /// after this call, so it covers this one too.
+    fn enqueue(&self) -> bool {
         !self.queued.swap(true, Ordering::SeqCst)
     }
 
     /// The thread behind a true [`ScrubQueue::enqueue`] could not start: the next call starts one.
-    pub fn not_started(&self) {
+    fn not_started(&self) {
         self.queued.store(false, Ordering::SeqCst);
     }
 
@@ -290,6 +314,25 @@ mod tests {
         assert!(q.enqueue());
         q.not_started();
         assert!(q.enqueue());
+    }
+
+    #[test]
+    fn a_scrub_thread_that_cannot_start_is_reported_and_frees_the_next_call() {
+        let q = ScrubQueue::default();
+        let mut covered = Start::Started;
+        let first = q.start(|| {
+            // A call between the enqueue and the failed spawn counts on the scrub that failed.
+            covered = q.start(|| panic!("a scrub waits already"));
+            false
+        });
+        assert_eq!(covered, Start::Covered);
+        assert_eq!(first, Start::Failed, "the caller tells every press so far");
+        assert_eq!(
+            q.start(|| true),
+            Start::Started,
+            "the next call tries again"
+        );
+        assert_eq!(q.start(|| panic!("one waits")), Start::Covered);
     }
 
     #[test]
