@@ -6,15 +6,17 @@
 //! sends these is heard: a locker started on its own (swaylock, i3lock) that tells neither logind
 //! nor a screen saver does not wipe. A bus that cannot be reached at the start ends its thread
 //! quietly. Whether either bus has a lock source at all (this process's logind session, a screen
-//! saver that owns its name) is known shortly after the start ([`LockWatcher::listens`]);
-//! without one, a screen lock does not wipe here, and suspend, idle and the tray still do. A bus
-//! that was watched and goes away (its connection breaks, the bus restarts) is subscribed to
+//! saver that owns its name) is known shortly after the start ([`LockWatcher::listens`]), and a
+//! screen saver that takes its name later (one started at login after the app) counts from then
+//! on; without one, a screen lock does not wipe here, and suspend, idle and the tray still do. A
+//! bus that was watched and goes away (its connection breaks, the bus restarts) is subscribed to
 //! again, after a pause that grows from [`RETRY`] to [`RETRY_MAX`] while it stays away, for as
 //! long as the app runs. Signals carry no content and nothing here logs.
 //! (Named `lock.rs`; `session.rs` is the desktop session type.)
 
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -31,6 +33,8 @@ const MANAGER_PATH: &str = "/org/freedesktop/login1";
 const MANAGER: &str = "org.freedesktop.login1.Manager";
 const SESSION: &str = "org.freedesktop.login1.Session";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
+/// The bus itself: its name, and the interface of its `NameOwnerChanged`.
+const BUS: &str = "org.freedesktop.DBus";
 
 /// The screen-saver interfaces whose `ActiveChanged(true)` means the screen locked.
 const SCREEN_SAVERS: [&str; 5] = [
@@ -69,8 +73,8 @@ pub struct LogindLock {
 
 impl LockWatcher for LogindLock {
     fn spawn(&self, on_event: Box<dyn Fn(WipeReason) + Send + Sync>) {
-        let buses = Self::watch(on_event);
-        self.found.lock().unwrap_or_else(|e| e.into_inner()).buses = Some(buses);
+        let mut found = self.found.lock().unwrap_or_else(|e| e.into_inner());
+        found.buses = Some(Self::start(on_event, found.appeared.clone()));
     }
 
     fn listens(&self, wait: Duration) -> Option<bool> {
@@ -88,12 +92,18 @@ struct Found {
     buses: Option<mpsc::Receiver<bool>>,
     /// Kept once known.
     verdict: Option<bool>,
+    /// A screen saver owns its name on the bus now, seen after the first look (it started
+    /// later, or the bus came back with one).
+    appeared: Arc<AtomicBool>,
 }
 
 impl Found {
     /// True as soon as one bus has a lock source; false once every bus said it has none (or its
     /// thread is gone); `None` while that is not known after `wait`, or before the watch starts.
     fn within(&mut self, wait: Duration) -> Option<bool> {
+        if self.appeared.load(Ordering::SeqCst) {
+            return Some(true);
+        }
         if self.verdict.is_none() {
             let buses = self.buses.as_ref()?;
             let deadline = Instant::now() + wait;
@@ -116,6 +126,15 @@ impl LogindLock {
     /// emit signals only after both are subscribed. Both bus addresses and `XDG_SESSION_ID` are
     /// read before this returns.
     pub fn watch(on_event: Box<dyn Fn(WipeReason) + Send + Sync>) -> mpsc::Receiver<bool> {
+        Self::start(on_event, Arc::default())
+    }
+
+    /// [`Self::watch`], telling `appeared` when a screen saver owns its name after the first
+    /// look.
+    fn start(
+        on_event: Box<dyn Fn(WipeReason) + Send + Sync>,
+        appeared: Arc<AtomicBool>,
+    ) -> mpsc::Receiver<bool> {
         let on_event: Callback = Arc::from(on_event);
         let (ready, rx) = mpsc::channel();
         let system = Address::system().ok();
@@ -161,9 +180,16 @@ impl LogindLock {
                     || {
                         let (messages, any) = watch_screen_savers(session.clone())?;
                         found.set(any);
-                        Ok(messages
-                            .map_while(Result::ok)
-                            .filter_map(|msg| screen_saver_reason(&msg)))
+                        if any {
+                            appeared.store(true, Ordering::SeqCst);
+                        }
+                        let appeared = appeared.clone();
+                        Ok(messages.map_while(Result::ok).filter_map(move |msg| {
+                            if screen_saver_appeared(&msg) {
+                                appeared.store(true, Ordering::SeqCst);
+                            }
+                            screen_saver_reason(&msg)
+                        }))
                     },
                     move || {
                         let _ = ready.send(found.get());
@@ -290,8 +316,8 @@ fn watch_logind(
     Ok((messages, own))
 }
 
-/// Subscribes to the screen savers' `ActiveChanged`, and says whether any screen saver owns its
-/// name on the bus now (each one's name is its interface's).
+/// Subscribes to the screen savers' `ActiveChanged` and to their names changing owner, and says
+/// whether any screen saver owns its name on the bus now (each one's name is its interface's).
 fn watch_screen_savers(address: Address) -> zbus::Result<(MessageIterator, bool)> {
     let conn = connect(address)?;
     let messages = MessageIterator::from(&conn);
@@ -299,6 +325,13 @@ fn watch_screen_savers(address: Address) -> zbus::Result<(MessageIterator, bool)
         add_match(
             &conn,
             &format!("type='signal',interface='{iface}',member='ActiveChanged'"),
+        )?;
+        add_match(
+            &conn,
+            &format!(
+                "type='signal',sender='{BUS}',interface='{BUS}',member='NameOwnerChanged',\
+                 arg0='{iface}'"
+            ),
         )?;
     }
     let any = SCREEN_SAVERS.iter().any(|name| has_owner(&conn, name));
@@ -357,6 +390,17 @@ fn logind_reason(msg: &Message, own: Option<&OwnedObjectPath>) -> Option<WipeRea
         return reason(SESSION, "LockedHint", hint);
     }
     reason(&iface, &member, None)
+}
+
+/// True when `msg` is the bus saying a screen saver now owns its name.
+fn screen_saver_appeared(msg: &Message) -> bool {
+    let from_bus = msg.header().sender().is_some_and(|s| s.as_str() == BUS);
+    if !from_bus || signal_name(msg) != Some((BUS.into(), "NameOwnerChanged".into())) {
+        return false;
+    }
+    msg.body()
+        .deserialize::<(String, String, String)>()
+        .is_ok_and(|(name, _old, new)| SCREEN_SAVERS.contains(&name.as_str()) && !new.is_empty())
 }
 
 fn screen_saver_reason(msg: &Message) -> Option<WipeReason> {
@@ -442,9 +486,66 @@ mod tests {
         let screen_saver = logind.clone();
         let f = Found {
             buses: Some(rx),
-            verdict: None,
+            ..Found::default()
         };
         (f, logind, screen_saver)
+    }
+
+    #[test]
+    fn a_screen_saver_that_takes_its_name_later_is_a_lock_source() {
+        let (mut f, logind, screen_saver) = found();
+        drop((logind, screen_saver));
+        assert_eq!(f.within(NOW), Some(false));
+        f.appeared.store(true, Ordering::SeqCst);
+        assert_eq!(f.within(Duration::ZERO), Some(true));
+    }
+
+    #[test]
+    fn a_screen_saver_that_appears_before_the_buses_answer_is_enough() {
+        let (mut f, _logind, _screen_saver) = found();
+        f.appeared.store(true, Ordering::SeqCst);
+        assert_eq!(f.within(Duration::ZERO), Some(true));
+    }
+
+    fn name_owner_changed(sender: &str, name: &str, old: &str, new: &str) -> Message {
+        Message::signal(
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameOwnerChanged",
+        )
+        .unwrap()
+        .sender(sender)
+        .unwrap()
+        .build(&(name, old, new))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_screen_saver_name_taken_on_the_bus_is_seen() {
+        for name in SCREEN_SAVERS {
+            assert!(
+                screen_saver_appeared(&name_owner_changed(BUS, name, "", ":1.42")),
+                "{name}"
+            );
+            assert!(
+                screen_saver_appeared(&name_owner_changed(BUS, name, ":1.7", ":1.42")),
+                "{name} changed hands"
+            );
+            assert!(
+                !screen_saver_appeared(&name_owner_changed(BUS, name, ":1.42", "")),
+                "{name} released"
+            );
+            assert!(
+                !screen_saver_appeared(&name_owner_changed(":1.9", name, "", ":1.9")),
+                "{name} from another program than the bus"
+            );
+        }
+        assert!(!screen_saver_appeared(&name_owner_changed(
+            BUS,
+            "org.kde.StatusNotifierWatcher",
+            "",
+            ":1.42"
+        )));
     }
 
     const NOW: Duration = Duration::from_millis(20);

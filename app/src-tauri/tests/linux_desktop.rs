@@ -248,6 +248,39 @@ fn a_screen_saver_on_the_session_bus_is_a_lock_source() {
         .expect("release org.gnome.ScreenSaver");
 }
 
+/// A screen saver that takes its name after the start (one started at login after the app) is a
+/// lock source from then on: Settings stops saying a screen lock does not wipe.
+#[test]
+#[ignore = "needs private D-Bus buses with a logind mock: tools/ci/x11-tests.sh"]
+fn a_screen_saver_that_starts_later_is_a_lock_source() {
+    private_buses();
+    // No system bus, so logind has no say; the tests run one at a time, and `spawn` reads both
+    // addresses before it returns.
+    let nowhere = std::env::temp_dir().join(format!("redactor-no-bus-{}", std::process::id()));
+    let saved = std::env::var_os("DBUS_SYSTEM_BUS_ADDRESS");
+    std::env::set_var(
+        "DBUS_SYSTEM_BUS_ADDRESS",
+        format!("unix:path={}", nowhere.display()),
+    );
+    let watcher = LogindLock::default();
+    watcher.spawn(Box::new(|_| {}));
+    match saved {
+        Some(v) => std::env::set_var("DBUS_SYSTEM_BUS_ADDRESS", v),
+        None => std::env::remove_var("DBUS_SYSTEM_BUS_ADDRESS"),
+    }
+    assert_eq!(watcher.listens(WAIT), Some(false), "no screen saver yet");
+    let saver = Connection::session().expect("connect to the private session bus");
+    saver
+        .request_name("org.mate.ScreenSaver")
+        .expect("own org.mate.ScreenSaver");
+    wait_until("the screen saver is heard", || {
+        watcher.listens(Duration::ZERO) == Some(true)
+    });
+    saver
+        .release_name("org.mate.ScreenSaver")
+        .expect("release org.mate.ScreenSaver");
+}
+
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const WATCHER_PATH: &str = "/StatusNotifierWatcher";
 
