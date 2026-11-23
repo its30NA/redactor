@@ -85,7 +85,10 @@ export interface ScanResponse {
   stats: ScanStats;
 }
 
-/** `unverified`: rewritten, but the engine could not verify the output (check before pasting). */
+/**
+ * `unverified`: the engine could not verify its output (check before pasting); the clipboard was
+ * rewritten when something was removed, and left as it was when `removed` is 0.
+ */
 export type ClipboardStatus = 'cleaned' | 'unverified' | 'clean' | 'empty' | 'protected' | 'tooLarge' | 'error';
 
 export interface ClipboardScrub {

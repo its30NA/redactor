@@ -88,11 +88,20 @@ function showResult(s: ScrubResult): void {
       toasts.show({ tone: 'success', title: 'Clipboard scrubbed', detail: `${secrets(s.removed)}${history}` });
       break;
     case 'unverified':
-      toasts.show({
-        tone: 'warning',
-        title: 'Clipboard scrubbed',
-        detail: `${secrets(s.removed)} · check before pasting${history}`,
-      });
+      // Nothing removed: the shell left the clipboard as it was.
+      toasts.show(
+        s.removed === 0
+          ? {
+              tone: 'warning',
+              title: 'Check before pasting',
+              detail: 'Nothing was removed, but the scan could not be verified.',
+            }
+          : {
+              tone: 'warning',
+              title: 'Clipboard scrubbed',
+              detail: `${secrets(s.removed)} · check before pasting${history}`,
+            },
+      );
       break;
     case 'clean':
       toasts.show({ tone: 'info', title: 'Clipboard is clean' });

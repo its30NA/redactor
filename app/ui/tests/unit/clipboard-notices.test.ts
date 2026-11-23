@@ -87,6 +87,21 @@ describe('scrub results', () => {
     }
   });
 
+  test('an unverified scan that removed nothing does not claim a scrub', async () => {
+    await backend.emit('clipboard-scrubbed', result('unverified', 0));
+    expect(toasts.items.at(-1)).toMatchObject({
+      tone: 'warning',
+      title: 'Check before pasting',
+      detail: 'Nothing was removed, but the scan could not be verified.',
+    });
+    await backend.emit('clipboard-scrubbed', { ...result('unverified', 2, 2), historyCleaned: true });
+    expect(toasts.items.at(-1)).toMatchObject({
+      tone: 'warning',
+      title: 'Clipboard scrubbed',
+      detail: '2 secrets removed · check before pasting · history cleaned',
+    });
+  });
+
   test('a clipboard too large to scrub has no retry and leaves on its own', async () => {
     await backend.emit('clipboard-scrubbed', result('tooLarge'));
     const notice = toasts.items.at(-1)!;
