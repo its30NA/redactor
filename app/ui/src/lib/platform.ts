@@ -70,8 +70,19 @@ export const trayNote = (info: Pick<AppInfo, 'tray'> | null): string | null =>
 /** How a hotkey press reaches the app; `keys` where app_info does not say (Windows, macOS) or has not answered. */
 export const hotkeyMode = (info: Pick<AppInfo, 'hotkey'> | null): HotkeyMode => info?.hotkey ?? 'keys';
 
-/** What the desktop shortcut runs where the app cannot hold a key itself. */
-export const SCRUB_COMMAND = 'redactor --scrub-clipboard';
+/** Characters a shell (or a desktop's shortcut parser) would read as more than part of a path. */
+const SHELL_SPECIAL = /[\s'"\\$`;&|<>()*?[\]{}~#!%^]/;
+
+/** `path` as one shell word: as it is when nothing in it is special, else in single quotes. */
+const shellWord = (path: string): string =>
+  SHELL_SPECIAL.test(path) ? `'${path.replaceAll("'", "'\\''")}'` : path;
+
+/**
+ * What the desktop shortcut runs where the app cannot hold a key itself: the program the shell
+ * names (its executable, or the AppImage file), or the plain name where it names none.
+ */
+export const scrubCommand = (info: Pick<AppInfo, 'executable'> | null): string =>
+  `${shellWord(info?.executable ?? 'redactor')} --scrub-clipboard`;
 
 /** How the hotkey works on this desktop, or null where the app registers the key itself. */
 export const hotkeyNote = (info: Pick<AppInfo, 'hotkey'> | null): string | null => {

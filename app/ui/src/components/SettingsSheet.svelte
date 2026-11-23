@@ -17,7 +17,7 @@
     hotkeyNote,
     lockDesc,
     lockTitle,
-    SCRUB_COMMAND,
+    scrubCommand,
     scrubRowDesc,
     settingsNote,
     shieldNote,
@@ -39,6 +39,7 @@
   const mode = $derived(hotkeyMode(info));
   const howHotkey = $derived(hotkeyNote(info));
   const needsFocus = $derived(focusNote(info));
+  const command = $derived(scrubCommand(info));
 
   const themeOptions: SegmentOption<ThemeSetting>[] = [
     { value: 'system', label: 'System' },
@@ -122,7 +123,7 @@
 
   async function copyCommand() {
     try {
-      await copyText(SCRUB_COMMAND);
+      await copyText(command);
       toasts.show({ tone: 'success', title: 'Command copied' });
     } catch {
       toasts.show({ tone: 'error', title: 'Could not copy' });
@@ -258,7 +259,7 @@
       <div class="note" data-testid="hotkey-note">
         <p class="row-desc">{howHotkey}</p>
         <div class="command">
-          <code class="mono">{SCRUB_COMMAND}</code>
+          <code class="mono">{command}</code>
           <button type="button" class="copy" onclick={copyCommand} data-testid="copy-command">
             <Copy size={13} strokeWidth={1.9} aria-hidden="true" />
             Copy

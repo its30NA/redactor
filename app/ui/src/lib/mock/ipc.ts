@@ -53,7 +53,12 @@ export interface MockOptions {
   scrubOnStart?: boolean;
   /** app_info answers only after `APP_INFO_SLOW_MS` (`slow`) or fails (`fail`); unset answers at once. */
   appInfo?: 'slow' | 'fail';
+  /** With `os`: the program app_info names; unset is `MOCK_EXECUTABLE`. */
+  executable?: string;
 }
+
+/** The program app_info names on macOS and Linux unless `executable` says otherwise. */
+export const MOCK_EXECUTABLE = '/opt/redactor/Redactor';
 
 /** How long a `slow` app_info takes. */
 export const APP_INFO_SLOW_MS = 2500;
@@ -391,6 +396,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
                 shield: false,
                 ...(opts.hotkey ? { hotkey: opts.hotkey } : {}),
                 ...(opts.clipboardNeedsFocus ? { clipboardNeedsFocus: true } : {}),
+                executable: opts.executable ?? MOCK_EXECUTABLE,
               }
             : fixture('app-info');
         case COMMANDS.scrubClipboard:

@@ -4,5 +4,6 @@
   "ruleCount": 175,
   "platform": "windows-x86_64",
   "tray": true,
-  "shield": true
+  "shield": true,
+  "executable": "C:\\Program Files\\Redactor\\Redactor.exe"
 }

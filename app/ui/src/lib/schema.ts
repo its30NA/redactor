@@ -218,6 +218,7 @@ export const appInfo = object<AppInfo>({
   shield: bool,
   hotkey: optional(oneOf<HotkeyMode>('keys', 'portal', 'command')),
   clipboardNeedsFocus: optional(bool),
+  executable: optional(str),
 });
 
 /** Throws with every problem listed when `value` does not match `check`. */

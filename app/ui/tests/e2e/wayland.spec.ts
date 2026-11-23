@@ -8,7 +8,8 @@ import { expect, mockCalls, openApp, test } from './fixtures';
 const PORTAL_NOTE =
   'Your desktop may ask you to confirm this key, or let you pick another in its own keyboard settings.';
 const COMMAND_NOTE = 'This desktop does not let apps set a hotkey. Add a shortcut in its keyboard settings that runs:';
-const COMMAND = 'redactor --scrub-clipboard';
+/** The mock's executable (MOCK_EXECUTABLE) with the flag. */
+const COMMAND = '/opt/redactor/Redactor --scrub-clipboard';
 const FIRST_RUN_COMMAND_LINE =
   "Clean the clipboard with a shortcut you add in your desktop's keyboard settings (see Settings).";
 const FOCUS_NOTE = 'Redactor can reach the clipboard only while its window is in front.';
@@ -46,6 +47,16 @@ test.describe('Wayland', () => {
     await expect(page.locator('.toast', { hasText: 'Command copied' })).toBeVisible();
     const copies = (await mockCalls(page)).filter((c) => c.cmd === 'copy_text');
     expect(copies.map((c) => c.args.text)).toEqual([COMMAND]);
+  });
+
+  test('the_command_names_this_program_and_quotes_a_path_with_spaces', async ({ page, problems: _ }) => {
+    const exe = '/home/me/My Apps/Redactor.AppImage';
+    const sheet = await openSettings(page, `?os=linux&hotkey=command&exe=${encodeURIComponent(exe)}`);
+    const quoted = `'${exe}' --scrub-clipboard`;
+    await expect(sheet.getByTestId('hotkey-note').locator('code')).toHaveText(quoted);
+    await sheet.getByTestId('copy-command').click();
+    const copies = (await mockCalls(page)).filter((c) => c.cmd === 'copy_text');
+    expect(copies.map((c) => c.args.text)).toEqual([quoted]);
   });
 
   test('a_clipboard_that_needs_focus_says_so', async ({ page, problems: _ }) => {

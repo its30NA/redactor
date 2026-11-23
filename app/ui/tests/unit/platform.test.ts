@@ -19,7 +19,7 @@ import {
   trayTitle,
   trayWipeNotice,
   wipeNotice,
-  SCRUB_COMMAND,
+  scrubCommand,
 } from '../../src/lib/platform';
 import type { AppInfo } from '../../src/lib/types';
 
@@ -135,7 +135,37 @@ describe('hotkeyNote', () => {
     expect(hotkeyNote(info({ hotkey: 'command' }))).toBe(
       'This desktop does not let apps set a hotkey. Add a shortcut in its keyboard settings that runs:',
     ));
-  test('the command the shortcut runs', () => expect(SCRUB_COMMAND).toBe('redactor --scrub-clipboard'));
+});
+
+describe('scrubCommand', () => {
+  test('runs the program the shell names', () =>
+    expect(scrubCommand(info({ executable: '/home/me/redactor/target/release/Redactor' }))).toBe(
+      '/home/me/redactor/target/release/Redactor --scrub-clipboard',
+    ));
+  test('an AppImage path as the shell gives it', () =>
+    expect(scrubCommand(info({ executable: '/home/me/Apps/Redactor_2.1.1_amd64.AppImage' }))).toBe(
+      '/home/me/Apps/Redactor_2.1.1_amd64.AppImage --scrub-clipboard',
+    ));
+  test('a path with spaces is quoted', () =>
+    expect(scrubCommand(info({ executable: '/home/me/My Apps/Redactor' }))).toBe(
+      "'/home/me/My Apps/Redactor' --scrub-clipboard",
+    ));
+  test('a quote inside the path survives the quoting', () =>
+    expect(scrubCommand(info({ executable: "/home/me/Ann's apps/Redactor" }))).toBe(
+      "'/home/me/Ann'\\''s apps/Redactor' --scrub-clipboard",
+    ));
+  test('other shell characters are quoted too', () => {
+    for (const odd of ['/opt/$HOME/Redactor', '/opt/a;b/Redactor', '/opt/a*b/Redactor', '/opt/tab\there/Redactor'])
+      expect(scrubCommand(info({ executable: odd }))).toBe(`'${odd}' --scrub-clipboard`);
+  });
+  test('letters beyond ASCII need no quotes', () =>
+    expect(scrubCommand(info({ executable: '/home/\u00e9t\u00e9/Redactor' }))).toBe(
+      '/home/\u00e9t\u00e9/Redactor --scrub-clipboard',
+    ));
+  test('without a path (not Unicode, older shell, before app_info) the plain name', () => {
+    expect(scrubCommand(info())).toBe('redactor --scrub-clipboard');
+    expect(scrubCommand(null)).toBe('redactor --scrub-clipboard');
+  });
 });
 
 describe('focusNote', () => {

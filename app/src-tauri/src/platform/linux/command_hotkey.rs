@@ -1,6 +1,7 @@
 //! The hotkey where the desktop has no shortcuts portal: the app holds no key. The user binds a
-//! key in the desktop's own keyboard settings to `redactor --scrub-clipboard`, and that press
-//! reaches the running app through the single-instance plugin.
+//! key in the desktop's own keyboard settings to the command Settings shows (this program with
+//! `--scrub-clipboard`), and that press reaches the running app through the single-instance
+//! plugin.
 
 use tauri::AppHandle;
 

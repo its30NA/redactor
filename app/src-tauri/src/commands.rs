@@ -240,6 +240,10 @@ pub struct AppInfo {
     hotkey: HotkeyMode,
     /// The clipboard works only while the window is in front.
     clipboard_needs_focus: bool,
+    /// The program a desktop shortcut runs with `--scrub-clipboard`; left out when its path is
+    /// not Unicode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    executable: Option<String>,
 }
 
 /// The page asks for this once it listens for the shell's events, so it also hands over a scrub
@@ -260,6 +264,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> 
             shield: st.platform.shield,
             hotkey: st.platform.hotkey.mode(),
             clipboard_needs_focus: st.platform.clipboard.needs_focus(),
+            executable: crate::cli::this_program(),
         }
     })
     .await

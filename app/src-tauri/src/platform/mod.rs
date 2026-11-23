@@ -74,7 +74,7 @@ pub enum HotkeyMode {
     Keys,
     /// The desktop's shortcuts portal binds the key; the user confirms it there.
     Portal,
-    /// The app holds no key: a desktop shortcut runs `redactor --scrub-clipboard`.
+    /// The app holds no key: a desktop shortcut runs it with `--scrub-clipboard`.
     Command,
 }
 

@@ -47,6 +47,12 @@ describe('fixtures', () => {
     ]);
   });
 
+  test('app_info: the program path may be absent (a path that is not Unicode)', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, executable: '/opt/redactor/Redactor' }, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, executable: 7 }, 'i')).toEqual(['i.executable: expected string']);
+  });
+
   test('the scrub events carry the press they belong to', () => {
     const scrub = FIXTURES['clipboard-cleaned'];
     expect(schema.scrubResult({ ...scrub, press: 3 }, 'r')).toEqual([]);

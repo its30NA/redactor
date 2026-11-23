@@ -171,11 +171,16 @@ export interface AppInfo {
   hotkey?: HotkeyMode;
   /** The clipboard works only while the window is in front. Absent means false. */
   clipboardNeedsFocus?: boolean;
+  /**
+   * The program a desktop shortcut runs with `--scrub-clipboard`: this executable, or the
+   * AppImage file. Absent where its path is not Unicode.
+   */
+  executable?: string;
 }
 
 /**
  * `keys`: the app registers the key from Settings. `portal`: the desktop binds it and may ask
- * the user. `command`: the app holds no key; a desktop shortcut runs `redactor --scrub-clipboard`.
+ * the user. `command`: the app holds no key; a desktop shortcut runs it with `--scrub-clipboard`.
  */
 export type HotkeyMode = 'keys' | 'portal' | 'command';
 
