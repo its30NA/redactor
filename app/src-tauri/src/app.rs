@@ -262,7 +262,7 @@ pub fn hotkey_pressed(app: &AppHandle) {
         // its result must not come before the notice it replaces.
         commands::emit_scrub_waiting(app, press);
         // Armed before the window is asked for, so the focus-in can never come first.
-        if st.pending.arm(When::now()) && !spawn_expiry_timer(app) {
+        if st.pending.arm(When::now(), press) && !spawn_expiry_timer(app) {
             // No timer: the press expired at once and the user was told; nothing waits.
             return;
         }
@@ -323,9 +323,9 @@ fn spawn_expiry_timer(app: &AppHandle) -> bool {
             loop {
                 match timer.step(When::now()) {
                     Timer::Sleep(left) => std::thread::sleep(left),
-                    Timer::Expired => {
+                    Timer::Expired(press) => {
                         notify(&handle, NOT_CLEANED);
-                        commands::emit_scrub_expired(&handle);
+                        commands::emit_scrub_expired(&handle, press);
                         break;
                     }
                     Timer::Done => break,
@@ -335,9 +335,9 @@ fn spawn_expiry_timer(app: &AppHandle) -> bool {
     if spawned.is_ok() {
         return true;
     }
-    if state::state(app).pending.timer_failed(When::now()) {
+    if let Some(press) = state::state(app).pending.timer_failed(When::now()) {
         notify(app, NOT_CLEANED);
-        commands::emit_scrub_expired(app);
+        commands::emit_scrub_expired(app, press);
     }
     false
 }
@@ -348,14 +348,15 @@ const NOT_CLEANED: &str = "Not cleaned: Redactor's window did not come to the fr
 /// The main window came to the front: runs the scrub a hotkey press left waiting, or says in
 /// the window that it expired (the desktop may have dropped the notification).
 fn scrub_if_pending(app: &AppHandle) {
-    match state::state(app).pending.take_on_focus(When::now()) {
-        Take::Run => scrub_and_notify(app),
+    let st = state::state(app);
+    match st.pending.take_on_focus(When::now()) {
+        Take::Run(_) => scrub_and_notify(app),
         // The timer notified already; only the window still has to learn it.
-        Take::Expired => commands::emit_scrub_expired(app),
+        Take::Expired(press) => commands::emit_scrub_expired(app, press),
         // The timer has not spoken (it runs late): this is the only notice.
-        Take::Lapsed => {
+        Take::Lapsed(press) => {
             notify(app, NOT_CLEANED);
-            commands::emit_scrub_expired(app);
+            commands::emit_scrub_expired(app, press);
         }
         Take::Nothing => {}
     }

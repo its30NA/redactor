@@ -311,9 +311,15 @@ pub fn emit_scrub_waiting(app: &AppHandle, press: u64) {
     let _ = app.emit("clipboard-scrub-waiting", Waiting { press });
 }
 
-/// Tells the UI that a scrub waited for the window in vain and did not run.
-pub fn emit_scrub_expired(app: &AppHandle) {
-    let _ = app.emit("clipboard-scrub-expired", ());
+/// The `clipboard-scrub-expired` event: the press that waited for the window in vain.
+#[derive(Clone, Serialize)]
+struct Expired {
+    press: u64,
+}
+
+/// Tells the UI that the scrub of `press` waited for the window in vain and did not run.
+pub fn emit_scrub_expired(app: &AppHandle, press: u64) {
+    let _ = app.emit("clipboard-scrub-expired", Expired { press });
 }
 
 #[cfg(test)]
@@ -346,6 +352,10 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(Waiting { press: 7 }).unwrap(),
+            serde_json::json!({ "press": 7 })
+        );
+        assert_eq!(
+            serde_json::to_value(Expired { press: 7 }).unwrap(),
             serde_json::json!({ "press": 7 })
         );
     }
