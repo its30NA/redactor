@@ -92,6 +92,23 @@ fn utf16_only_text_is_read() {
     assert_eq!(read_text(&MacClipboard).as_deref(), Some(text.as_str()));
 }
 
+/// Text the pasteboard lists but does not hand out (a lazy provider that gives nothing, or a
+/// read macOS refuses) is a failed read, never "no text": the text may still be pasteable.
+#[test]
+#[ignore = "takes over the clipboard: tools/ci/macos-tests.sh"]
+fn listed_text_without_data_is_an_error() {
+    guard();
+    let (cb, other) = (MacClipboard, MacOther);
+    other.list_text_without_data();
+    assert!(
+        cb.read().is_err(),
+        "a listed text type without data read as text or empty"
+    );
+    let seq = cb.sequence();
+    assert_eq!(contract::scrub(&cb).status, ClipStatus::Error);
+    assert_eq!(cb.sequence(), seq, "the clipboard was rewritten");
+}
+
 /// What the guarded write relies on: taking the pasteboard over moves the count by exactly
 /// one when nobody else touches it.
 #[test]

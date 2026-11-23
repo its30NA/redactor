@@ -55,14 +55,17 @@ fn count(pasteboard: &NSPasteboard) -> u32 {
 }
 
 /// One look at the pasteboard. The caller checks that the change count stood still.
-fn look(pasteboard: &NSPasteboard) -> ClipText {
+///
+/// A text type the pasteboard lists but hands no data for (a lazy provider that gave nothing,
+/// a read macOS refused) is an error, never "no text": that text may still be pasteable.
+fn look(pasteboard: &NSPasteboard) -> Result<ClipText, ClipError> {
     let Some(types) = pasteboard.types() else {
-        return ClipText::Empty;
+        return Ok(ClipText::Empty);
     };
     let (mut utf8, mut utf16) = (false, false);
     for name in types.to_vec() {
         match name.to_string().as_str() {
-            CONCEALED | TRANSIENT => return ClipText::Protected,
+            CONCEALED | TRANSIENT => return Ok(ClipText::Protected),
             UTF8 => utf8 = true,
             UTF16 => utf16 = true,
             _ => {}
@@ -71,19 +74,19 @@ fn look(pasteboard: &NSPasteboard) -> ClipText {
     // The length is known before a byte is copied into Rust.
     if utf8 {
         match pasteboard.dataForType(&NSString::from_str(UTF8)) {
-            None => ClipText::Empty,
-            Some(data) if data.len() > MAX_INPUT_BYTES => ClipText::TooLarge,
-            Some(data) => clipscrub::text_from_utf8(Zeroizing::new(data.to_vec())),
+            None => Err(ClipError),
+            Some(data) if data.len() > MAX_INPUT_BYTES => Ok(ClipText::TooLarge),
+            Some(data) => Ok(clipscrub::text_from_utf8(Zeroizing::new(data.to_vec()))),
         }
     } else if utf16 {
         match pasteboard.dataForType(&NSString::from_str(UTF16)) {
-            None => ClipText::Empty,
-            Some(data) if data.len() > 2 * MAX_INPUT_BYTES + 2 => ClipText::TooLarge,
-            Some(data) => clipscrub::text_from_utf16(&Zeroizing::new(data.to_vec())),
+            None => Err(ClipError),
+            Some(data) if data.len() > 2 * MAX_INPUT_BYTES + 2 => Ok(ClipText::TooLarge),
+            Some(data) => Ok(clipscrub::text_from_utf16(&Zeroizing::new(data.to_vec()))),
         }
     } else {
         // An image, files: no text.
-        ClipText::Empty
+        Ok(ClipText::Empty)
     }
 }
 
@@ -119,9 +122,10 @@ impl Clipboard for MacClipboard {
                 let before = pasteboard.changeCount();
                 let seen = look(&pasteboard);
                 if pasteboard.changeCount() == before {
-                    return Ok(seen);
+                    return seen;
                 }
-                // Another copy landed meanwhile: `seen` is dropped (text zeroized) unseen.
+                // Another copy landed meanwhile: `seen` is dropped (text zeroized) unseen, and
+                // a failed look is tried again on the newer copy.
             }
             Err(ClipError)
         })

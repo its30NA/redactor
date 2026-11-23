@@ -138,6 +138,16 @@ impl MacOther {
         });
     }
 
+    /// Lists plain text but hands out no data for it: what a copy from an app whose lazy
+    /// provider gives nothing looks like, or a read macOS refuses. There is no owner, so AppKit
+    /// has nobody to ask for the data.
+    pub fn list_text_without_data(&self) {
+        autoreleasepool(|_| {
+            let pasteboard = NSPasteboard::generalPasteboard();
+            declare(&pasteboard, &[UTF8]);
+        });
+    }
+
     pub fn change_count(&self) -> isize {
         autoreleasepool(|_| NSPasteboard::generalPasteboard().changeCount())
     }
