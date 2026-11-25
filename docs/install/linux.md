@@ -121,8 +121,9 @@ characters from a copy with no secret in it, and says "Hidden characters removed
   the window may not stay in front. <!-- PENDING hand test: who wins, the click or Redactor (hand test G).
   Write what happened. The code never scrubs an old copy and never scrubs twice for one press. -->
 - **A shortcut the desktop refuses.** If the shortcut service refuses the key you pick in Settings, no
-  hotkey is set at all, although Settings still shows the old key. The reason ("Your desktop did not
-  accept ... No hotkey is set now; pick another in Settings.") stays under the key until you try again.
+  hotkey is set at all. Settings keeps showing the old key, marked "Not active: pick another key.", and
+  the reason ("Your desktop did not accept ... No hotkey is set now; pick another in Settings.") stays
+  under it until you try again.
 - **No clipboard history to delete** on Linux, same as on X11. A clipboard manager's own history is out of
   Redactor's reach.
 
