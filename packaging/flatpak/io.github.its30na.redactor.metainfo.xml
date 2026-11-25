@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The metadata in this file is licensed CC0-1.0; the app itself is MIT. -->
+<component type="desktop-application">
+  <id>io.github.its30na.redactor</id>
+  <name>Redactor</name>
+  <summary>Strips secrets out of text before you paste it anywhere</summary>
+  <developer id="io.github.its30na">
+    <name>its30NA</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      Paste a log, a config file or a terminal session. Redactor finds the passwords, API keys,
+      tokens and private keys in it and swaps each one for a placeholder like
+      [REDACTED: Password]. What is left is safe to send to a chat assistant, a ticket or a
+      colleague.
+    </p>
+    <p>
+      Nothing leaves your machine: there is no network code, no account and no telemetry. The
+      Flatpak has no network permission and no access to your files; files you open or save go
+      through the system's file dialog.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.its30na.redactor.desktop</launchable>
+  <url type="homepage">https://github.com/its30NA/redactor</url>
+  <url type="bugtracker">https://github.com/its30NA/redactor/issues</url>
+  <url type="vcs-browser">https://github.com/its30NA/redactor</url>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <provides>
+    <binary>Redactor</binary>
+  </provides>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="2.1.1" date="2026-11-22"/>
+  </releases>
+</component>
