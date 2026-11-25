@@ -15,9 +15,9 @@ build.
 
 ## Modules
 
-1. `rust` and `node`: Rust 1.99 (the version in `rust-toolchain.toml`) and Node 22 from their
-   official release archives, pinned by sha256. They are used for the build only and removed
-   from the app afterwards (`cleanup`).
+1. `rust` and `node`: Rust 1.99.1 (the newest release of the `1.99` channel that
+   `rust-toolchain.toml` names) and Node 22 from their official release archives, pinned by
+   sha256. They are used for the build only and removed from the app afterwards (`cleanup`).
 2. `intltool`: a build tool `libdbusmenu` needs; removed afterwards.
 3. `libdbusmenu-gtk3`, `ayatana-ido`, `libayatana-indicator`, `libayatana-appindicator`: the tray
    icon's libraries, which the GNOME runtime does not have. Each installs its license files under
