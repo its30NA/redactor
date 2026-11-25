@@ -34,6 +34,7 @@ fn the_shell_names_no_operating_system() {
     for file in [
         "src/app.rs",
         "src/commands.rs",
+        "src/first_frame.rs",
         "src/state.rs",
         "src/tray.rs",
     ] {

@@ -15,6 +15,7 @@ pub mod browser_args;
 pub mod cli;
 pub mod clipscrub;
 pub mod engines;
+pub mod first_frame;
 pub mod hotkey;
 pub mod ipc_names;
 pub mod os;

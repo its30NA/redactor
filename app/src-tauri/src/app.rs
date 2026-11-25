@@ -229,12 +229,16 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
     // Where the OS cannot hide the window, it is never marked as hidden.
     let protected = st.platform.shield && settings.content_protection;
     let os = st.platform.os;
+    // The theme's background from the first frame on, instead of a white flash before the page
+    // paints.
+    let (r, g, b) = crate::first_frame::first_frame_rgb(settings.theme);
     let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Redactor")
         .inner_size(1280.0, 800.0)
         .min_inner_size(960.0, 640.0)
         .center()
         .decorations(false)
+        .background_color(tauri::window::Color(r, g, b, 255))
         .content_protected(protected)
         .incognito(true)
         .browser_extensions_enabled(false)
