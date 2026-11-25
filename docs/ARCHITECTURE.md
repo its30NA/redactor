@@ -467,7 +467,7 @@ The full analysis is in [THREAT_MODEL.md](THREAT_MODEL.md).
 - **Package checks** (`tools/ci/l4/`): each download is checked the way a user gets it. `contents.sh` looks
   inside a package (LICENSE, the notices, the binary, the desktop file, no build machine paths, the version,
   a license for every library the AppImage or Flatpak bundles); `install.sh` installs it in a clean
-  container (Ubuntu 22.04 and 24.04, Debian 12, Fedora 42); `start.sh` runs `--version`, opens the window,
+  container (Ubuntu 22.04 and 24.04, Debian 12, Fedora 45); `start.sh` runs `--version`, opens the window,
   checks that a second launch hands over to the first and that quitting leaves nothing behind, always on its
   own Xvfb, D-Bus and temporary home; `dmg.sh` installs the disk image on Apple silicon and Intel runners.
 - **Windows build loop** (`tools/win-build.sh`): for local development from WSL, copies the repo to a

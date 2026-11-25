@@ -369,14 +369,14 @@ jobs:
             name: debian-12
             image: debian:12@sha256:1d04200c2ece1d4d75a2a6f8e11ebce7d86a2ae28b34bb2c9cbb3ee9f4953e75
           - format: rpm
-            name: fedora-42
-            image: fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
+            name: fedora-45
+            image: fedora:45@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c
           - format: appimage
             name: ubuntu-22.04
             image: ubuntu:22.04@sha256:b000e69a50ff940390233025e7a337fb8469b509e2334fa4d018ac30f3e18cdb
           - format: appimage
-            name: fedora-42
-            image: fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
+            name: fedora-45
+            image: fedora:45@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c
     container:
       image: ${{ matrix.image }}
       # WebKit keeps its shared memory in /dev/shm; Docker's default 64 MB is too small.
@@ -457,18 +457,18 @@ jobs:
   # L4 for the Flatpak: installed --user in a clean Fedora container (the runtime from Flathub),
   # then the same contents and start checks as the other formats. --privileged for bubblewrap.
   l4-flatpak:
-    name: L4 flatpak (fedora-42)
+    name: L4 flatpak (fedora-45)
     needs: bundle-flatpak
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
+      image: fedora:45@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c
       options: --privileged --shm-size=1g
     defaults:
       run:
         shell: bash
     env:
-      L4_LABEL: flatpak-fedora-42
+      L4_LABEL: flatpak-fedora-45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -498,7 +498,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: l4-flatpak-fedora-42
+          name: l4-flatpak-fedora-45
           path: smoke-out/
           if-no-files-found: ignore
           retention-days: 7

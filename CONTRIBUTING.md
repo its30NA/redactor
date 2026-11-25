@@ -210,8 +210,8 @@ own Xvfb from `:90`, its own D-Bus session and a temporary home and XDG folders,
 `WAYLAND_DISPLAY`, so it is safe to run on a desktop or in WSLg.
 
 CI-only: `tools/ci/l4/install.sh` (it installs into a clean container as root: `.deb` on Ubuntu 22.04,
-24.04 and Debian 12, `.rpm` on Fedora 42, the AppImage on Ubuntu 22.04 and Fedora 42, the Flatpak on
-Fedora 42), the Flatpak build (`tools/release/bundle-flatpak.sh`, in Flathub's GNOME 51 build image) and
+24.04 and Debian 12, `.rpm` on Fedora 45, the AppImage on Ubuntu 22.04 and Fedora 45, the Flatpak on
+Fedora 45), the Flatpak build (`tools/release/bundle-flatpak.sh`, in Flathub's GNOME 51 build image) and
 the Mac disk image (`tools/release/bundle-macos.sh` and `tools/ci/l4/dmg.sh`, on the macOS runners). On a
 Mac, `dmg.sh` runs the app's smoke test only with `--i-know-this-takes-my-desktop`.
 

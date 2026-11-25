@@ -51,7 +51,7 @@ All notable changes to this project are documented here. The format follows
   stack, each with its reason in `deny.toml`.
 - CI builds every download on every pull request with the release's own scripts, and installs and starts
   each one on a clean system: the `.deb` on Ubuntu 22.04, 24.04 and Debian 12, the `.rpm` and the Flatpak on
-  Fedora 42, the AppImage on Ubuntu 22.04 and Fedora 42, the disk image on Apple silicon and Intel Macs.
+  Fedora 45, the AppImage on Ubuntu 22.04 and Fedora 45, the disk image on Apple silicon and Intel Macs.
   Each check also looks for the license, the notices and the build machine's paths inside the package.
 
 ### Fixed

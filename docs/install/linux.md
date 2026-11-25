@@ -6,8 +6,8 @@
 > desktop: see below. The [threat model](../THREAT_MODEL.md#macos-and-linux-preview-what-is-different)
 > lists what differs from Windows.
 
-About 5 minutes. For a 64-bit PC (x86_64) with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 42 or
-later. There is no Linux download for ARM yet.
+About 5 minutes. For a 64-bit PC (x86_64) with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 43 or
+later (tested on Fedora 45). There is no Linux download for ARM yet.
 
 ## 1. Pick a download
 
