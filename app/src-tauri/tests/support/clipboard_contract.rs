@@ -1,5 +1,7 @@
-//! The clipboard contract every `SystemClipboard` implementation must pass on its own OS
-//! (`docs/superpowers/specs/2026-11-12-port-ci-test-strategy.md`, the six contract points).
+//! The clipboard contract every `SystemClipboard` implementation must pass on its own OS, in six
+//! points: text round-trips, a password manager's protected copy is left alone, empty and image
+//! clipboards read as empty, oversized text never reaches the UI, a stale sequence number blocks
+//! the write, and a scrub rewrites the clipboard only when it finds something.
 //!
 //! A runner per implementation includes this file with
 //! `#[path = "support/clipboard_contract.rs"] mod contract;`, supplies the clipboard and an
