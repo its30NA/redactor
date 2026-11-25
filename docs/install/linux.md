@@ -70,8 +70,10 @@ chmod +x Redactor_<version>_amd64.AppImage
 ```
 
 Keep the file where it is: the hotkey command below names it by its path. The AppImage mounts itself with
-FUSE; if it does not start and the message mentions FUSE, install your distribution's `fuse3` package, or
-run it as `./Redactor_<version>_amd64.AppImage --appimage-extract-and-run`. It adds no menu entry.
+FUSE; if it does not start and the message mentions FUSE, install your distribution's `fuse3` package.
+Only if you cannot, run it as `./Redactor_<version>_amd64.AppImage --appimage-extract-and-run`: that
+unpacks about 260 MB into a folder `appimage_extracted_<number>` under `/tmp` (or `$TMPDIR`) and leaves it
+there after Redactor quits (the next start reuses it). It adds no menu entry.
 
 **Check:** `Redactor --version` (or the AppImage file, or `flatpak run io.github.its30na.redactor
 --version`) prints `Redactor <version>`.
@@ -252,7 +254,7 @@ Quit Redactor first (tray icon > **Quit**).
 | `.deb` | `sudo apt remove redactor` | `~/.config/redactor` and `~/.local/share/io.github.its30na.redactor`: delete both. |
 | `.rpm` | `sudo dnf remove redactor` | The same two folders. |
 | Flatpak | `flatpak uninstall --user --delete-data io.github.its30na.redactor` | Nothing of Redactor's: `--delete-data` removes `~/.var/app/io.github.its30na.redactor`. The GNOME runtime stays for other apps; `flatpak uninstall --user --unused` removes it when nothing needs it. |
-| AppImage | Delete the file. | The same two folders as the `.deb`. |
+| AppImage | Delete the file. | The same two folders as the `.deb`. If you ran it with `--appimage-extract-and-run`, also `/tmp/appimage_extracted_*` (or under `$TMPDIR`). |
 
 Also remove a keyboard shortcut you added for `--scrub-clipboard`.
 
