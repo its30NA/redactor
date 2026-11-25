@@ -28,8 +28,8 @@ jobs:
   preflight:
     name: Preflight
     runs-on: ubuntu-latest
-    # Up to 20 minutes waiting for CI, then cargo-deny install and the tests.
-    timeout-minutes: 60
+    # Up to 120 minutes waiting for CI, then cargo-deny install and the tests (about 40).
+    timeout-minutes: 160
     permissions:
       contents: read
       actions: read # read the CI workflow runs for the tagged commit
@@ -45,14 +45,17 @@ jobs:
       - name: CHANGELOG has a section for this version
         run: tools/release/changelog-section.sh "$TAG" > /dev/null
       # The latest CI run for this commit on a push to main must have succeeded. A run still in
-      # progress is waited for (up to 20 minutes); no run, or any other conclusion, fails here.
+      # progress is waited for, up to 120 minutes: CI's longest chain is bundle-flatpak (limit 60
+      # minutes) then l4-flatpak (30), so 90 minutes when every job runs to its limit, plus about
+      # 30 for jobs queued behind the account's runner limits (macOS above all). No run, or any
+      # other conclusion, fails here.
       - name: CI passed for the tagged commit
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 40); do
+          for attempt in $(seq 1 120); do
             run="$(gh api -X GET "repos/$REPO/actions/workflows/ci.yml/runs" \
               -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f per_page=1 \
               --jq '.workflow_runs[0] // empty | [.status, (.conclusion // "none"), .html_url] | @tsv')"
@@ -69,10 +72,10 @@ jobs:
               echo "::error::CI for $GITHUB_SHA concluded '$conclusion': $url"
               exit 1
             fi
-            echo "CI for $GITHUB_SHA is '$status' (check $attempt of 40), waiting: $url"
-            sleep 30
+            echo "CI for $GITHUB_SHA is '$status' (check $attempt of 120), waiting: $url"
+            sleep 60
           done
-          echo "::error::CI for $GITHUB_SHA did not finish within 20 minutes"
+          echo "::error::CI for $GITHUB_SHA did not finish within 120 minutes"
           exit 1
       - name: Toolchain
         run: rustup show active-toolchain || rustup toolchain install
