@@ -12,11 +12,15 @@
 #   desktop_file       (Linux) the desktop file starts that binary, names an icon the package
 #                      carries, and its StartupWMClass is the window's class (Redactor).
 #   no_build_paths     the binary holds none of the build machine's paths: the runner's home,
-#                      the cargo registry sources, the rustup toolchains, the caller's HOME.
+#                      the cargo registry sources, the rustup toolchains, flatpak-builder's
+#                      /run/build/, the caller's HOME.
 #   every_bundled_library_has_a_license
 #                      (AppImage) every bundled library has an entry in
 #                      usr/share/doc/redactor/bundled-libraries/INDEX.txt and its package's
 #                      Debian copyright file next to it.
+#                      (Flatpak) every license folder the manifest installs
+#                      (packaging/flatpak/<app-id>.json: /app/share/licenses/<module>) is there
+#                      and not empty: one per C library built into the Flatpak.
 #   version            (with --expect-version) the package's own version field says <v>; for
 #                      an AppImage, which has none, its file name.
 # A tool the format needs that is missing here (dpkg-deb, rpm2cpio and cpio, rpm, hdiutil,
@@ -79,7 +83,7 @@ case "$target" in
     }
     root=$location/files
     bin=bin/Redactor
-    res=lib/Redactor
+    res=share/licenses/$app_id
     desktop=share/applications/$app_id.desktop
     ;;
   *.deb)
@@ -180,7 +184,7 @@ fi
 
 if [ -f "$root/$bin" ]; then
   found=()
-  patterns=(/home/runner/ /Users/runner/ /.cargo/registry/src/ /.rustup/toolchains/)
+  patterns=(/home/runner/ /Users/runner/ /.cargo/registry/src/ /.rustup/toolchains/ /run/build/)
   case "${HOME:-/}" in
     / | "") ;;
     *) patterns+=("${HOME%/}/") ;;
@@ -218,6 +222,30 @@ case "$target" in
       else
         fail every_bundled_library_has_a_license "${#missing[@]} without a license, first: ${missing[0]}"
       fi
+    fi
+    ;;
+esac
+
+# (Flatpak) the modules built into it install their licenses under share/licenses/<module>; the
+# manifest names each folder, so a module added without its license install fails here.
+case "$target" in
+  flatpak:*)
+    manifest=$l4_root/packaging/flatpak/$app_id.json
+    folders=$(grep -o '/app/share/licenses/[A-Za-z0-9._-]*' "$manifest" 2>/dev/null | sed 's|^/app/||' | sort -u || true)
+    missing=()
+    count=0
+    for folder in $folders; do
+      count=$((count + 1))
+      if [ -z "$(find "$root/$folder" -type f -size +0 -print -quit 2>/dev/null)" ]; then
+        missing+=("$folder")
+      fi
+    done
+    if [ "$count" -lt 2 ]; then
+      fail every_bundled_library_has_a_license "$manifest names no module license folders"
+    elif [ "${#missing[@]}" -eq 0 ]; then
+      pass every_bundled_library_has_a_license
+    else
+      fail every_bundled_library_has_a_license "${#missing[@]} missing or empty, first: ${missing[0]}"
     fi
     ;;
 esac

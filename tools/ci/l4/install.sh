@@ -9,7 +9,9 @@
 #   appimage  chmod +x; no FUSE in a container, so the AppImage unpacks itself each start
 #             -> <file> --appimage-extract-and-run
 #   flatpak   flatpak install --user, with the Flathub remote for the runtime (Fedora)
-#             -> flatpak run io.github.its30na.redactor
+#             -> env FLATPAK_USER_DIR=<the user installation> flatpak run io.github.its30na.redactor
+#             (start.sh gives the app a HOME and XDG_DATA_HOME of its own, where flatpak would
+#             otherwise look for the user installation and find none)
 #
 # The test tools are those of tools/ci/l4/start.sh and contents.sh: Xvfb, xdotool, a session bus
 # (dbus-run-session), xprop for a look by hand; on Fedora also setsid, find, cmp, and cpio for
@@ -87,7 +89,14 @@ case "$format:$pm" in
     install flatpak ca-certificates
     flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >&2
     flatpak install --user --noninteractive --assumeyes "$file" >&2
-    echo "flatpak run $app_id"
+    user_dir=${FLATPAK_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/flatpak}
+    case "$user_dir" in
+      *[[:space:]]*)
+        echo "install.sh: the flatpak user folder has a space: $user_dir" >&2
+        exit 2
+        ;;
+    esac
+    echo "env FLATPAK_USER_DIR=$user_dir flatpak run $app_id"
     ;;
   *)
     echo "install.sh: $format is not installed with $pm" >&2

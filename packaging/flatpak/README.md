@@ -70,3 +70,8 @@ flatpak install --user flathub org.gnome.Platform//51 org.gnome.Sdk//51
 flatpak-builder --user --install --force-clean build-dir packaging/flatpak/io.github.its30na.redactor.json
 flatpak run io.github.its30na.redactor
 ```
+
+CI runs `tools/release/bundle-flatpak.sh <out-dir>` instead, in Flathub's GNOME 51 build
+image: it checks the manifest, builds into a local repository and exports the single-file
+bundle `Redactor_<version>_x86_64.flatpak`. Install that with
+`flatpak install --user Redactor_<version>_x86_64.flatpak` (the runtime comes from Flathub).

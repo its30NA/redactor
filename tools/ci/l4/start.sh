@@ -133,8 +133,16 @@ if [ "${1:-}" = "--inside-bus" ]; then
     # The desktop's own services, started on the bus by the libraries the window loads, keep
     # their folders there (named one by one, so anything else still counts): the document
     # portal (doc), GSettings (dconf), D-Bus activation (dbus-1) and the accessibility bus.
-    left=$(find "$XDG_RUNTIME_DIR" -mindepth 1 -maxdepth 1 ! -name doc ! -name dconf \
-      ! -name dbus-1 ! -name at-spi -printf '%f ' 2>/dev/null || true)
+    # Flatpak keeps its own beside them: the instance records (.flatpak), the session helper
+    # (.flatpak-helper) and the app's shared runtime folder (app/<app-id>).
+    keep=(! -name doc ! -name dconf ! -name dbus-1 ! -name at-spi)
+    for word in "${cmd[@]}"; do
+      if [ "$(basename -- "$word")" = flatpak ]; then
+        keep+=(! -name .flatpak ! -name .flatpak-helper ! -name app)
+        break
+      fi
+    done
+    left=$(find "$XDG_RUNTIME_DIR" -mindepth 1 -maxdepth 1 "${keep[@]}" -printf '%f ' 2>/dev/null || true)
     if [ -n "$left" ]; then
       fail quits "left in XDG_RUNTIME_DIR: $left"
     else

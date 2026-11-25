@@ -23,6 +23,7 @@
     "/lib/pkgconfig",
     "/lib/*.la",
     "/lib/*.a",
+    "/lib/girepository-1.0",
     "/share/gir-1.0",
     "/share/gtk-doc",
     "/share/doc",
@@ -205,6 +206,7 @@
           "skip": [
             ".git",
             ".flatpak-builder",
+            "build-dir",
             "target",
             "dist",
             "smoke-out",

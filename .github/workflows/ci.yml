@@ -417,6 +417,84 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The Flatpak, built from source in the GNOME 51 SDK by the release's own script, inside
+  # flathub-infra's image for it (pinned by digest, read 2026-11-25). The build runs offline from
+  # packaging/flatpak/*-sources.json; l4-flatpak then installs and starts the bundle.
+  bundle-flatpak:
+    name: Flatpak bundle (GNOME 51 SDK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
+      # flatpak-builder sandboxes each build step with bubblewrap, which needs namespaces.
+      options: --privileged
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Metainfo is valid
+        run: appstreamcli validate --no-net packaging/flatpak/io.github.its30na.redactor.metainfo.xml
+      - name: Build the Flatpak
+        run: tools/release/bundle-flatpak.sh dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-flatpak
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # L4 for the Flatpak: installed --user in a clean Fedora container (the runtime from Flathub),
+  # then the same contents and start checks as the other formats. --privileged for bubblewrap.
+  l4-flatpak:
+    name: L4 flatpak (fedora-42)
+    needs: bundle-flatpak
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
+      options: --privileged --shm-size=1g
+    defaults:
+      run:
+        shell: bash
+    env:
+      L4_LABEL: flatpak-fedora-42
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-flatpak
+          path: dist
+      - name: Install (flatpak)
+        run: |
+          file=$(ls dist/*.flatpak)
+          cmd=$(tools/ci/l4/install.sh flatpak "$file")
+          echo "starts with: $cmd"
+          echo "L4_CMD=$cmd" >> "$GITHUB_ENV"
+      - name: Contents (license, notices, binary, desktop file, build paths, module licenses)
+        if: ${{ !cancelled() && env.L4_CMD != '' }}
+        run: |
+          tools/ci/l4/contents.sh flatpak:io.github.its30na.redactor \
+            --expect-version "$(tools/ci/l4/lib.sh app-version)"
+      # L4_CMD is a command line (env FLATPAK_USER_DIR=... flatpak run <id>): split on purpose.
+      - name: Start (version, window, second launch, quit)
+        if: ${{ !cancelled() && env.L4_CMD != '' }}
+        run: |
+          # shellcheck disable=SC2086
+          tools/ci/l4/start.sh "$(tools/ci/l4/lib.sh app-version)" $L4_CMD
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-flatpak-fedora-42
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
   app-macos:
     name: Rust and app shell (macOS)
     runs-on: macos-latest
