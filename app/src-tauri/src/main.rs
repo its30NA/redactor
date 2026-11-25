@@ -3,6 +3,12 @@
 
 fn main() {
     redactor_app::platform::no_core_dumps();
+    // Before any platform, display or Tauri call: an installed package can be checked with no
+    // desktop at all.
+    if redactor_app::cli::version_requested(&std::env::args().collect::<Vec<_>>()) {
+        println!("{}", redactor_app::cli::version_line());
+        return;
+    }
     redactor_app::install_quiet_panic_hook();
     if let Err(redactor_app::platform::Unavailable(why)) = redactor_app::run() {
         eprintln!("{why}");

@@ -3,6 +3,9 @@
 //! `--scrub-clipboard` scrubs the clipboard as the hotkey does: on a second start the running
 //! app gets it through the single-instance plugin, on a first start the app acts on it once it
 //! is up. A desktop shortcut that runs the app with `--scrub-clipboard` is then a hotkey.
+//!
+//! `--version` prints the version and exits before any window, display or platform code runs,
+//! so it also proves an installed package finds every library it links.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -13,6 +16,19 @@ pub const SCRUB_FLAG: &str = "--scrub-clipboard";
 /// True when an argument after the program name is exactly [`SCRUB_FLAG`].
 pub fn scrub_requested(args: &[String]) -> bool {
     args.iter().skip(1).any(|a| a == SCRUB_FLAG)
+}
+
+/// Asks the app to print its version and exit.
+pub const VERSION_FLAG: &str = "--version";
+
+/// True when an argument after the program name is exactly [`VERSION_FLAG`].
+pub fn version_requested(args: &[String]) -> bool {
+    args.iter().skip(1).any(|a| a == VERSION_FLAG)
+}
+
+/// The line `--version` prints, e.g. `Redactor 2.1.1`.
+pub fn version_line() -> String {
+    format!("Redactor {}", env!("CARGO_PKG_VERSION"))
 }
 
 /// What the AppImage runtime tells the app it starts: the AppImage file (`$APPIMAGE`) and where
@@ -152,6 +168,35 @@ mod tests {
         assert!(!scrub_requested(&args(&["--scrub-clipboard"])));
         assert!(!scrub_requested(&args(&["redactor"])));
         assert!(!scrub_requested(&args(&[])));
+    }
+
+    #[test]
+    fn version_flag_after_program_name() {
+        assert!(version_requested(&args(&["Redactor", "--version"])));
+    }
+
+    #[test]
+    fn program_name_alone_is_not_a_request() {
+        assert!(!version_requested(&args(&["--version"])));
+        assert!(!version_requested(&args(&["Redactor"])));
+        assert!(!version_requested(&args(&[])));
+    }
+
+    #[test]
+    fn version_look_alikes_are_not() {
+        for look_alike in ["--version=1", "-version", "--Version"] {
+            assert!(
+                !version_requested(&args(&["Redactor", look_alike])),
+                "{look_alike}"
+            );
+        }
+    }
+
+    #[test]
+    fn version_line_names_the_crate_version() {
+        let line = version_line();
+        assert_eq!(line, format!("Redactor {}", env!("CARGO_PKG_VERSION")));
+        assert!(line.starts_with("Redactor 2."), "{line}");
     }
 
     #[test]
