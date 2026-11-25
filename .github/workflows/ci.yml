@@ -600,6 +600,86 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The macOS download: one universal disk image, built by the release's own script with the
+  # release's path remapping (the script ends with the archs, the ad hoc signature and
+  # tools/ci/l4/contents.sh). Then L4: tools/ci/l4/dmg.sh installs the app from the image and
+  # starts it as arm64 and, where Rosetta 2 is installed, as x86_64, plus the L3 smoke on the
+  # installed copy. l4-macos-intel starts the same file on an Intel Mac.
+  bundle-macos:
+    name: macOS disk image (universal)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      # As release.yml. Set before rust-cache, whose key includes RUSTFLAGS.
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Build and check the disk image
+        run: tools/release/bundle-macos.sh dist
+      # Uploaded before the start check, so the Intel job also runs when this one's check fails
+      # (a CI round is one push by hand and should show every result).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles-macos
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Install from the image and start (L4, Apple silicon)
+        run: tools/ci/l4/dmg.sh dist/Redactor_*_universal.dmg "$(tools/ci/l4/lib.sh app-version)"
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-dmg-macos-latest
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  l4-macos-intel:
+    name: L4 dmg (macos-15-intel)
+    needs: bundle-macos
+    # Also after a failed start check above, as long as the image was uploaded.
+    if: ${{ !cancelled() }}
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundles-macos
+          path: dist
+      - name: Install from the image and start (L4, Intel)
+        run: tools/ci/l4/dmg.sh dist/Redactor_*_universal.dmg "$(tools/ci/l4/lib.sh app-version)"
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-dmg-macos-15-intel
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
   windows:
     name: Rust (Windows)
     runs-on: windows-latest
