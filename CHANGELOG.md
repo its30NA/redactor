@@ -17,7 +17,8 @@ All notable changes to this project are documented here. The format follows
   [install guides](docs/install/linux.md) say which to pick, how to verify, install and remove each, and
   the [threat model](docs/THREAT_MODEL.md#macos-and-linux-preview-what-is-different) lists what differs
   from Windows.
-- `Redactor --version` prints the version and exits, before any window opens.
+- `Redactor --version` prints the version and exits, before any window opens. On Windows the app has no
+  console, so the line shows only when the output is redirected to a file or a pipe.
 - Inside the Flatpak, Settings shows the command to bind as
   `flatpak run io.github.its30na.redactor --scrub-clipboard`, the one that works from outside the sandbox.
 - The window starts in the theme's background colour instead of flashing white before the page is drawn

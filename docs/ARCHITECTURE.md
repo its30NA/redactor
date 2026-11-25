@@ -114,7 +114,7 @@ macOS 13 and later, and on Linux X11 and Wayland sessions.
 | Module | Role |
 |---|---|
 | `app.rs` | Builds the Tauri app: plugins, the main window, hotkey registration, idle timer, lock watcher, close-to-tray. |
-| `cli.rs` | The command-line arguments: `--scrub-clipboard`, and `--version`, which prints the version and exits before any window, display or platform code runs. Also the program a desktop shortcut runs: the AppImage file inside an AppImage, `flatpak run <id>` inside a Flatpak (`/.flatpak-info` present and `FLATPAK_ID` shaped like an app id), else this executable. |
+| `cli.rs` | The command-line arguments: `--scrub-clipboard`, and `--version`, which prints the version and exits before any window, display or platform code runs (on Windows the release build has no console, so only to a redirected output). Also the program a desktop shortcut runs: the AppImage file inside an AppImage, `flatpak run <id>` inside a Flatpak (`/.flatpak-info` present and `FLATPAK_ID` shaped like an app id), else this executable. |
 | `first_frame.rs` | The window's background before the page paints: the UI's dark background for the dark and system themes, the light one for the light theme, so the window does not flash white. |
 | `commands.rs` | The 14 IPC commands. Heavy work runs on a blocking worker, never on the UI thread. |
 | `bridge.rs` | Re-exports `redactor-wire`'s scan mapping. |
