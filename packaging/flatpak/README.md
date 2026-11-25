@@ -11,7 +11,7 @@ build.
 | `io.github.its30na.redactor.desktop` | The menu entry. `StartupWMClass=Redactor` is the window's class, so the desktop puts the window under this entry. |
 | `io.github.its30na.redactor.metainfo.xml` | The AppStream metadata software centres show (summary, description, license, release). |
 | `cargo-sources.json`, `node-sources.json` | Generated: every crate and npm package of the lockfiles as a pinned download, so the build needs no network. |
-| `patches/` | Three small upstream fixes the tray libraries need to build in the SDK (from Flathub's shared modules; each keeps its author header). |
+| `patches/` | Three small upstream fixes the tray libraries need to build in the SDK, from Flathub's shared modules at commit `34add58f`. Each patch's first line names the file it was copied from; the author lines keep the names but leave out the e-mail addresses. |
 
 ## Modules
 
