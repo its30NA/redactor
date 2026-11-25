@@ -252,9 +252,13 @@ pub struct AppInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     lock_watched: Option<bool>,
     /// The program a desktop shortcut runs with `--scrub-clipboard`; left out when its path is
-    /// not Unicode.
+    /// not Unicode, and inside a Flatpak (its path there does not exist on the host).
     #[serde(skip_serializing_if = "Option::is_none")]
     executable: Option<String>,
+    /// The Flatpak app id when the app runs inside a Flatpak: the shortcut runs
+    /// `flatpak run <id> --scrub-clipboard`. Left out elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flatpak: Option<String>,
 }
 
 /// How long `app_info` waits at most for the lock watcher to know whether it has a lock source
@@ -275,6 +279,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> 
             }
         });
         app::run_start_scrub(&app);
+        let flatpak = crate::cli::this_flatpak();
         AppInfo {
             version: env!("CARGO_PKG_VERSION"),
             engine_version: redactor_core::ENGINE_VERSION,
@@ -286,7 +291,8 @@ pub async fn app_info(app: AppHandle, state: State<'_, Shared>) -> Res<AppInfo> 
             clipboard_needs_focus: st.platform.clipboard.needs_focus(),
             hotkey_active: st.hotkey_active.load(Ordering::SeqCst),
             lock_watched: st.platform.lock.listens(LOCK_WAIT),
-            executable: crate::cli::this_program(),
+            executable: flatpak.is_none().then(crate::cli::this_program).flatten(),
+            flatpak,
         }
     })
     .await

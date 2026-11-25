@@ -31,6 +31,7 @@ async function boot(): Promise<void> {
       scrubOnStart: q.has('scrub'),
       appInfo: info === 'slow' || info === 'fail' ? info : undefined,
       executable: q.get('exe') ?? undefined,
+      flatpak: q.get('flatpak') ?? undefined,
       hotkeyRefused: q.has('hotkeyrefused'),
       settingsUnreadable: q.has('settingsbad'),
       saveFails: q.has('savefail'),

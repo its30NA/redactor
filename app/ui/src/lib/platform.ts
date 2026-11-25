@@ -88,11 +88,15 @@ const shellWord = (path: string): string =>
   SHELL_SPECIAL.test(path) ? `'${path.replaceAll("'", "'\\''")}'` : path;
 
 /**
- * What the desktop shortcut runs where the app cannot hold a key itself: the program the shell
- * names (its executable, or the AppImage file), or the plain name where it names none.
+ * What the desktop shortcut runs where the app cannot hold a key itself: `flatpak run <id>` inside
+ * a Flatpak (the shell only sends ids made of letters, digits, `_`, `-` and dots: nothing to
+ * quote), else the program the shell names (its executable, or the AppImage file), or the plain
+ * name where it names none.
  */
-export const scrubCommand = (info: Pick<AppInfo, 'executable'> | null): string =>
-  `${shellWord(info?.executable ?? 'redactor')} --scrub-clipboard`;
+export const scrubCommand = (info: Pick<AppInfo, 'executable' | 'flatpak'> | null): string =>
+  info?.flatpak
+    ? `flatpak run ${info.flatpak} --scrub-clipboard`
+    : `${shellWord(info?.executable ?? 'redactor')} --scrub-clipboard`;
 
 /** How the hotkey works on this desktop, or null where the app registers the key itself. */
 export const hotkeyNote = (info: Pick<AppInfo, 'hotkey'> | null): string | null => {

@@ -194,9 +194,14 @@ export interface AppInfo {
   lockWatched?: boolean;
   /**
    * The program a desktop shortcut runs with `--scrub-clipboard`: this executable, or the
-   * AppImage file. Absent where its path is not Unicode.
+   * AppImage file. Absent where its path is not Unicode, and inside a Flatpak.
    */
   executable?: string;
+  /**
+   * The Flatpak app id when the app runs inside a Flatpak: the desktop shortcut then runs
+   * `flatpak run <id>`, since the sandbox's own path does not exist on the host. Absent elsewhere.
+   */
+  flatpak?: string;
 }
 
 /**

@@ -68,6 +68,39 @@ pub fn this_program() -> Option<String> {
     program_path(std::env::current_exe().ok(), appimage)
 }
 
+/// The Flatpak app id this process runs under: `Some` only inside a Flatpak sandbox (Flatpak
+/// puts `/.flatpak-info` there, `info_file_exists`) and only when `FLATPAK_ID` has an app id's
+/// shape, at most 255 bytes of three or more dot-separated parts, each starting with a letter or
+/// `_` and holding only ASCII letters, digits, `_` and `-`. A desktop shortcut then runs
+/// `flatpak run <id>`: the sandbox's own path does not exist on the host, and an id of this
+/// shape needs no quoting in a command line.
+pub fn flatpak_app_id(flatpak_id: Option<OsString>, info_file_exists: bool) -> Option<String> {
+    if !info_file_exists {
+        return None;
+    }
+    let id = flatpak_id?.into_string().ok()?;
+    let part_ok = |part: &str| {
+        let mut chars = part.chars();
+        chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    };
+    let well_formed = id.len() <= 255 && id.split('.').count() >= 3 && id.split('.').all(part_ok);
+    well_formed.then_some(id)
+}
+
+/// [`flatpak_app_id`] for this process: always `None` outside Linux.
+pub fn this_flatpak() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    return flatpak_app_id(
+        std::env::var_os("FLATPAK_ID"),
+        Path::new("/.flatpak-info").exists(),
+    );
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +185,63 @@ mod tests {
             Some("/opt/Redactor"),
             "an AppImage path that is not Unicode falls back to the executable"
         );
+    }
+
+    #[test]
+    fn flatpak_names_flatpak_run() {
+        assert_eq!(
+            flatpak_app_id(Some("io.github.its30na.redactor".into()), true).as_deref(),
+            Some("io.github.its30na.redactor")
+        );
+        assert_eq!(
+            flatpak_app_id(Some("org.Example_App.my-tool".into()), true).as_deref(),
+            Some("org.Example_App.my-tool")
+        );
+    }
+
+    #[test]
+    fn flatpak_id_needs_the_info_file() {
+        assert_eq!(
+            flatpak_app_id(Some("io.github.its30na.redactor".into()), false),
+            None
+        );
+        assert_eq!(flatpak_app_id(None, true), None);
+    }
+
+    #[test]
+    fn flatpak_id_must_look_like_an_app_id() {
+        let long = format!("io.github.{}", "a".repeat(246));
+        assert_eq!(long.len(), 256);
+        for odd in [
+            "",
+            "redactor",
+            "a.b",
+            "io.github.x;rm",
+            "io..x.y",
+            "1io.x.y",
+            "io.1x.y",
+            "io.x.",
+            ".io.x.y",
+            "io.x.y z",
+            "io.x.\u{e9}",
+            long.as_str(),
+        ] {
+            assert_eq!(flatpak_app_id(Some(odd.into()), true), None, "{odd:?}");
+        }
+        // 255 bytes is still an id.
+        let longest = format!("io.github.{}", "a".repeat(245));
+        assert_eq!(
+            flatpak_app_id(Some(longest.clone().into()), true),
+            Some(longest)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_flatpak_id_that_is_not_unicode_is_not_one() {
+        use std::os::unix::ffi::OsStringExt;
+        let odd = OsString::from_vec(b"io.github.red\xffactor".to_vec());
+        assert_eq!(flatpak_app_id(Some(odd), true), None);
     }
 
     fn args(list: &[&str]) -> Vec<String> {

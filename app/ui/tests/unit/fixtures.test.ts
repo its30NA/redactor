@@ -71,6 +71,13 @@ describe('fixtures', () => {
     expect(schema.appInfo({ ...base, executable: 7 }, 'i')).toEqual(['i.executable: expected string']);
   });
 
+  test('app_info: the Flatpak app id is optional and a string', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, flatpak: 'a.b.c' }, 'i')).toEqual([]);
+    expect(schema.appInfo(base, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, flatpak: 7 }, 'i')).toEqual(['i.flatpak: expected string']);
+  });
+
   test('the scrub events carry the press they belong to', () => {
     const scrub = FIXTURES['clipboard-cleaned'];
     expect(schema.scrubResult({ ...scrub, press: 3 }, 'r')).toEqual([]);

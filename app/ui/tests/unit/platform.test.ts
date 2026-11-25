@@ -194,6 +194,15 @@ describe('scrubCommand', () => {
     expect(scrubCommand(info())).toBe('redactor --scrub-clipboard');
     expect(scrubCommand(null)).toBe('redactor --scrub-clipboard');
   });
+  test('flatpak_scrub_command: inside a Flatpak, the flatpak run command', () => {
+    expect(scrubCommand(info({ flatpak: 'io.github.its30na.redactor' }))).toBe(
+      'flatpak run io.github.its30na.redactor --scrub-clipboard',
+    );
+    // The sandbox path does not exist on the host: the app id wins over any path.
+    expect(scrubCommand(info({ flatpak: 'io.github.its30na.redactor', executable: '/app/bin/redactor' }))).toBe(
+      'flatpak run io.github.its30na.redactor --scrub-clipboard',
+    );
+  });
 });
 
 describe('focusNote', () => {

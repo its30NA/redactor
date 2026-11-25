@@ -223,6 +223,7 @@ export const appInfo = object<AppInfo>({
   hotkeyActive: optional(bool),
   lockWatched: optional(bool),
   executable: optional(str),
+  flatpak: optional(str),
 });
 
 /** The `app-status` event. */

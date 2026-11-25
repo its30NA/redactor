@@ -62,6 +62,15 @@ test.describe('Wayland', () => {
     expect(copies.map((c) => c.args.text)).toEqual([quoted]);
   });
 
+  test('inside_a_flatpak_the_command_is_flatpak_run', async ({ page, problems: _ }) => {
+    const sheet = await openSettings(page, '?os=linux&hotkey=command&flatpak=io.github.its30na.redactor');
+    const command = 'flatpak run io.github.its30na.redactor --scrub-clipboard';
+    await expect(sheet.getByTestId('hotkey-note').locator('code')).toHaveText(command);
+    await sheet.getByTestId('copy-command').click();
+    const copies = (await mockCalls(page)).filter((c) => c.cmd === 'copy_text');
+    expect(copies.map((c) => c.args.text)).toEqual([command]);
+  });
+
   test('a_clipboard_that_needs_focus_says_so', async ({ page, problems: _ }) => {
     const sheet = await openSettings(page, '?os=linux&hotkey=command&focus=1');
     await expect(sheet.getByTestId('focus-note')).toHaveText(FOCUS_NOTE);

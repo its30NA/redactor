@@ -57,6 +57,8 @@ export interface MockOptions {
   appInfo?: 'slow' | 'fail';
   /** With `os`: the program app_info names; unset is `MOCK_EXECUTABLE`. */
   executable?: string;
+  /** With `os`: the app runs inside a Flatpak with this app id (app_info then names no program). */
+  flatpak?: string;
   /** With `os`: nothing on this desktop reports a screen lock (app_info.lockWatched false). */
   noLockSignal?: boolean;
   /** The hotkey could not be registered at start: app_info says so, with a notice at the first app_info. */
@@ -443,7 +445,7 @@ export function installMockBackend(opts: MockOptions = {}): MockBackend {
                 shield: false,
                 ...(opts.hotkey ? { hotkey: opts.hotkey } : {}),
                 ...(opts.clipboardNeedsFocus ? { clipboardNeedsFocus: true } : {}),
-                executable: opts.executable ?? MOCK_EXECUTABLE,
+                ...(opts.flatpak ? { flatpak: opts.flatpak } : { executable: opts.executable ?? MOCK_EXECUTABLE }),
                 hotkeyActive: backend.hotkeyActive,
                 lockWatched: !opts.noLockSignal,
               }
