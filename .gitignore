@@ -30,3 +30,8 @@ __pycache__/
 
 # tools/ci/linux-smoke.sh: screenshots, video and logs
 smoke-out/
+
+# tools/release/bundle-linux.sh output and local flatpak-builder runs (packaging/flatpak/README.md)
+/dist/
+/build-dir/
+/.flatpak-builder/
