@@ -49,7 +49,10 @@ Get the latest build from [GitHub Releases](https://github.com/its30NA/redactor/
 | `scrub-v<version>-aarch64-apple-darwin.tar.gz`, `scrub-v<version>-x86_64-apple-darwin.tar.gz` | `scrub` for macOS (Apple silicon, Intel). |
 | `SHA256SUMS` | Checksums of every file above. |
 
-The desktop app is released for Windows; macOS and Linux (X11) are in preview (see the guides above). On
+The desktop app is released for Windows; macOS and Linux (X11 and Wayland) are in preview (see the guides above).
+The previews are unattested test builds, not release downloads: the Mac app is a CI build kept for 7 days
+and the Linux app is built from source, with no `SHA256SUMS` and no attestation. The
+[threat model](docs/THREAT_MODEL.md#macos-and-linux-preview-what-is-different) says what else differs. On
 Windows it runs on Microsoft's WebView2 runtime, which ships with Windows 11
 and current Windows 10; on a PC without it, the installer downloads it from Microsoft (the portable
 zip downloads nothing and needs it installed). `scrub` runs on Windows, Linux and macOS.
@@ -109,8 +112,11 @@ Verify `SHA256SUMS` the same way if you want to be sure the checksum list is gen
 
 - **Desktop app:** Windows Settings > Apps > Installed apps > Redactor > Uninstall. The installer is per-user,
   so no administrator rights are needed. The portable zip has nothing to uninstall: delete the file.
-- **Your settings stay behind.** The app keeps `%APPDATA%\Redactor\settings.json`, which holds your settings and
-  your always-redact word list in plain text. Delete the `Redactor` folder in `%APPDATA%` if you want it gone.
+- **Your settings stay behind.** The app keeps `settings.json`, which holds your settings and your
+  always-redact word list in plain text, in `%APPDATA%\Redactor` on Windows (in the preview:
+  `~/Library/Application Support/Redactor` on macOS, `~/.config/redactor` on Linux, plus WebKit's
+  `~/.local/share/io.github.its30na.redactor`). Delete that folder if you want it gone, with a
+  `settings.json.bad` the app may have kept beside the file.
 - **`scrub`:** delete the `scrub` file. If you ran `scrub install-hook`, delete the `pre-commit` file it wrote
   (in `.git/hooks/` or the folder `core.hooksPath` names) in each repository. A `redactor.toml` you wrote
   stays where it is, and so does a file you passed to `--audit`.
@@ -158,7 +164,7 @@ The engine is a pure Rust library with no I/O. The desktop app and `scrub` are t
   security policy allows fetch, XHR and WebSocket connections only to the app's IPC endpoint and loads
   nothing from elsewhere. WebRTC, which that policy does not cover, is removed from the page at start-up,
   and WebView2 starts with non-proxied WebRTC UDP, DNS prefetching and background networking switched
-  off. The window is granted only the 13 commands of the app, with no file, shell, HTTP or opener
+  off. The window is granted only the 14 commands of the app, with no file, shell, HTTP or opener
   permission, and every IPC message must pass an allowlist of the UI's own calls in the isolation frame.
   No HTTP client crate is linked into the Windows app or into `scrub`: `cargo deny` fails the build if one
   appears (`deny.toml`). These limits are checked by tests (`app/src-tauri/tests/config.rs`,
@@ -170,9 +176,13 @@ The engine is a pure Rust library with no I/O. The desktop app and `scrub` are t
   exits with code 101. Errors never contain text. The `scrub --audit` log records counts, labels and line
   numbers, never values.
 - **Nothing stored.** Scanned text is never written to disk. The only file the app keeps is
-  `%APPDATA%\Redactor\settings.json`, which holds settings and your always-redact word list, plain text,
-  clearly labeled in the app. Secrets you ask Redactor to remember live in memory only. The window runs
-  in WebView2's private mode and the UI has no local storage.
+  `settings.json` (`%APPDATA%\Redactor` on Windows, `~/Library/Application Support/Redactor` on macOS,
+  `~/.config/redactor` on Linux), which holds settings and your always-redact word list, plain text,
+  clearly labeled in the app. On macOS and Linux only you can read it (0600, in a 0700 folder). A file the
+  app cannot read is kept as `settings.json.bad` beside it, and the window says so. Secrets you ask
+  Redactor to remember live in memory only. The window runs in WebView2's private mode on Windows and a
+  web view that keeps no page data on macOS and Linux (WebKitGTK still creates
+  `~/.local/share/io.github.its30na.redactor`, with no page data in it), and the UI has no local storage.
 - **Wipes.** Remembered secrets are zeroed in memory when you forget them, quit, lock Windows, put the
   PC to sleep, or after the idle timeout (10 minutes by default; idle means no scan, copy or settings
   change from the window, so reading the output does not count). The text panes are cleared at the same
@@ -180,7 +190,8 @@ The engine is a pure Rust library with no I/O. The desktop app and `scrub` are t
   files), not the engine's working copies, Tauri's IPC buffers or JavaScript strings, which cannot be
   wiped; the [threat model](docs/THREAT_MODEL.md#what-is-not-protected) lists exactly what is and is not
   zeroed.
-- **Clipboard care.** The `Ctrl+Alt+R` hotkey cleans the clipboard in place. Copies marked private by a
+- **Clipboard care.** The `Ctrl+Alt+R` hotkey scrubs the clipboard in place, and also removes hidden
+  zero-width, bidi and tag characters (unless you switch that off). Copies marked private by a
   password manager are never read or changed, and a copy made while the scan runs is never overwritten. The raw copy is removed from Windows clipboard history
   (Win+V) on a best-effort basis.
 - **Screen-share shield.** On by default: screenshots and screen sharing see a blank window. This uses a
@@ -206,7 +217,7 @@ scrub app.log --preview             # where each redaction happened (values mask
 scrub scan .                        # report secrets in a folder, exit 1 if any
 scrub scan . --write                # rewrite files in place with placeholders
 scrub install-hook                  # pre-commit hook: block commits that contain secrets
-scrub clipboard                     # clean the clipboard in place (Windows)
+scrub clipboard                     # scrub the clipboard in place (Windows)
 scrub --sensitivity paranoid --pii  # flag more
 scrub detectors                     # list every rule
 ```

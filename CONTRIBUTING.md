@@ -42,9 +42,31 @@ npx playwright install chromium           # once
 npm run test:e2e                          # UI tests against the mock backend, with the app's CSP
 ```
 
+`npm run dev` serves the UI against the mock backend. Query switches pick what the mock pretends, such as
+`?os=linux&hotkey=command&focus=1`, `?clipboard=hidden` or `?nolock`; the full list is at the top of
+`app/ui/src/main.ts`.
+
 The Tauri shell builds on Windows, macOS and Linux (Linux needs the WebKitGTK development packages). To build
-and test the Windows side from WSL on a Windows machine, run `tools/win-build.sh`. The clipboard tests in
-`app/src-tauri/tests/win_clipboard.rs` need a real desktop session and are ignored by default.
+and test the Windows side from WSL on a Windows machine, run `tools/win-build.sh`: `check` runs clippy and the
+tests that leave the desktop alone, `test` also runs the clipboard tests in
+`app/src-tauri/tests/win_clipboard.rs`, which need a real desktop session and are ignored by default (they
+save and restore your clipboard text).
+
+### Build the app
+
+The app crate embeds the built UI, so build the UI first, then the app with the Tauri CLI:
+
+```bash
+cd app/ui && npm ci && npm run build
+cd ../src-tauri && ../ui/node_modules/.bin/tauri build --no-bundle -- --locked   # target/release/Redactor
+```
+
+A plain `cargo build --release` gives a development binary (`redactor-app`) that loads the dev server at
+localhost:5173 and shows a white window without it. On Linux, install the packages CI uses first:
+
+```bash
+sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+```
 
 ### Linux desktop tests
 
@@ -63,9 +85,15 @@ is green. It works under WSL too, where it never touches the Windows clipboard. 
 and are never retried: a test that fails once in ten runs is a bug to find.
 
 `tools/ci/x11-tests.sh --run <command...>` runs any command in that same environment, for example the app
-itself. `tools/ci/linux-smoke.sh <app binary>` starts the built app there and checks it end to end (the
-hotkey scrubs the clipboard, clean text is left alone, the window closes or hides to the tray as the desktop
-allows); `--self-test` checks the script's own set-up without an app.
+itself. `tools/ci/linux-smoke.sh <app binary>` starts the built app there and checks it end to end (S1-S9:
+the hotkey scrubs the clipboard, clean text is left alone, lock and sleep wipe, the window closes or hides
+to the tray as the desktop allows, and at the end the XDG folders hold only the files the app may leave and
+none of the passwords it was given); `--self-test` checks the script's own set-up without an app. With
+`SMOKE_WEBDRIVER=0` (as CI runs it) S2, S5 and S6 are SKIP, so 6 pass and 3 skip.
+
+The Linux test and smoke scripts unmount anything still mounted in their temporary folder when they exit
+(the document portal's `$XDG_RUNTIME_DIR/doc`, for example) before they delete it. A clean-up problem only
+prints a warning; it never changes the script's exit status.
 
 ### Wayland desktop tests
 
@@ -96,9 +124,10 @@ tools/ci/wayland-tests.sh
   repository root (with the mock portal, unless `MOCK_PORTAL=none`): to start the built app on headless sway
   by hand. `grim` takes screenshots of that compositor.
 
-`tools/ci/wayland-smoke.sh <app binary>` checks the built app end to end on headless sway (W1-W7: a native
-Wayland window, `--scrub-clipboard` cleans a copy and leaves a password manager's copy alone, the clipboard
-that works only while the window is in front, Settings without a portal, quit). It runs itself inside
+`tools/ci/wayland-smoke.sh <app binary>` checks the built app end to end on headless sway (W1-W8: a native
+Wayland window, `--scrub-clipboard` scrubs a copy and leaves a password manager's copy alone, the clipboard
+that works only while the window is in front, Settings without a portal, quit, and what the runs left in
+the XDG folders). It runs itself inside
 `wayland-tests.sh --run` with no portal, and first builds two development helpers in
 `app/src-tauri/examples` (they are not part of the app): `wayland_offer`, a copy marked as a password
 manager's, and `wayland_keyboard`, a keyboard for the seat, because headless sway has none and without one
@@ -111,10 +140,23 @@ L3) and the rest must pass. With WebDriver on, the smoke also needs `webkit2gtk-
 
 KDE Plasma (KWin, with the data-control protocol `ext_data_control_v1` that sway does not offer) is tested
 in a Fedora 42 container (needs Docker): `REDACTOR_WAYLAND_COMPOSITOR=kwin` makes `wayland-tests.sh` start
-`kwin_wayland --virtual` instead of sway and run `wayland_clipboard` only.
+`kwin_wayland --virtual` instead of sway and run `wayland_clipboard` only (no mock portal, no focused-window
+tests). The container has no cargo, so the test binaries are built on the host first:
+
+```bash
+REDACTOR_WAYLAND_COMPOSITOR=kwin tools/ci/wayland-tests.sh --build target/wayland-tests
+tools/ci/desktop-container.sh env REDACTOR_WAYLAND_COMPOSITOR=kwin WAYLAND_TEST_BINARIES=target/wayland-tests \
+  tools/ci/wayland-tests.sh
+```
+
+CI sets `WAYLAND_TESTS_EXPECT` to 42 on sway (19 in `wayland_clipboard`, 12 in `wayland_focused`, 10 in
+`wayland_portal` and 1 in `wayland_webview`; `no_portal_means_command_mode` runs in its own pass) and to 19
+on KWin, the number of tests that must pass. Change a count there when you add or remove a test;
+`cargo test -p redactor-app --test <binary> -- --list --ignored` lists them.
 
 Two things the machines cannot test: the real GNOME and KDE shortcut dialogs, and the window clipboard with
-a real desktop's focus rules. Those are tested by hand, on a real desktop of that kind.
+a real desktop's focus rules. Those are tested by hand, on a real desktop of that kind. A WSLg round (the
+window-clipboard path and the command, on Weston) is run by hand before a release.
 
 ### macOS desktop tests
 
@@ -137,6 +179,17 @@ the window, the lock wipes, the window comes back from the menu bar, nothing is 
 with `OBSERVED` say what this macOS did where that is not a pass or a fail; read them in the job summary.
 The UI's Playwright suite also runs in WebKit on the macOS runners (`PW_WEBKIT=1 npx playwright test
 --project=webkit`; it runs on Linux too once Playwright's WebKit is installed).
+
+### Run before each release
+
+These tests run on no CI machine: hosted runners have no reliable desktop clipboard, and timing gates on
+shared runners flake. Run them by hand before each release tag.
+
+| What | How |
+|---|---|
+| The Windows clipboard tests (`app/src-tauri/tests/win_clipboard.rs`, with the clipboard history check) | `tools/win-build.sh test` from WSL on a Windows machine. It saves and restores your clipboard text. |
+| The engine's performance tests (`crates/redactor-core/tests/perf.rs`, including `adversarial_shapes_scale_linearly`) | `cargo test -p redactor-core --release --test perf -- --ignored --nocapture --test-threads=1` |
+| Wayland smoke W6 (Settings shows the command to bind where there is no shortcut portal) | WebDriver cannot open a session in the app's private web context, so CI skips it. Check it by hand on a desktop without a portal: open Settings and check that it shows the command to bind. |
 
 ### Regenerating generated files
 
@@ -167,7 +220,8 @@ Do not edit generated files by hand.
   `cfg`, so their tests run for every OS on any machine.
 - Detection uses the `regex` crate only (linear time). There is no lookaround; check boundaries in code.
 - Nothing may log, print or store scanned text, and a finding must never carry a secret value.
-- Changes to the IPC contract touch the Rust side (`redactor-wire`, `commands.rs`, `capabilities/main.json`)
-  and the UI (`src/lib/types.ts`, `schema.ts`) together.
+- Changes to the IPC contract touch the Rust side (`redactor-wire`, `commands.rs`, `capabilities/main.json`),
+  the UI (`src/lib/types.ts`, `schema.ts`, the mock and its fixtures), the isolation page's allowlist
+  (`app/isolation/index.js`, which also lists the event names) and the tests that pin each shape, together.
 - Pin dependencies: Tauri and its plugins with `=`, npm packages by exact version, and commit lockfiles.
 - Commit messages are short and in the imperative ("Add the Telegram bot token rule").
