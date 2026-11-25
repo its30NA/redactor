@@ -296,6 +296,14 @@ jobs:
           cache-dependency-path: app/ui/package-lock.json
       - name: Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # Two fast guards that need no bundle: the L4 start check never reaches the desktop it is
+      # started from (start.sh --print-env), and the Flatpak manifest's permissions, pins and
+      # toolchains (its Rust against this job's rustc). bundle-flatpak runs the manifest check
+      # again, but only after its long build.
+      - name: L4 guard self-test
+        run: tools/ci/l4/selftest.sh
+      - name: Flatpak manifest check
+        run: python3 -I tools/ci/l4/flatpak-manifest-check.py packaging/flatpak/io.github.its30na.redactor.json
       # As release.yml: the runner's checkout, cargo home and rustup home stay out of the
       # binaries (contents.sh's no_build_paths checks it). Set before rust-cache, whose key
       # includes RUSTFLAGS.
