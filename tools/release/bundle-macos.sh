@@ -9,9 +9,11 @@
 #
 # Steps:
 #   1. rustup adds both Mac targets to the pinned toolchain.
-#   2. tauri build --target universal-apple-darwin --bundles dmg: both halves are built, joined
+#   2. tauri build --target universal-apple-darwin --bundles app,dmg: both halves are built, joined
 #      with lipo, the .app is signed ad hoc (bundle.macOS.signingIdentity "-") and put in a disk
-#      image. --ci skips the Finder window styling, which needs a logged-in Finder.
+#      image. --ci skips the Finder window styling, which needs a logged-in Finder. app is named
+#      next to dmg because the bundler deletes the .app after making the image when only dmg is
+#      asked for, and step 3 checks the .app; the flag overrides the overlay's targets (["dmg"]).
 #   3. The app binary holds both architectures (lipo -archs) and the signature verifies
 #      (codesign --verify --deep --strict).
 #   4. Redactor_<version>_universal.dmg into <out-dir>, then tools/ci/l4/contents.sh on it.
@@ -53,7 +55,7 @@ echo "::endgroup::"
 
 echo "::group::bundle-macos: tauri build (universal dmg)"
 started=$(date +%s)
-(cd "$repo/app/src-tauri" && "$tauri" build --ci --target universal-apple-darwin --bundles dmg -- --locked)
+(cd "$repo/app/src-tauri" && "$tauri" build --ci --target universal-apple-darwin --bundles app,dmg -- --locked)
 echo "bundle-macos: tauri build took $(($(date +%s) - started)) s"
 echo "::endgroup::"
 
