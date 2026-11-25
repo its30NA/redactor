@@ -12,10 +12,11 @@
 #             -> flatpak run io.github.its30na.redactor
 #
 # The test tools are those of tools/ci/l4/start.sh and contents.sh: Xvfb, xdotool, a session bus
-# (dbus-run-session), xprop for a look by hand, and for an .rpm rpm2cpio and cpio. An AppImage
-# carries most of its libraries but not those every desktop has (the AppImage exclude list:
-# GL/EGL, X11 and xcb, fontconfig, freetype, harfbuzz, fribidi, gbm, wayland-client, expat), so
-# for it those are installed as a desktop would have them, plus a font.
+# (dbus-run-session), xprop for a look by hand; on Fedora also setsid, find, cmp, and cpio for
+# the .rpm's contents (rpm2cpio comes with rpm). An AppImage carries most of its libraries but
+# not those every desktop has (the AppImage exclude list: GL/EGL, X11 and xcb, fontconfig,
+# freetype, harfbuzz, fribidi, gbm, wayland-client, expat), so for it those are installed as a
+# desktop would have them, plus a font.
 set -euo pipefail
 
 app_id=io.github.its30na.redactor
@@ -44,7 +45,7 @@ apt_tools=(xvfb xdotool dbus dbus-x11 x11-utils)
 apt_desktop=(libgl1 libegl1 libgl1-mesa-dri libgbm1 libfontconfig1 libfreetype6 libfribidi0
   libharfbuzz0b libwayland-client0 libx11-6 libx11-xcb1 libxcb1 libexpat1 fonts-dejavu-core)
 dnf_tools=(xorg-x11-server-Xvfb xdotool dbus-daemon dbus-tools xprop util-linux-core findutils
-  cpio)
+  diffutils cpio)
 dnf_desktop=(libglvnd-glx libglvnd-egl mesa-dri-drivers mesa-libgbm fontconfig freetype fribidi
   harfbuzz libwayland-client libX11 libX11-xcb libxcb expat dejavu-sans-fonts)
 

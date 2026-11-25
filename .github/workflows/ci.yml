@@ -277,6 +277,146 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
+  # The Linux downloads (AppImage, .deb, .rpm), built by the release's own script on the release's
+  # base (Ubuntu 22.04: the glibc the bundles need at least) with the release's path remapping.
+  # The script ends with tools/ci/l4/contents.sh on each file; l4-linux then installs and starts
+  # them in clean containers.
+  bundle-linux:
+    name: Linux bundles (Ubuntu 22.04)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      # As release.yml: the runner's checkout, cargo home and rustup home stay out of the
+      # binaries (contents.sh's no_build_paths checks it). Set before rust-cache, whose key
+      # includes RUSTFLAGS.
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-bundle-linux-${{ steps.image.outputs.version }}-v1
+      # `file` for the AppImage step; rpm, rpm2cpio and cpio for the .rpm's contents check.
+      - name: WebKitGTK, tray and packaging tools
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          file rpm rpm2cpio cpio
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      # The app's tests against 22.04's WebKitGTK and GTK, the libraries the bundles are built on.
+      - name: Test (app shell, Ubuntu 22.04)
+        run: cargo test -p redactor-app --locked
+      - name: Build and check the bundles
+        run: tools/release/bundle-linux.sh dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles-linux
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # L4: each Linux download installs and starts on a clean system and carries LICENSE and the
+  # notices. One clean container per format and distribution (images pinned by digest, looked
+  # up 2026-11-25); the package is installed as a user would, then tools/ci/l4/contents.sh and
+  # tools/ci/l4/start.sh (--version with no display, then the window, a second launch and the
+  # quit on a private Xvfb and session bus). No retries: a flaky check is a finding.
+  l4-linux:
+    name: L4 ${{ matrix.format }} (${{ matrix.name }})
+    needs: bundle-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - format: deb
+            name: ubuntu-22.04
+            image: ubuntu:22.04@sha256:b000e69a50ff940390233025e7a337fb8469b509e2334fa4d018ac30f3e18cdb
+          - format: deb
+            name: ubuntu-24.04
+            image: ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
+          - format: deb
+            name: debian-12
+            image: debian:12@sha256:1d04200c2ece1d4d75a2a6f8e11ebce7d86a2ae28b34bb2c9cbb3ee9f4953e75
+          - format: rpm
+            name: fedora-42
+            image: fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
+          - format: appimage
+            name: ubuntu-22.04
+            image: ubuntu:22.04@sha256:b000e69a50ff940390233025e7a337fb8469b509e2334fa4d018ac30f3e18cdb
+          - format: appimage
+            name: fedora-42
+            image: fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814
+    container:
+      image: ${{ matrix.image }}
+      # WebKit keeps its shared memory in /dev/shm; Docker's default 64 MB is too small.
+      options: --shm-size=1g
+    defaults:
+      run:
+        shell: bash
+    env:
+      FORMAT: ${{ matrix.format }}
+      L4_LABEL: ${{ matrix.format }}-${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundles-linux
+          path: dist
+      # install.sh prints the command that starts the app on its only stdout line.
+      - name: Install (${{ matrix.format }})
+        run: |
+          case "$FORMAT" in
+            deb) file=$(ls dist/*.deb) ;;
+            rpm) file=$(ls dist/*.rpm) ;;
+            appimage) file=$(ls dist/*.AppImage) ;;
+          esac
+          cmd=$(tools/ci/l4/install.sh "$FORMAT" "$file")
+          echo "starts with: $cmd"
+          echo "L4_FILE=$file" >> "$GITHUB_ENV"
+          echo "L4_CMD=$cmd" >> "$GITHUB_ENV"
+      - name: Contents (license, notices, binary, desktop file, build paths)
+        if: ${{ !cancelled() && env.L4_FILE != '' }}
+        run: tools/ci/l4/contents.sh "$L4_FILE" --expect-version "$(tools/ci/l4/lib.sh app-version)"
+      # L4_CMD is a command line (the AppImage takes --appimage-extract-and-run): split on purpose.
+      - name: Start (version, window, second launch, quit)
+        if: ${{ !cancelled() && env.L4_CMD != '' }}
+        run: |
+          # shellcheck disable=SC2086
+          tools/ci/l4/start.sh "$(tools/ci/l4/lib.sh app-version)" $L4_CMD
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-${{ matrix.format }}-${{ matrix.name }}
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
   app-macos:
     name: Rust and app shell (macOS)
     runs-on: macos-latest
