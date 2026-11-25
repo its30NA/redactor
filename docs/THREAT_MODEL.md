@@ -338,7 +338,9 @@ the attestation proves their origin. The AppImage carries its own copies of abou
 Ubuntu 22.04, WebKitGTK among them: those copies get no security update until the next Redactor release,
 and WebKitGTK is the part that renders the window. Prefer the `.deb`, the `.rpm` or the Flatpak where you
 can. The AppImage and the `.deb` need glibc 2.35 or newer (Ubuntu 22.04, Debian 12 or later). The
-AppImage keeps the license of each library it carries under `usr/share/doc/redactor/bundled-libraries/`.
+AppImage keeps the license of each library it carries under `usr/share/doc/redactor/bundled-libraries/`,
+with `APPIMAGE-PARTS.txt` there for the parts that start it (the AppImage runtime, AppRun and the GTK
+hook script).
 
 **Flatpak.** `Redactor_<version>_x86_64.flatpak` is built from source in the GNOME 51 SDK and runs on
 the `org.gnome.Platform//51` runtime from Flathub, whose WebKitGTK is updated with the runtime. It asks

@@ -1,0 +1,141 @@
+The parts of the Redactor AppImage that are not libraries
+==========================================================
+
+INDEX.txt and the *.copyright files in this folder cover the shared libraries under usr/lib.
+Three more parts come from other projects; their licenses follow. Each is the file of the
+pinned release that tools/release/appimage-tools.sh checks by sha256.
+
+1. The AppImage runtime: the program at the start of the AppImage file that mounts (or, with
+   --appimage-extract-and-run, unpacks) the rest and starts AppRun. From
+   https://github.com/AppImage/type2-runtime/releases/tag/20251108 (runtime-x86_64).
+   License: the project's LICENSE at that tag, section A below. It names the libraries it links
+   in statically and where their licenses are.
+
+2. AppRun.wrapped: the AppImageKit AppRun, which sets up the paths and starts the app. From
+   https://github.com/tauri-apps/binary-releases/releases/tag/apprun-old (AppRun-x86_64), a
+   mirror of https://github.com/AppImage/AppImageKit/releases/tag/continuous.
+   License: AppImageKit's LICENSE, section B below.
+
+3. AppRun (the script that runs the hook, then AppRun.wrapped) and
+   apprun-hooks/linuxdeploy-plugin-gtk.sh (sets GTK's theme and data paths). AppRun is written
+   by linuxdeploy (https://github.com/linuxdeploy/linuxdeploy, build 07333c6); the hook comes
+   from linuxdeploy-plugin-gtk (https://github.com/linuxdeploy/linuxdeploy-plugin-gtk, in the
+   copy Tauri's bundler carries). License: MIT, sections C and D below.
+
+A. AppImage type2-runtime
+-------------------------
+
+MIT License
+
+Copyright (c) 2004-23 probonopd
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The AppImage runtime executable contains statically linked code from
+the following third party libraries, which are licensed under
+the following terms:
+
+* musl libc, licensed under the terms of
+  https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT
+* libfuse, licensed under the terms of
+  https://github.com/libfuse/libfuse/blob/master/LGPL2.txt
+* squashfuse, licensed under the terms of
+  https://github.com/vasi/squashfuse/blob/master/LICENSE
+* libzstd, licensed under the terms of
+  https://github.com/facebook/zstd/blob/dev/LICENSE
+* zlib, licensed under the terms of
+  https://zlib.net/zlib_license.html
+
+B. AppImageKit (AppRun)
+-----------------------
+
+MIT License
+
+If not stated otherwise within the individual file or subdirectory, the
+original source code in this repository is licensed as below. This does not
+necessarily apply for all dependencies. For the sake of clarity, this license
+does NOT apply to the contents of AppImages that anyone may create.
+Software contained inside an AppImage may be licensed under any license at the
+discretion of the respecive rights holder(s).
+
+Copyright (c) 2004-20 Simon Peter
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+C. linuxdeploy (AppRun script)
+------------------------------
+
+Copyright 2018 TheAssassin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+D. linuxdeploy-plugin-gtk (apprun-hooks/linuxdeploy-plugin-gtk.sh)
+------------------------------------------------------------------
+
+Copyright 2018-2019 TheAssassin and the linuxdeploy contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

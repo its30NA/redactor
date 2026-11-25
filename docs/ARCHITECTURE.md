@@ -461,12 +461,13 @@ The full analysis is in [THREAT_MODEL.md](THREAT_MODEL.md).
   `bundle-macos.sh` build, check and name the files; both CI and the release run them, so every pull request
   runs the release's own build steps. The AppImage's helper tools are pinned by sha256
   (`tools/release/appimage-tools.sh`), and a second pass adds the licenses of the Ubuntu libraries it carries
-  (`appimage-licenses.sh`). The Flatpak is built from source in Flathub's GNOME 51 build image with no
+  (`appimage-licenses.sh`) and of its runtime, AppRun and GTK hook (`packaging/appimage/APPIMAGE-PARTS.txt`). The Flatpak is built from source in Flathub's GNOME 51 build image with no
   network (`packaging/flatpak/`, `tools/release/bundle-flatpak.sh`), from offline sources generated from the
   lockfiles.
 - **Package checks** (`tools/ci/l4/`): each download is checked the way a user gets it. `contents.sh` looks
   inside a package (LICENSE, the notices, the binary, the desktop file, no build machine paths, the version,
-  a license for every library the AppImage or Flatpak bundles); `install.sh` installs it in a clean
+  a license for every library the AppImage or Flatpak bundles, and for the AppImage's runtime, AppRun and
+  GTK hook); `install.sh` installs it in a clean
   container (Ubuntu 22.04 and 24.04, Debian 12, Fedora 45); `start.sh` runs `--version`, opens the window,
   checks that a second launch hands over to the first and that quitting leaves nothing behind, always on its
   own Xvfb, D-Bus and temporary home; `dmg.sh` installs the disk image on Apple silicon and Intel runners.

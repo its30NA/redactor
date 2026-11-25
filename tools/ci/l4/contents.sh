@@ -17,7 +17,8 @@
 #   every_bundled_library_has_a_license
 #                      (AppImage) every bundled library has an entry in
 #                      usr/share/doc/redactor/bundled-libraries/INDEX.txt and its package's
-#                      Debian copyright file next to it.
+#                      Debian copyright file next to it, and APPIMAGE-PARTS.txt there names
+#                      the licenses of the runtime, AppRun and the GTK hook.
 #                      (Flatpak) every license folder the manifest installs
 #                      (packaging/flatpak/<app-id>.json: /app/share/licenses/<module>) is there
 #                      and not empty: one per C library built into the Flatpak.
@@ -202,6 +203,7 @@ fi
 # every_bundled_library_has_a_license (AppImage): the AppImage carries Ubuntu's libraries, so it
 # carries their licenses too (tools/release/appimage-licenses.sh): every *.so* under usr/lib has
 # a line `<path under usr/lib> <package> <version>` in INDEX.txt, and <package>.copyright is there.
+# APPIMAGE-PARTS.txt covers the runtime, AppRun and the GTK hook script.
 case "$target" in
   *.AppImage)
     licenses=usr/share/doc/redactor/bundled-libraries
@@ -217,6 +219,11 @@ case "$target" in
           missing+=("$lib ($pkg.copyright missing)")
         fi
       done < <(cd "$root/usr/lib" && find . -name '*.so*' -type f | sed 's|^\./||' | sort)
+      # The parts that are not libraries: the runtime, AppRun and the GTK hook
+      # (packaging/appimage/APPIMAGE-PARTS.txt).
+      if [ ! -s "$root/$licenses/APPIMAGE-PARTS.txt" ]; then
+        missing+=("the runtime, AppRun and the GTK hook ($licenses/APPIMAGE-PARTS.txt missing)")
+      fi
       if [ "${#missing[@]}" -eq 0 ]; then
         pass every_bundled_library_has_a_license
       else

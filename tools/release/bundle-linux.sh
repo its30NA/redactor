@@ -12,7 +12,8 @@
 #   1. tools/release/appimage-tools.sh: the AppImage tools, pinned and checked, into the cache
 #      Tauri reads, and the AppImage runtime passed on with LDAI_RUNTIME_FILE.
 #   2. tauri build --bundles appimage,deb,rpm.
-#   3. tools/release/appimage-licenses.sh: the licenses of the libraries the AppImage bundles.
+#   3. tools/release/appimage-licenses.sh: the licenses of the libraries the AppImage bundles,
+#      plus packaging/appimage/APPIMAGE-PARTS.txt for the runtime, AppRun and the GTK hook.
 #   4. The AppImage again (only the bundling; cargo's build is up to date) with those licenses
 #      at usr/share/doc/redactor/bundled-libraries.
 #   5. The three files into <out-dir> under Tauri's names, then tools/ci/l4/contents.sh on each
@@ -60,6 +61,7 @@ before=$(stat -c %s "$appimage")
 echo "::group::bundle-linux: licenses of the AppImage's libraries"
 licenses=$target_dir/appimage-licenses
 "$repo/tools/release/appimage-licenses.sh" "$appimage" "$licenses"
+cp -f "$repo/packaging/appimage/APPIMAGE-PARTS.txt" "$licenses/"
 echo "::endgroup::"
 
 echo "::group::bundle-linux: the AppImage again, with the licenses"

@@ -82,7 +82,7 @@ All notable changes to this project are documented here. The format follows
   GPU drawing, the tray, notifications and the lock signals. No network, no file system access (files go
   through the desktop's file dialog), no sound. CI fails if the list changes.
 - The AppImage's build tools are pinned by checksum, and it carries the license of every library it
-  bundles.
+  bundles and of the parts that start it (the AppImage runtime, AppRun and the GTK hook script).
 
 ### Known limits
 

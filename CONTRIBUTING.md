@@ -203,7 +203,8 @@ tools/ci/l4/start.sh <version> dist/Redactor_<version>_amd64.AppImage --appimage
 ```
 
 `contents.sh` looks inside a package: LICENSE and the notices, the binary, the desktop file, no path of the
-build machine in the binary, the version, and a license for every library the AppImage or Flatpak bundles.
+build machine in the binary, the version, and a license for every library the AppImage or Flatpak bundles
+(for the AppImage also its runtime, AppRun and GTK hook, `packaging/appimage/APPIMAGE-PARTS.txt`).
 `start.sh` runs `--version` with no display, then opens the window, checks that a second launch with
 `--scrub-clipboard` hands over to the first, and that quitting leaves nothing behind. It always starts its
 own Xvfb from `:90`, its own D-Bus session and a temporary home and XDG folders, and unsets
