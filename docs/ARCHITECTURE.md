@@ -4,19 +4,27 @@ Redactor is one detection engine and two front ends. The engine is a pure librar
 `scrub` command-line tool are thin shells around it, so both give the same answer for the same text.
 
 ```
-            +----------------------------- Redactor.exe (Tauri 2) -----------------------------+
- WebView2   |  app/ui (Svelte 5)  --- IPC: 14 whitelisted commands, isolation, strict CSP -->   |
- (private,  |                                                  app/src-tauri (Rust)            |
- no network)|   shows text, highlights spans,                   +- session secrets (memory)    |
-            |   never receives secret values                    +- settings.json (settings)    |
-            |                                                   +- platform/windows/ clipboard,|
-            |                                                     history, lock, WebView2 flags|
-            +--------------------------------------------------------------------------------+
+             +------------------------------- Redactor (Tauri 2) -------------------------------+
+ web view    |  app/ui (Svelte 5)  --- IPC: 14 whitelisted commands, isolation, strict CSP -->  |
+ (private,   |                                                  app/src-tauri (Rust)            |
+ no network) |   shows text, highlights spans,                   +- session secrets (memory)    |
+             |   never receives secret values                    +- settings.json (settings)    |
+ Windows:    |                                                   +- platform::native()          |
+  WebView2   |                                                      +- windows/ clipboard,      |
+ macOS:      |                                                      |  history, lock, WebView2  |
+  WKWebView  |                                                      +- macos/ pasteboard, lock, |
+ Linux:      |                                                      |  WKWebView config         |
+  WebKitGTK  |                                                      +- linux/ X11 and Wayland   |
+             |                                                         clipboards, portal, lock |
+             +----------------------------------------------------------------------------------+
                                   |                                         |
                         crates/redactor-wire  <-------------- crates/scrub (CLI)
                                   |
                         crates/redactor-core  (the engine: no I/O, no unsafe)
 ```
+
+One shell for three operating systems: the shell code never names an OS and reaches it only through
+`platform::native()`, which picks `platform/windows/`, `platform/macos/` or `platform/linux/` at build time.
 
 ## Repository layout
 
@@ -25,11 +33,12 @@ Redactor is one detection engine and two front ends. The engine is a pure librar
 | `crates/redactor-core` | The engine. Text in, redacted text and value-free findings out. `#![forbid(unsafe_code)]`. |
 | `crates/redactor-wire` | The JSON shape shared by the app and `scrub --json`: requests, responses, the UTF-16 offset mapping; and the text file decoder (UTF-8, UTF-16, BOMs) both use. No Tauri. |
 | `crates/scrub` | The CLI: argument parsing, `redactor.toml`, file walking, git hook, audit log, clipboard helper. |
-| `app/src-tauri` | The Windows shell, crate `redactor-app`: commands, session secrets, settings, wipe rules, hotkey, tray, Win32 code. |
+| `app/src-tauri` | The desktop shell, crate `redactor-app`: commands, session secrets, settings, wipe rules, hotkey, tray, and the platform layer for Windows, macOS and Linux. |
+| `packaging/flatpak` | The Flatpak manifest, desktop file, metainfo and generated offline sources. |
 | `app/ui` | The Svelte 5 + TypeScript front end, with CodeMirror 6 for both text panes. Fonts are bundled. |
 | `app/isolation` | The page of Tauri's isolation pattern: an allowlist of the UI's IPC calls, with argument checks. |
 | `corpus/` | Labeled test text (templates, with generated fake tokens) behind the accuracy gates. |
-| `tools/` | Classifier training, release scripts, the Windows build loop, UI fixture generation, doc generation. |
+| `tools/` | Classifier training, release and bundle scripts (`tools/release/`), the CI desktop and package checks (`tools/ci/`), the Windows build loop, UI fixture generation, doc generation. |
 | `docs/` | This documentation. |
 
 ## The engine (`redactor-core`)
@@ -105,6 +114,8 @@ macOS 13 and later, and on Linux X11 and Wayland sessions.
 | Module | Role |
 |---|---|
 | `app.rs` | Builds the Tauri app: plugins, the main window, hotkey registration, idle timer, lock watcher, close-to-tray. |
+| `cli.rs` | The command-line arguments: `--scrub-clipboard`, and `--version`, which prints the version and exits before any window, display or platform code runs. Also the program a desktop shortcut runs: the AppImage file inside an AppImage, `flatpak run <id>` inside a Flatpak (`/.flatpak-info` present and `FLATPAK_ID` shaped like an app id), else this executable. |
+| `first_frame.rs` | The window's background before the page paints: the UI's dark background for the dark and system themes, the light one for the light theme, so the window does not flash white. |
 | `commands.rs` | The 14 IPC commands. Heavy work runs on a blocking worker, never on the UI thread. |
 | `bridge.rs` | Re-exports `redactor-wire`'s scan mapping. |
 | `engines.rs` | Keeps one engine per `stripInvisible` value for the current always-redact words and placeholder style, rebuilds in the background when they change, and shares one per-process session key. |
@@ -441,7 +452,23 @@ The full analysis is in [THREAT_MODEL.md](THREAT_MODEL.md).
   tests, Wayland smoke W6); [CONTRIBUTING](../CONTRIBUTING.md#run-before-each-release) lists them.
 - **Release** (`.github/workflows/release.yml`): a `v*` tag on `main` builds everything on GitHub's runners
   and nowhere else, with the runner's checkout path remapped out of the binaries. It produces the NSIS
-  installer, the portable zip, `scrub` for four targets, `SHA256SUMS`, and build provenance attestations,
-  then opens a draft release whose notes come from `CHANGELOG.md`. Publishing the draft is manual.
+  installer, the portable zip, the universal macOS disk image, the Linux AppImage, `.deb`, `.rpm` and
+  Flatpak, `scrub` for four targets, `SHA256SUMS`, and build provenance attestations, then opens a draft
+  release whose notes come from `CHANGELOG.md`. Publishing the draft is manual.
+- **Packaging.** Tauri's bundler makes the `.deb`, `.rpm`, AppImage and disk image from
+  `app/src-tauri/tauri.conf.json` plus a per-OS overlay (`tauri.linux.conf.json`, `tauri.macos.conf.json`),
+  so the Windows installer's settings stay untouched. `tools/release/bundle-linux.sh` and
+  `bundle-macos.sh` build, check and name the files; both CI and the release run them, so every pull request
+  runs the release's own build steps. The AppImage's helper tools are pinned by sha256
+  (`tools/release/appimage-tools.sh`), and a second pass adds the licenses of the Ubuntu libraries it carries
+  (`appimage-licenses.sh`). The Flatpak is built from source in Flathub's GNOME 51 build image with no
+  network (`packaging/flatpak/`, `tools/release/bundle-flatpak.sh`), from offline sources generated from the
+  lockfiles.
+- **Package checks** (`tools/ci/l4/`): each download is checked the way a user gets it. `contents.sh` looks
+  inside a package (LICENSE, the notices, the binary, the desktop file, no build machine paths, the version,
+  a license for every library the AppImage or Flatpak bundles); `install.sh` installs it in a clean
+  container (Ubuntu 22.04 and 24.04, Debian 12, Fedora 42); `start.sh` runs `--version`, opens the window,
+  checks that a second launch hands over to the first and that quitting leaves nothing behind, always on its
+  own Xvfb, D-Bus and temporary home; `dmg.sh` installs the disk image on Apple silicon and Intel runners.
 - **Windows build loop** (`tools/win-build.sh`): for local development from WSL, copies the repo to a
   Windows folder and runs the Windows toolchain there.

@@ -180,6 +180,41 @@ with `OBSERVED` say what this macOS did where that is not a pass or a fail; read
 The UI's Playwright suite also runs in WebKit on the macOS runners (`PW_WEBKIT=1 npx playwright test
 --project=webkit`; it runs on Linux too once Playwright's WebKit is installed).
 
+### Package checks (L4)
+
+Every download is built on every pull request and checked the way a user gets it: CI's `bundle-linux`,
+`bundle-macos` and `bundle-flatpak` jobs run the same scripts as the release, and the `l4-*` jobs install
+each file on a clean system and start it. To build the Linux bundles yourself (Ubuntu 22.04 or newer, with
+the packages from [Build the app](#build-the-app) plus `file`; the `.rpm` check also needs `rpm2cpio` and
+`cpio`):
+
+```bash
+cd app/ui && npm ci && npm run build && cd ../..
+RUSTFLAGS="$(tools/release/remap-path-flags.sh "$PWD")" tools/release/bundle-linux.sh dist
+```
+
+`dist/` then holds the AppImage, the `.deb` and the `.rpm`, and the script has already run the contents
+check on them. The checks can also be run one by one:
+
+```bash
+tools/ci/l4/contents.sh dist/Redactor_<version>_amd64.deb --expect-version <version>
+tools/ci/l4/selftest.sh       # proves start.sh cannot reach your desktop, clipboard or home
+tools/ci/l4/start.sh <version> dist/Redactor_<version>_amd64.AppImage --appimage-extract-and-run
+```
+
+`contents.sh` looks inside a package: LICENSE and the notices, the binary, the desktop file, no path of the
+build machine in the binary, the version, and a license for every library the AppImage or Flatpak bundles.
+`start.sh` runs `--version` with no display, then opens the window, checks that a second launch with
+`--scrub-clipboard` hands over to the first, and that quitting leaves nothing behind. It always starts its
+own Xvfb from `:90`, its own D-Bus session and a temporary home and XDG folders, and unsets
+`WAYLAND_DISPLAY`, so it is safe to run on a desktop or in WSLg.
+
+CI-only: `tools/ci/l4/install.sh` (it installs into a clean container as root: `.deb` on Ubuntu 22.04,
+24.04 and Debian 12, `.rpm` on Fedora 42, the AppImage on Ubuntu 22.04 and Fedora 42, the Flatpak on
+Fedora 42), the Flatpak build (`tools/release/bundle-flatpak.sh`, in Flathub's GNOME 51 build image) and
+the Mac disk image (`tools/release/bundle-macos.sh` and `tools/ci/l4/dmg.sh`, on the macOS runners). On a
+Mac, `dmg.sh` runs the app's smoke test only with `--i-know-this-takes-my-desktop`.
+
 ### Run before each release
 
 These tests run on no CI machine: hosted runners have no reliable desktop clipboard, and timing gates on
@@ -203,6 +238,44 @@ shared runners flake. Run them by hand before each release tag.
 | `packaging/flatpak/cargo-sources.json`, `packaging/flatpak/node-sources.json` | `tools/gen-flatpak-sources.sh`, after any change to `Cargo.lock` or `app/ui/package-lock.json` (CI fails when they are stale) |
 
 Do not edit generated files by hand.
+
+## How to release
+
+A release is a tag on `main`. GitHub Actions builds every file; nothing is uploaded from a developer's
+machine.
+
+1. **Versions.** Set the new version in `Cargo.toml` (`[workspace.package]`), `app/src-tauri/tauri.conf.json`
+   and `app/ui/package.json`, run `cargo build` and `npm install --package-lock-only` in `app/ui` so both
+   lockfiles carry it, and add a `<release version="…" date="…"/>` line at the top of `<releases>` in
+   `packaging/flatpak/io.github.its30na.redactor.metainfo.xml`. A pre-release tag such as `v2.2.0-rc.1`
+   needs that exact string in all of them.
+2. **Changelog.** Rename `## [Unreleased]` in `CHANGELOG.md` to `## [<version>] - <date>`, with its
+   **Known limits** and **Not tested by hand** lists brought up to date. The section becomes the release
+   notes.
+3. **Check.** `tools/release/check-version.sh v<version>` and `tools/release/changelog-section.sh
+   v<version>` pass, the [hand tests](#run-before-each-release) are done, and CI is green on the commit.
+4. **Tag** the merged commit on `main` as `v<version>` and push the tag to GitHub.
+5. **The release workflow** (`.github/workflows/release.yml`) checks the tag again (on `main`, versions,
+   changelog, CI green, the dependency policy for every platform), then builds the Windows installer and
+   portable zip, the universal Mac disk image, the Linux AppImage, `.deb`, `.rpm` and Flatpak, and `scrub`
+   for four targets. The AppImage and the disk image are started once on the runner. It writes
+   `SHA256SUMS`, attests every file and opens a **draft** release.
+6. **Verify every file of the draft** before publishing. Download them all, then:
+
+   ```bash
+   sha256sum --check SHA256SUMS                       # every line OK
+   for f in *; do gh attestation verify "$f" --repo its30NA/redactor; done
+   ```
+
+   and look for build paths in each binary (unpack the archives and packages first; the AppImage with
+   `--appimage-extract`, the `.deb` with `dpkg-deb -x`, the disk image by mounting it):
+
+   ```bash
+   strings -a <binary> | grep -E '/home/runner/|/Users/runner/|[A-Z]:\\a\\|/\.cargo/registry/src/|/\.rustup/toolchains/'
+   ```
+
+   which must print nothing.
+7. **Publish** the draft on GitHub.
 
 ## Making a change
 
