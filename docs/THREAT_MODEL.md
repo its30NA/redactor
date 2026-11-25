@@ -350,11 +350,12 @@ for these permissions and no others:
 |---|---|
 | `--socket=wayland`, `--socket=fallback-x11`, `--share=ipc`, `--device=dri` | The window, the clipboard and GPU drawing. X11 only on a session without Wayland. |
 | `--talk-name=org.kde.StatusNotifierWatcher` | The tray icon. |
+| `--filesystem=xdg-run/tray-icon:create` | The tray icon's picture, which the tray library saves in `$XDG_RUNTIME_DIR/tray-icon` for the desktop's tray to read. Only that folder, created if missing. |
 | `--talk-name=org.freedesktop.Notifications` | Desktop notifications, for example after the hotkey scrubs. |
 | `--talk-name=org.freedesktop.ScreenSaver`, `org.gnome.ScreenSaver`, `org.cinnamon.ScreenSaver`, `org.mate.ScreenSaver`, `org.xfce.ScreenSaver`, `--system-talk-name=org.freedesktop.login1` | Hearing that the screen locks or the computer sleeps, to wipe. |
 
 No network permission (the app has no network code anyway), no access to your files (opening and
-saving go through the desktop's file dialog), no sound. The single-instance name
+saving go through the desktop's file dialog; the tray icon's folder holds only the icon), no sound. The single-instance name
 `io.github.its30na.redactor.SingleInstance` lies under the app's own id, which Flatpak lets the app own
 without a permission. What the sandbox does not stop: on an X11 session `fallback-x11` gives the app X11
 itself, and X11 lets every client read every other client's clipboard and keystrokes, so there the

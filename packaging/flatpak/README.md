@@ -48,11 +48,12 @@ The app gets only what it uses:
 |---|---|
 | `--socket=wayland`, `--socket=fallback-x11`, `--share=ipc`, `--device=dri` | The window, the clipboard and GPU drawing. X11 only where there is no Wayland. |
 | `--talk-name=org.kde.StatusNotifierWatcher` | The tray icon. |
+| `--filesystem=xdg-run/tray-icon:create` | The tray icon's picture: the tray library saves it in `$XDG_RUNTIME_DIR/tray-icon`, where the desktop's tray reads it. Only that folder. |
 | `--talk-name=org.freedesktop.Notifications` | The desktop notices (for example after the hotkey scrubs the clipboard). |
 | `--talk-name=org.{freedesktop,gnome,cinnamon,mate,xfce}.ScreenSaver`, `--system-talk-name=org.freedesktop.login1` | Hearing that the screen locks, to wipe the panes and the remembered secrets. |
 
-No network, no file system access (files you open or save go through the desktop's file dialog
-portal), no sound. `tools/ci/l4/flatpak-manifest-check.py` fails CI if the list changes, a
+No network, no file system access besides that one folder (files you open or save go through the
+desktop's file dialog portal), no sound. `tools/ci/l4/flatpak-manifest-check.py` fails CI if the list changes, a
 download is not pinned, or the pinned Rust and Node drift from the ones the other builds use (the
 Rust release of the `rust-toolchain.toml` channel that `rustc` reports, the Node major version of
 the workflows):

@@ -10,6 +10,7 @@
     "--socket=fallback-x11",
     "--device=dri",
     "--talk-name=org.kde.StatusNotifierWatcher",
+    "--filesystem=xdg-run/tray-icon:create",
     "--talk-name=org.freedesktop.Notifications",
     "--talk-name=org.freedesktop.ScreenSaver",
     "--talk-name=org.gnome.ScreenSaver",

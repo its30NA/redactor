@@ -8,7 +8,8 @@ every line is PASS:
   runtime        runtime-version is a string (YAML or a careless edit turns 51 into a number
                  and 50.1 into a float), and the runtime and SDK are GNOME's.
   finish_args    finish-args are exactly the approved permissions, each once: no network, no
-                 file system, no x11 socket besides the Wayland fallback, no sound.
+                 file system but the tray icon's folder, no x11 socket besides the Wayland
+                 fallback, no sound.
   sources_pinned every archive and file source (also in the generated source lists the manifest
                  names, and in nested modules) has a sha256 or sha512, every git source a commit,
                  nothing is fetched over plain http, and every local path (patches, the
@@ -34,6 +35,9 @@ APPROVED_FINISH_ARGS = [
     "--socket=fallback-x11",
     "--device=dri",
     "--talk-name=org.kde.StatusNotifierWatcher",
+    # The tray library writes the icon to $XDG_RUNTIME_DIR/tray-icon for the desktop's tray to
+    # read: that one folder, nothing else of the file system.
+    "--filesystem=xdg-run/tray-icon:create",
     "--talk-name=org.freedesktop.Notifications",
     "--talk-name=org.freedesktop.ScreenSaver",
     "--talk-name=org.gnome.ScreenSaver",

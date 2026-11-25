@@ -79,8 +79,9 @@ All notable changes to this project are documented here. The format follows
 - On macOS and Linux the settings file is readable by you alone (0600, in a 0700 folder), and a crash
   writes no core file with the app's memory in it.
 - The Flatpak asks only for the permissions the app uses: the window (Wayland, X11 only as a fallback),
-  GPU drawing, the tray, notifications and the lock signals. No network, no file system access (files go
-  through the desktop's file dialog), no sound. CI fails if the list changes.
+  GPU drawing, the tray, notifications and the lock signals. No network, no file system access but the
+  tray icon's own folder (files go through the desktop's file dialog), no sound. CI fails if the list
+  changes.
 - The AppImage's build tools are pinned by checksum, and it carries the license of every library it
   bundles and of the parts that start it (the AppImage runtime, AppRun and the GTK hook script).
 
@@ -133,7 +134,7 @@ Linux:
 - The `.deb` and `.rpm` are not signed with a GPG key; the attestation proves where they came from.
 - Flatpak: on desktops that hide the background clipboard from sandboxed apps, it works only with the
   window in front. On an X11 session the sandbox does not separate it from other apps' clipboard and
-  keys. The tray icon may show blank or as a generic icon.
+  keys.
 
 ### Not tested by hand
 
