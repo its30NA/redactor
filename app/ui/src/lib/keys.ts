@@ -160,7 +160,11 @@ export function hotkeyFrom(e: KeyLike, os: KeyOs): string | null {
   return [...modifiersOf(e, os), name].join('+');
 }
 
-const UNREADABLE = 'That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R.';
+const UNREADABLE: Record<KeyOs, string> = {
+  windows: 'That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R.',
+  macos: 'That hotkey cannot be read. Use modifiers and one key, like Control+Option+R.',
+  linux: 'That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R.',
+};
 const TOO_FEW: Record<KeyOs, string> = {
   windows: 'Use at least two modifier keys (Ctrl, Alt, Shift), so it never fires while typing.',
   macos: 'Use at least two modifier keys (Cmd, Control, Option, Shift), so it never fires while typing.',
@@ -212,7 +216,7 @@ export function hotkeyProblem(combo: string, os: KeyOs): string | null {
   const mods = parts.slice(0, -1);
   const allowed = ['Ctrl', 'Shift', 'Alt', ...(META[os] ? [META[os]] : [])];
   if (!parts.at(-1) || mods.some((m) => !allowed.includes(m)) || new Set(mods).size < mods.length)
-    return UNREADABLE;
+    return UNREADABLE[os];
   const upper = combo.toUpperCase();
   if (SYSTEM[os].some((x) => x.toUpperCase() === upper)) return SYSTEM_SAYS[os];
   if (RESERVED.includes(combo)) return 'This shortcut is reserved.';

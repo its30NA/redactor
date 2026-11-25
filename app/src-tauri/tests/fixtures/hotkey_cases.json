@@ -55,9 +55,9 @@
   { "os": "macos", "combo": "Ctrl+Cmd+D", "expect": "macOS keeps this one." },
   { "os": "macos", "combo": "option+command+space", "expect": "macOS keeps this one.", "rust_only": true },
   { "os": "macos", "combo": "Ctrl+Alt+Delete", "expect": "Ctrl+Alt+Delete" },
-  { "os": "macos", "combo": "Shift+Super+R", "expect": "That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R." },
-  { "os": "macos", "combo": "Super+Shift+R", "expect": "That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R.", "rust_only": true },
-  { "os": "macos", "combo": "Shift+Win+R", "expect": "That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R." },
+  { "os": "macos", "combo": "Shift+Super+R", "expect": "That hotkey cannot be read. Use modifiers and one key, like Control+Option+R." },
+  { "os": "macos", "combo": "Super+Shift+R", "expect": "That hotkey cannot be read. Use modifiers and one key, like Control+Option+R.", "rust_only": true },
+  { "os": "macos", "combo": "Shift+Win+R", "expect": "That hotkey cannot be read. Use modifiers and one key, like Control+Option+R." },
 
   { "os": "linux", "combo": "Ctrl+Alt+R", "expect": "Ctrl+Alt+R" },
   { "os": "linux", "combo": "Shift+Super+R", "expect": "Shift+Super+R" },

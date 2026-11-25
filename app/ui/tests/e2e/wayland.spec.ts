@@ -71,6 +71,23 @@ test.describe('Wayland', () => {
     expect(copies.map((c) => c.args.text)).toEqual([command]);
   });
 
+  test('refused_key_shows_not_active', async ({ page, problems: _ }) => {
+    // The desktop's portal refuses the new key: the shell keeps the stored key, holds none, and
+    // says so through app-status. Settings marks the key as not active and keeps the reason.
+    const refusal = 'Your desktop did not accept Ctrl+Alt+K. No hotkey is set now; pick another in Settings.';
+    const sheet = await openSettings(page, '?os=linux&hotkey=portal');
+    await page.evaluate((m) => window.__REDACTOR_MOCK__?.rejectSettings(m), refusal);
+    const hotkey = sheet.getByTestId('hotkey');
+    await hotkey.click();
+    await page.keyboard.press('Control+Alt+K');
+    await expect(sheet.getByRole('alert')).toHaveText(refusal);
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('app-status', { hotkeyActive: false, notice: null }));
+    await expect(hotkey).toHaveAccessibleName('Hotkey Ctrl+Alt+R, not active. Change');
+    await expect(hotkey.locator('kbd')).toHaveText(['Ctrl', 'Alt', 'R']);
+    await expect(sheet.getByTestId('hotkey-inactive')).toHaveText('Not active: pick another key.');
+    await expect(sheet.getByRole('alert')).toHaveText(refusal);
+  });
+
   test('a_clipboard_that_needs_focus_says_so', async ({ page, problems: _ }) => {
     const sheet = await openSettings(page, '?os=linux&hotkey=command&focus=1');
     await expect(sheet.getByTestId('focus-note')).toHaveText(FOCUS_NOTE);

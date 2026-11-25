@@ -145,6 +145,40 @@ test.describe('macOS', () => {
     await expect(page.getByRole('alert')).toHaveText('Shift+Command+3: macOS keeps this one.');
   });
 
+  test('mac_keycaps_everywhere', async ({ page, problems: _ }) => {
+    /** Visible text plus every tooltip and accessible label inside `root`. */
+    const words = (root: ReturnType<Page['locator']>) =>
+      root.evaluate((el) =>
+        [
+          (el as HTMLElement).innerText,
+          ...[...el.querySelectorAll('[title], [aria-label]')].flatMap((n) => [
+            n.getAttribute('title') ?? '',
+            n.getAttribute('aria-label') ?? '',
+          ]),
+        ].join('\n'),
+      );
+    const WINDOWS_NAMES = /\b(Ctrl|Alt)\b/;
+    await openApp(page, '?os=macos&firstrun');
+    const card = page.getByTestId('first-run');
+    await expect(card.locator('.kbd')).toHaveAttribute('aria-label', 'Control+Option+R');
+    expect(await words(card)).not.toMatch(WINDOWS_NAMES);
+    await card.getByRole('button', { name: 'Get started' }).click();
+    await expect(page.locator('.dock .paste')).toHaveAttribute('title', 'Paste the clipboard and scrub it (Cmd+V)');
+    expect(await words(page.locator('.dock'))).not.toMatch(WINDOWS_NAMES);
+    await blur(page);
+    await page.keyboard.press('Meta+k');
+    const palette = page.getByRole('dialog', { name: 'Command palette' });
+    await expect(palette).toBeVisible();
+    expect(await words(palette)).not.toMatch(WINDOWS_NAMES);
+    await page.keyboard.press('Escape');
+    await expect(palette).toBeHidden();
+    await page.getByTestId('settings-open').click();
+    const sheet = page.getByRole('dialog', { name: 'Settings' });
+    await expect(sheet.getByTestId('hotkey')).toHaveAttribute('aria-label', 'Hotkey Control+Option+R. Change');
+    await expect(sheet.getByTestId('hotkey').locator('kbd')).toHaveText(['Control', 'Option', 'R']);
+    expect(await words(sheet)).not.toMatch(WINDOWS_NAMES);
+  });
+
   for (const size of SIZES) {
     test(`macos_empty_dark_${size.width}`, async ({ page, problems: _ }) => {
       await page.setViewportSize(size);

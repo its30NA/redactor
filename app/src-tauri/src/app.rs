@@ -516,25 +516,15 @@ fn change_settings(
         let unregister = |h: &Hotkey| st.platform.hotkey.unregister(app, h);
         let refused = if st.platform.hotkey.mode() == HotkeyMode::Portal {
             // A refusal leaves no key: the old one ended with its session when it was unbound.
-            (!hotkey::rebind(old.as_ref(), &new_hk, register, unregister)).then(|| {
-                format!(
-                    "Your desktop did not accept {}. No hotkey is set now; pick another in Settings.",
-                    next.hotkey
-                )
-            })
+            (!hotkey::rebind(old.as_ref(), &new_hk, register, unregister))
+                .then(|| hotkey::refusal(os, &next.hotkey, true, None))
         } else {
             // The old key comes back unless it could not be registered again (another app
             // held it at start and still does).
             (!hotkey::replace_registration(old.as_ref(), &new_hk, register, unregister)).then(
-                || match held.get() {
-                    true => format!(
-                        "Another app already uses {}. Kept {}.",
-                        next.hotkey, prev.hotkey
-                    ),
-                    false => format!(
-                        "Another app already uses {}. No hotkey is set now; pick another in Settings.",
-                        next.hotkey
-                    ),
+                || {
+                    let kept = held.get().then_some(prev.hotkey.as_str());
+                    hotkey::refusal(os, &next.hotkey, false, kept)
                 },
             )
         };

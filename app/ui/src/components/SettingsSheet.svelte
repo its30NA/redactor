@@ -262,10 +262,13 @@
         </button>
       {/if}
     </div>
+    <!-- A refused key leaves none held (a portal refusal, or an old key another app took): the
+         key shown is marked as not active, and the reason stays under it. -->
+    {#if inactive}
+      <p class="inactive" data-testid="hotkey-inactive">{inactive}</p>
+    {/if}
     {#if hotkeyError}
       <p class="error" role="alert">{hotkeyError}</p>
-    {:else if inactive}
-      <p class="inactive" data-testid="hotkey-inactive">{inactive}</p>
     {/if}
     {#if mode === 'command'}
       <div class="note" data-testid="hotkey-note">

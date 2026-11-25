@@ -58,7 +58,7 @@ pub struct Hotkey {
 /// Why a hotkey string cannot be used. The messages are shown to the user as they are.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HotkeyError {
-    Unreadable,
+    Unreadable(Os),
     TooFewModifiers(Os),
     Reserved,
     ReservedBySystem(Os),
@@ -68,7 +68,10 @@ pub enum HotkeyError {
 impl fmt::Display for HotkeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            HotkeyError::Unreadable => {
+            HotkeyError::Unreadable(Os::Mac) => {
+                "That hotkey cannot be read. Use modifiers and one key, like Control+Option+R."
+            }
+            HotkeyError::Unreadable(Os::Windows | Os::Linux) => {
                 "That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R."
             }
             HotkeyError::TooFewModifiers(Os::Windows) => {
@@ -172,7 +175,7 @@ impl Hotkey {
     /// for `Super`.
     pub fn parse(s: &str, os: Os) -> Result<Hotkey, HotkeyError> {
         let parts: Vec<&str> = s.split('+').map(str::trim).collect();
-        let (key_part, mods) = parts.split_last().ok_or(HotkeyError::Unreadable)?;
+        let (key_part, mods) = parts.split_last().ok_or(HotkeyError::Unreadable(os))?;
         let (mut ctrl, mut shift, mut alt, mut meta) = (false, false, false, false);
         for m in mods {
             let flag = match (m.to_ascii_lowercase().as_str(), os) {
@@ -180,10 +183,10 @@ impl Hotkey {
                 ("shift", _) => &mut shift,
                 ("alt", _) | ("option" | "opt", Os::Mac) => &mut alt,
                 ("cmd" | "command", Os::Mac) | ("super" | "meta", Os::Linux) => &mut meta,
-                _ => return Err(HotkeyError::Unreadable),
+                _ => return Err(HotkeyError::Unreadable(os)),
             };
             if *flag {
-                return Err(HotkeyError::Unreadable);
+                return Err(HotkeyError::Unreadable(os));
             }
             *flag = true;
         }
@@ -198,7 +201,7 @@ impl Hotkey {
         if system.iter().any(|w| w.eq_ignore_ascii_case(&canonical)) {
             return Err(HotkeyError::ReservedBySystem(os));
         }
-        let key = parse_key(key_part).ok_or(HotkeyError::Unreadable)?;
+        let key = parse_key(key_part).ok_or(HotkeyError::Unreadable(os))?;
         let hk = Hotkey {
             ctrl,
             shift,
@@ -228,6 +231,42 @@ impl Hotkey {
             self.meta.then(|| meta_name(os)),
             &self.key.to_string(),
         )
+    }
+}
+
+/// A stored hotkey (`Ctrl+Alt+R`) as `os` names it to the user: on macOS Control, Option and
+/// Command (as `hotkeyCaps` in `app/ui/src/lib/keys.ts`), elsewhere the stored names.
+pub fn label(combo: &str, os: Os) -> String {
+    if os != Os::Mac {
+        return combo.to_string();
+    }
+    combo
+        .split('+')
+        .map(|part| match part {
+            "Ctrl" => "Control",
+            "Alt" => "Option",
+            "Cmd" | "Super" => "Command",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// Why a new hotkey `new` was not set, as Settings shows it: through the desktop's shortcut
+/// portal (`portal`) a refusal leaves no key; otherwise `kept` is the old key held again, or
+/// `None` when it could not be held either. Keys are named as `os` names them ([`label`]).
+pub fn refusal(os: Os, new: &str, portal: bool, kept: Option<&str>) -> String {
+    let new = label(new, os);
+    match (portal, kept) {
+        (true, _) => format!(
+            "Your desktop did not accept {new}. No hotkey is set now; pick another in Settings."
+        ),
+        (false, Some(kept)) => {
+            format!("Another app already uses {new}. Kept {}.", label(kept, os))
+        }
+        (false, None) => format!(
+            "Another app already uses {new}. No hotkey is set now; pick another in Settings."
+        ),
     }
 }
 
@@ -403,6 +442,62 @@ mod tests {
     }
 
     #[test]
+    fn mac_labels_use_the_mac_names() {
+        assert_eq!(label("Ctrl+Alt+R", Os::Mac), "Control+Option+R");
+        assert_eq!(
+            label("Ctrl+Shift+Alt+Cmd+K", Os::Mac),
+            "Control+Shift+Option+Command+K"
+        );
+        // Elsewhere the stored names are the names shown.
+        assert_eq!(label("Ctrl+Alt+R", Os::Windows), "Ctrl+Alt+R");
+        assert_eq!(label("Ctrl+Alt+Super+R", Os::Linux), "Ctrl+Alt+Super+R");
+    }
+
+    #[test]
+    fn refusals_name_the_keys_the_mac_way() {
+        assert_eq!(
+            refusal(Os::Mac, "Ctrl+Alt+K", false, Some("Ctrl+Alt+R")),
+            "Another app already uses Control+Option+K. Kept Control+Option+R."
+        );
+        assert_eq!(
+            refusal(Os::Mac, "Ctrl+Alt+Cmd+K", false, None),
+            "Another app already uses Control+Option+Command+K. No hotkey is set now; pick another in Settings."
+        );
+    }
+
+    #[test]
+    fn refusals_elsewhere_keep_their_words() {
+        assert_eq!(
+            refusal(Os::Windows, "Ctrl+Alt+K", false, Some("Ctrl+Alt+R")),
+            "Another app already uses Ctrl+Alt+K. Kept Ctrl+Alt+R."
+        );
+        assert_eq!(
+            refusal(Os::Linux, "Ctrl+Alt+K", false, None),
+            "Another app already uses Ctrl+Alt+K. No hotkey is set now; pick another in Settings."
+        );
+        // Through the desktop's shortcut portal a refusal leaves no key.
+        assert_eq!(
+            refusal(Os::Linux, "Ctrl+Alt+K", true, None),
+            "Your desktop did not accept Ctrl+Alt+K. No hotkey is set now; pick another in Settings."
+        );
+    }
+
+    #[test]
+    fn unreadable_names_the_example_the_os_way() {
+        let unreadable = |os| Hotkey::parse("", os).unwrap_err().to_string();
+        assert_eq!(
+            unreadable(Os::Mac),
+            "That hotkey cannot be read. Use modifiers and one key, like Control+Option+R."
+        );
+        for os in [Os::Windows, Os::Linux] {
+            assert_eq!(
+                unreadable(os),
+                "That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R."
+            );
+        }
+    }
+
+    #[test]
     fn hotkey_refuses_garbage() {
         for s in [
             "",
@@ -418,7 +513,7 @@ mod tests {
         ] {
             assert_eq!(
                 Hotkey::parse(s, Os::Windows),
-                Err(HotkeyError::Unreadable),
+                Err(HotkeyError::Unreadable(Os::Windows)),
                 "{s:?}"
             );
         }
