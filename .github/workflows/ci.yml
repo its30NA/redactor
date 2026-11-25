@@ -582,6 +582,13 @@ jobs:
           cargo fetch --locked
           tools/gen-notices.sh
           git diff --exit-code THIRD_PARTY_NOTICES.md
+      # The Flatpak builds offline from these lists of every crate and npm package; a lockfile
+      # change without a fresh run of the generator would break that build.
+      - name: Flatpak sources are up to date
+        working-directory: .
+        run: |
+          tools/gen-flatpak-sources.sh
+          git diff --exit-code packaging/flatpak/
       - name: Typecheck
         run: npm run check
       - name: Lint

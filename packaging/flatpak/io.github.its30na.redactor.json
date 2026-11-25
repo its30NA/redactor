@@ -213,7 +213,9 @@
             "app/ui/playwright-report",
             "app/ui/test-results"
           ]
-        }
+        },
+        "cargo-sources.json",
+        "node-sources.json"
       ]
     }
   ]

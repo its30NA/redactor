@@ -200,6 +200,7 @@ shared runners flake. Run them by hand before each release tag.
 | `app/ui/src/lib/mock/fixtures/*.json` | `tools/gen-ui-fixtures.sh` (real engine output) |
 | `assets/*.png`, `assets/demo.gif` | `app/ui/scripts/readme-assets.ts`, see the header of that file |
 | classifier weights | `python3 tools/classifier/train.py` (see `tools/classifier/README.md`) |
+| `packaging/flatpak/cargo-sources.json`, `packaging/flatpak/node-sources.json` | `tools/gen-flatpak-sources.sh`, after any change to `Cargo.lock` or `app/ui/package-lock.json` (CI fails when they are stale) |
 
 Do not edit generated files by hand.
 

@@ -10,6 +10,7 @@ build.
 | `io.github.its30na.redactor.json` | The flatpak-builder manifest: runtime `org.gnome.Platform//51`, the permissions, and the modules in build order. |
 | `io.github.its30na.redactor.desktop` | The menu entry. `StartupWMClass=Redactor` is the window's class, so the desktop puts the window under this entry. |
 | `io.github.its30na.redactor.metainfo.xml` | The AppStream metadata software centres show (summary, description, license, release). |
+| `cargo-sources.json`, `node-sources.json` | Generated: every crate and npm package of the lockfiles as a pinned download, so the build needs no network. |
 | `patches/` | Three small upstream fixes the tray libraries need to build in the SDK (from Flathub's shared modules; each keeps its author header). |
 
 ## Modules
@@ -25,6 +26,19 @@ build.
    `cargo build --locked --offline`. It installs the binary as `/app/bin/Redactor`, `LICENSE` and
    `THIRD_PARTY_NOTICES.md` under `/app/share/licenses/io.github.its30na.redactor/`, the icons,
    the desktop file and the metainfo.
+
+## Offline sources
+
+`cargo-sources.json` and `node-sources.json` come from `Cargo.lock` and
+`app/ui/package-lock.json`. After a change to either lockfile, regenerate them:
+
+```bash
+tools/gen-flatpak-sources.sh
+```
+
+The script runs flatpak-builder-tools' generators at a pinned commit, with their Python packages
+installed only with the hashes in `tools/flatpak-requirements.txt`. A second run gives the same
+files; CI regenerates them on every pull request and fails when the committed ones differ.
 
 ## Permissions
 

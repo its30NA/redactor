@@ -10,7 +10,7 @@ every line is PASS:
   finish_args    finish-args are exactly the approved permissions, each once: no network, no
                  file system, no x11 socket besides the Wayland fallback, no sound.
   sources_pinned every archive and file source (also in the generated source lists the manifest
-                 names, and in nested modules) has a sha256, every git source a commit,
+                 names, and in nested modules) has a sha256 or sha512, every git source a commit,
                  nothing is fetched over plain http, and every local path (patches, the
                  repository) exists.
   build_offline  the app's module builds with --offline / --locked and no network permission.
@@ -73,6 +73,10 @@ def sources(mod, base):
             yield mod.get("name", "?"), src
 
 
+def is_hex(value, length):
+    return len(value) == length and all(c in "0123456789abcdef" for c in value)
+
+
 def source_problem(origin, src, base):
     kind = src.get("type")
     local = ([src["path"]] if "path" in src else []) + list(src.get("paths", []))
@@ -84,9 +88,9 @@ def source_problem(origin, src, base):
         if not url.startswith("https://"):
             return f"{origin}: {url} is not https"
     if kind in ("archive", "file") and "url" in src:
-        sha = src.get("sha256", "")
-        if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
-            return f"{origin}: {src['url']} has no sha256"
+        # flatpak-builder checks either; the npm generator writes the registry's sha512.
+        if not (is_hex(src.get("sha256", ""), 64) or is_hex(src.get("sha512", ""), 128)):
+            return f"{origin}: {src['url']} has no sha256 or sha512"
     if kind == "git":
         commit = src.get("commit", "")
         if len(commit) != 40:
