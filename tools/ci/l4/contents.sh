@@ -13,6 +13,10 @@
 #                      carries, and its StartupWMClass is the window's class (Redactor).
 #   no_build_paths     the binary holds none of the build machine's paths: the runner's home,
 #                      the cargo registry sources, the rustup toolchains, the caller's HOME.
+#   every_bundled_library_has_a_license
+#                      (AppImage) every bundled library has an entry in
+#                      usr/share/doc/redactor/bundled-libraries/INDEX.txt and its package's
+#                      Debian copyright file next to it.
 #   version            (with --expect-version) the package's own version field says <v>; for
 #                      an AppImage, which has none, its file name.
 # A tool the format needs that is missing here (dpkg-deb, rpm2cpio and cpio, rpm, hdiutil,
@@ -190,6 +194,33 @@ if [ -f "$root/$bin" ]; then
     fail no_build_paths "$bin holds ${found[*]}"
   fi
 fi
+
+# every_bundled_library_has_a_license (AppImage): the AppImage carries Ubuntu's libraries, so it
+# carries their licenses too (tools/release/appimage-licenses.sh): every *.so* under usr/lib has
+# a line `<path under usr/lib> <package> <version>` in INDEX.txt, and <package>.copyright is there.
+case "$target" in
+  *.AppImage)
+    licenses=usr/share/doc/redactor/bundled-libraries
+    if [ ! -f "$root/$licenses/INDEX.txt" ]; then
+      fail every_bundled_library_has_a_license "$licenses/INDEX.txt is missing"
+    else
+      missing=()
+      while IFS= read -r lib; do
+        pkg=$(awk -v l="$lib" '$1 == l { print $2; exit }' "$root/$licenses/INDEX.txt")
+        if [ -z "$pkg" ]; then
+          missing+=("$lib (not in INDEX.txt)")
+        elif [ ! -s "$root/$licenses/$pkg.copyright" ]; then
+          missing+=("$lib ($pkg.copyright missing)")
+        fi
+      done < <(cd "$root/usr/lib" && find . -name '*.so*' -type f | sed 's|^\./||' | sort)
+      if [ "${#missing[@]}" -eq 0 ]; then
+        pass every_bundled_library_has_a_license
+      else
+        fail every_bundled_library_has_a_license "${#missing[@]} without a license, first: ${missing[0]}"
+      fi
+    fi
+    ;;
+esac
 
 if [ -n "$expect" ]; then
   case "$target" in
