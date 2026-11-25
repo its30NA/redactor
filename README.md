@@ -44,23 +44,28 @@ Get the latest build from [GitHub Releases](https://github.com/its30NA/redactor/
 |---|---|
 | `Redactor_<version>_x64-setup.exe` | Windows installer for the desktop app. Per-user, no admin rights needed. |
 | `Redactor-v<version>-windows-x64-portable.zip` | The same app as a single `Redactor.exe`, no install. |
+| `Redactor_<version>_universal.dmg` | macOS disk image for the desktop app, one app for Apple silicon and Intel (preview). |
+| `Redactor_<version>_amd64.deb` | Linux package for Ubuntu, Debian and the distributions based on them (preview). |
+| `Redactor-<version>-1.x86_64.rpm` | Linux package for Fedora (preview). |
+| `Redactor_<version>_x86_64.flatpak` | Linux Flatpak for any distribution, sandboxed, on the GNOME runtime from Flathub (preview). |
+| `Redactor_<version>_amd64.AppImage` | Linux, one file that runs without installing; carries its own libraries (preview). |
 | `scrub-v<version>-x86_64-pc-windows-msvc.zip` | The `scrub` command-line tool for Windows. |
 | `scrub-v<version>-x86_64-unknown-linux-musl.tar.gz` | `scrub` for Linux (static binary). |
 | `scrub-v<version>-aarch64-apple-darwin.tar.gz`, `scrub-v<version>-x86_64-apple-darwin.tar.gz` | `scrub` for macOS (Apple silicon, Intel). |
 | `SHA256SUMS` | Checksums of every file above. |
 
-The desktop app is released for Windows; macOS and Linux (X11 and Wayland) are in preview (see the guides above).
-The previews are unattested test builds, not release downloads: the Mac app is a CI build kept for 7 days
-and the Linux app is built from source, with no `SHA256SUMS` and no attestation. The
-[threat model](docs/THREAT_MODEL.md#macos-and-linux-preview-what-is-different) says what else differs. On
-Windows it runs on Microsoft's WebView2 runtime, which ships with Windows 11
+The desktop app runs on Windows, macOS and Linux (X11 and Wayland). macOS and Linux are in preview:
+machine-tested, little hand use yet. The guides above say which Linux file to pick, and the
+[threat model](docs/THREAT_MODEL.md#macos-and-linux-preview-what-is-different) says what differs from
+Windows. On Windows it runs on Microsoft's WebView2 runtime, which ships with Windows 11
 and current Windows 10; on a PC without it, the installer downloads it from Microsoft (the portable
 zip downloads nothing and needs it installed). `scrub` runs on Windows, Linux and macOS.
 
 The Windows files are not code-signed, so SmartScreen may show "Windows protected your PC". Verify the
 download first (below), then choose "More info" and "Run anyway". See the
 [threat model](docs/THREAT_MODEL.md#the-unsigned-binary-and-smartscreen) for why that is a limit, not a
-formality.
+formality. The Mac app is signed only ad hoc and not notarized, so macOS asks you to choose "Open Anyway"
+once ([guide](docs/install/macos.md#3-install)); the Linux packages are not GPG-signed. Verify those too.
 
 ### Install `scrub`
 
@@ -112,11 +117,15 @@ Verify `SHA256SUMS` the same way if you want to be sure the checksum list is gen
 
 - **Desktop app:** Windows Settings > Apps > Installed apps > Redactor > Uninstall. The installer is per-user,
   so no administrator rights are needed. The portable zip has nothing to uninstall: delete the file.
+  On a Mac, drag Redactor from Applications to the Trash. On Linux: `sudo apt remove redactor` (`.deb`),
+  `sudo dnf remove redactor` (`.rpm`), `flatpak uninstall --user --delete-data io.github.its30na.redactor`
+  (Flatpak), or delete the AppImage file ([Linux guide](docs/install/linux.md#remove-it)).
 - **Your settings stay behind.** The app keeps `settings.json`, which holds your settings and your
-  always-redact word list in plain text, in `%APPDATA%\Redactor` on Windows (in the preview:
-  `~/Library/Application Support/Redactor` on macOS, `~/.config/redactor` on Linux, plus WebKit's
-  `~/.local/share/io.github.its30na.redactor`). Delete that folder if you want it gone, with a
-  `settings.json.bad` the app may have kept beside the file.
+  always-redact word list in plain text, in `%APPDATA%\Redactor` on Windows,
+  `~/Library/Application Support/Redactor` on macOS and `~/.config/redactor` on Linux, plus WebKit's
+  `~/.local/share/io.github.its30na.redactor` (the Flatpak keeps both under
+  `~/.var/app/io.github.its30na.redactor`, which `--delete-data` removes). Delete that folder if you want
+  it gone, with a `settings.json.bad` the app may have kept beside the file.
 - **`scrub`:** delete the `scrub` file. If you ran `scrub install-hook`, delete the `pre-commit` file it wrote
   (in `.git/hooks/` or the folder `core.hooksPath` names) in each repository. A `redactor.toml` you wrote
   stays where it is, and so does a file you passed to `--audit`.
@@ -240,7 +249,8 @@ cd app/ui && npm ci && npm run build    # the Tauri build embeds the built UI
 cd ../src-tauri && ../ui/node_modules/.bin/tauri build --bundles nsis
 ```
 
-[CONTRIBUTING.md](CONTRIBUTING.md) has the full test and lint commands.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the full test and lint commands, the system packages the app needs
+on Linux and macOS, and the scripts that build the Linux packages and the Mac disk image.
 
 ## Documentation
 

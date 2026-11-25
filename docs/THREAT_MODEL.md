@@ -218,8 +218,10 @@ read the output before you send it. Fixes are tracked in the [roadmap](ROADMAP.m
 The macOS and Linux apps are previews ([macOS](install/macos.md), [Linux](install/linux.md)). Everything
 above holds for them too, except what this section says. The macOS app is tested by machines on macOS 15
 and 26 and has not yet been used by hand. The Linux app is tested by machines on X11 and sway, and by hand
-on WSLg; GNOME and KDE Plasma are not tested end to end. Where a line below says "not tried on a real
-Mac", it is what the code does, not what anyone has seen.
+on WSLg; GNOME and KDE Plasma are not tested end to end. Every download is built on every pull request and
+installed and started once on a clean system by CI (a container per Linux distribution, the macOS runners),
+which is not the same as a person using it. Where a line below says "not tried on a real Mac" or "not
+tested", it is what the code does, not what anyone has seen.
 
 **Settings.** The file is `~/Library/Application Support/Redactor/settings.json` on macOS and
 `$XDG_CONFIG_HOME/redactor/settings.json` (or `~/.config/redactor/settings.json`) on Linux. A variable
@@ -314,13 +316,51 @@ the single-instance check, says so once on stderr, and a second launch opens a s
 user therefore cannot stop Redactor from starting. Not tried on a real Mac. On Linux the plugin uses your
 own session bus instead.
 
-**The previews are unattested test builds, not release downloads.** The macOS app is a CI build, kept
-for 7 days, signed only ad hoc (not by an Apple developer account, not notarized), and opened by
-clearing macOS's checks; the Linux app has no download at all and is built from source. They come with
-no `SHA256SUMS` and no build attestation, so the defence against a tampered download described
-[below](#the-unsigned-binary-and-smartscreen) does not cover them. Download the build only from this
-repository's own Actions page, or build it yourself. Release builds with checksums and attestations for
-both come with the packaging work after the preview.
+**Downloads: checksums and attestations cover every file.** The macOS disk image and the four Linux
+packages are built by the same release workflow as the Windows files, from a tagged commit on `main`,
+with the runner's paths remapped out of the binaries. Each is listed in `SHA256SUMS` and has a build
+provenance attestation, so the defence against a tampered download described
+[below](#the-unsigned-binary-and-smartscreen) covers them too: check the file before you open or install
+it ([README](../README.md#verify-the-download)). Neither OS checks a publisher's signature for you here,
+so the checksum and the attestation are the only proof of where a file came from.
+
+**macOS disk image.** `Redactor_<version>_universal.dmg` holds one app for Apple silicon and Intel. It is
+signed only ad hoc (not by an Apple developer account) and not notarized, so macOS refuses the first start
+until you choose "Open Anyway" in Privacy & Security ([install guide](install/macos.md#3-install)).
+That step tells macOS to trust this copy; it checks nothing about where the file came from. The
+attestation is the tamper check. Never clear the quarantine flag (`xattr`) on a file you have not
+verified.
+
+**Linux packages.** The `.deb` and the `.rpm` are installed as root through the package manager, which
+runs no script of ours (the packages have none) and pulls WebKitGTK, GTK and the tray library from your
+distribution, so your distribution's security updates reach them. They are not signed with a GPG key;
+the attestation proves their origin. The AppImage carries its own copies of about 180 libraries from
+Ubuntu 22.04, WebKitGTK among them: those copies get no security update until the next Redactor release,
+and WebKitGTK is the part that renders the window. Prefer the `.deb`, the `.rpm` or the Flatpak where you
+can. The AppImage and the `.deb` need glibc 2.35 or newer (Ubuntu 22.04, Debian 12 or later). The
+AppImage keeps the license of each library it carries under `usr/share/doc/redactor/bundled-libraries/`.
+
+**Flatpak.** `Redactor_<version>_x86_64.flatpak` is built from source in the GNOME 51 SDK and runs on
+the `org.gnome.Platform//51` runtime from Flathub, whose WebKitGTK is updated with the runtime. It asks
+for these permissions and no others:
+
+| Permission | Why |
+|---|---|
+| `--socket=wayland`, `--socket=fallback-x11`, `--share=ipc`, `--device=dri` | The window, the clipboard and GPU drawing. X11 only on a session without Wayland. |
+| `--talk-name=org.kde.StatusNotifierWatcher` | The tray icon. |
+| `--talk-name=org.freedesktop.Notifications` | Desktop notifications, for example after the hotkey scrubs. |
+| `--talk-name=org.freedesktop.ScreenSaver`, `org.gnome.ScreenSaver`, `org.cinnamon.ScreenSaver`, `org.mate.ScreenSaver`, `org.xfce.ScreenSaver`, `--system-talk-name=org.freedesktop.login1` | Hearing that the screen locks or the computer sleeps, to wipe. |
+
+No network permission (the app has no network code anyway), no access to your files (opening and
+saving go through the desktop's file dialog), no sound. The single-instance name
+`io.github.its30na.redactor.SingleInstance` lies under the app's own id, which Flatpak lets the app own
+without a permission. What the sandbox does not stop: on an X11 session `fallback-x11` gives the app X11
+itself, and X11 lets every client read every other client's clipboard and keystrokes, so there the
+sandbox does not separate Redactor from your other apps. On Wayland, a compositor that honours Wayland
+security contexts may hide the background clipboard (data-control) from sandboxed apps; Redactor then
+uses the clipboard only with its window in front, as on GNOME. Not tested on a real desktop. The
+settings live in `~/.var/app/io.github.its30na.redactor/config/redactor/`, and the web view's folder
+under `~/.var/app/io.github.its30na.redactor/data/`.
 
 **Advisory exceptions.** The Linux build pulls in Tauri's GTK3 and D-Bus stack, which has five open
 advisories that `cargo deny` is told to accept (`deny.toml`). Each is re-checked at every Tauri update and

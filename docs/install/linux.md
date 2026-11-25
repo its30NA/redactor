@@ -1,10 +1,84 @@
 # Install Redactor on Linux
 
-> **Preview.** The Linux app works on X11 and Wayland desktops and is tested by machines, but there is no
-> Linux release download yet: building it from source is the only way to get it. Such a build is an
-> unattested test build, with no checksum and no build attestation (see the
-> [threat model](../THREAT_MODEL.md#macos-and-linux-preview-what-is-different)). On Wayland, what works
-> depends on the desktop: see below.
+> **Preview.** macOS and Linux are in preview: machine-tested, little hand use yet. The Linux app works on
+> X11 and Wayland desktops. Every download is installed and started on clean systems by CI, but none of
+> the four packages has been used by hand on a real desktop yet. On Wayland, what works depends on the
+> desktop: see below. The [threat model](../THREAT_MODEL.md#macos-and-linux-preview-what-is-different)
+> lists what differs from Windows.
+
+About 5 minutes. For a 64-bit PC (x86_64) with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 42 or
+later. There is no Linux download for ARM yet.
+
+## 1. Pick a download
+
+All four are on the [latest release](https://github.com/its30NA/redactor/releases/latest) under
+**Assets**, and all four hold the same app. `<version>` is the release number, such as `2.1.1`.
+
+| File | Choose it when |
+|---|---|
+| `Redactor_<version>_amd64.deb` | Ubuntu, Debian and the distributions based on them. Your package manager installs it, and the system's updates keep its libraries current. |
+| `Redactor-<version>-1.x86_64.rpm` | Fedora, for the same reasons. Other rpm distributions may work but are not tested. |
+| `Redactor_<version>_x86_64.flatpak` | Any distribution with Flatpak, or when you want the app in a sandbox. Its libraries come from the GNOME runtime on Flathub. |
+| `Redactor_<version>_amd64.AppImage` | One file that runs without installing. It carries its own libraries, which are updated only with a new Redactor release, so prefer one of the others where you can. |
+
+## 2. Verify
+
+Download `SHA256SUMS` too, then, in the folder with both files:
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS     # the line for your file must say OK
+gh attestation verify <file> --repo its30NA/redactor
+```
+
+The second line needs the [GitHub CLI](https://cli.github.com/), signed in once with `gh auth login`.
+The [README](../../README.md#verify-the-download) says what each check proves. Do this before you
+install: the packages are not signed with a GPG key, so your package manager does not check where they
+came from.
+
+## 3. Install
+
+**`.deb`**
+
+```bash
+sudo apt install ./Redactor_<version>_amd64.deb
+```
+
+**`.rpm`**
+
+```bash
+sudo dnf install ./Redactor-<version>-1.x86_64.rpm
+```
+
+Both put **Redactor** in your applications menu. From a terminal it is `Redactor` (capital R).
+
+**Flatpak**
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user Redactor_<version>_x86_64.flatpak
+flatpak run io.github.its30na.redactor
+```
+
+The first line is needed only if Flathub is not set up yet: Flatpak fetches the GNOME runtime from it
+(about 1 GB the first time). The app then shows in your applications menu.
+
+**AppImage**
+
+```bash
+chmod +x Redactor_<version>_amd64.AppImage
+./Redactor_<version>_amd64.AppImage
+```
+
+Keep the file where it is: the hotkey command below names it by its path. The AppImage mounts itself with
+FUSE; if it does not start and the message mentions FUSE, install your distribution's `fuse3` package, or
+run it as `./Redactor_<version>_amd64.AppImage --appimage-extract-and-run`. It adds no menu entry.
+
+**Check:** `Redactor --version` (or the AppImage file, or `flatpak run io.github.its30na.redactor
+--version`) prints `Redactor <version>`.
+
+**Try it:** copy some text with a made-up password in it, for example `password: Plum-tree47`, click
+into the left pane and press **Ctrl+V**. The middle pane shows the same text with the password replaced
+by a placeholder. **Ctrl+Shift+C** copies the safe text.
 
 ## Which desktop are you on?
 
@@ -18,7 +92,7 @@ echo $WAYLAND_DISPLAY
   Most current Ubuntu and Fedora desktops are. The app runs here as a normal window. Read
   [If you are on Wayland](#if-you-are-on-wayland).
 - **It prints nothing** → type `echo $DISPLAY`. If that prints something (such as `:0`), you are on **X11**
-  and the app runs here (built from source, see below).
+  and the app runs here, with the hotkey **Ctrl+Alt+R** working from any window.
 
 This is the rule the app itself uses. `echo $XDG_SESSION_TYPE` gives a hint too (`x11` or `wayland`), but
 it can be empty: on WSLg it prints nothing.
@@ -55,27 +129,29 @@ Which of these you get depends on the desktop. Settings shows which one.
    you once, with a desktop notification and a notice in the window ("Hotkey stopped working"), and
    Settings shows the key as not active. Set the key again in Settings. It does not come back by itself.
 2. **Everywhere else (sway, older GNOME or KDE, WSLg; Hyprland is not tested and may offer the shortcut service of 1 instead).** The desktop does not let an app set a
-   hotkey. Settings shows the command to run instead, with a **Copy** button. It is the full path of the
-   Redactor you are running (or of the AppImage file), followed by `--scrub-clipboard`, in quotes when the
-   path has spaces or other special characters, for example:
+   hotkey. Settings shows the command to run instead, with a **Copy** button. It depends on how you
+   installed Redactor, and is in quotes when a path has spaces or other special characters:
+
+   | Installed from | The command Settings shows |
+   |---|---|
+   | `.deb` or `.rpm` | `/usr/bin/Redactor --scrub-clipboard` |
+   | Flatpak | `flatpak run io.github.its30na.redactor --scrub-clipboard` |
+   | AppImage | the full path of the AppImage file, such as `/home/you/Apps/Redactor_<version>_amd64.AppImage --scrub-clipboard` |
+   | Built from source | the full path of the program you built, such as `/home/you/redactor/target/release/Redactor --scrub-clipboard` |
+
+   Use the **Copy** button rather than typing it: the program is called `Redactor` (capital R), so a
+   plain `redactor` does nothing. Add a shortcut in the desktop's own keyboard settings that runs the
+   copied command. For sway, put this in `~/.config/sway/config` (change the keys to your taste, paste
+   the command after `exec`) and reload:
 
    ```text
-   /home/you/redactor/target/release/Redactor --scrub-clipboard
-   ```
-
-   Use the **Copy** button rather than typing it: the program you build is called `Redactor` (capital R)
-   and is not on your `PATH`, so a plain `redactor` does nothing. Add a shortcut in the desktop's own
-   keyboard settings that runs the copied command. For sway, put this in `~/.config/sway/config` (change
-   the keys to your taste, paste the command after `exec`) and reload:
-
-   ```text
-   bindsym $mod+Shift+r exec /home/you/redactor/target/release/Redactor --scrub-clipboard
+   bindsym $mod+Shift+r exec /usr/bin/Redactor --scrub-clipboard
    ```
 
    For Hyprland, in `~/.config/hypr/hyprland.conf`:
 
    ```text
-   bind = SUPER SHIFT, R, exec, /home/you/redactor/target/release/Redactor --scrub-clipboard
+   bind = SUPER SHIFT, R, exec, /usr/bin/Redactor --scrub-clipboard
    ```
 
    The command asks the running Redactor to scrub the clipboard, then returns at once. If Redactor is not
@@ -146,27 +222,49 @@ characters from a copy with no secret in it, and says "Hidden characters removed
 - **A hotkey that could not be set.** If another app holds the key at start, or the desktop refuses it,
   the window says "Hotkey not active" and Settings shows "Not active: pick another key."
 
+- **The AppImage's libraries are not updated by your system.** It carries WebKitGTK and about 180 other
+  libraries from Ubuntu 22.04, which get security fixes only with the next Redactor release. The `.deb`,
+  the `.rpm` and the Flatpak do not have this limit.
+- **The Flatpak on Wayland may need the window in front.** Some desktops hide the background clipboard
+  from sandboxed apps. Redactor then works as on GNOME (see the table above). Not tested on a real
+  desktop.
+- **The Flatpak on X11 is not separated from your other apps.** X11 lets every app read every other app's
+  clipboard and keys, and the sandbox cannot change that.
+
 ## Your files
 
-- **Settings:** `~/.config/redactor/settings.json` (or `$XDG_CONFIG_HOME/redactor/`). It holds your
-  settings and the always-redact word list in plain text, never scanned text. The folder is readable by
-  you alone (0700) and the file too (0600); a file from an older build is tightened at the next settings
-  change. If the file cannot be read, Redactor starts on the defaults, keeps the old file as
-  `settings.json.bad` next to it (so you can copy your word list back out) and says so in the window.
-- **The web view's folder:** `~/.local/share/io.github.its30na.redactor`. WebKitGTK creates it with
-  `hsts-storage.sqlite`, a few files named `salt` and empty cache folders. It holds no page data.
+- **Settings:** `~/.config/redactor/settings.json` (or `$XDG_CONFIG_HOME/redactor/`); in the Flatpak,
+  `~/.var/app/io.github.its30na.redactor/config/redactor/settings.json`. It holds your settings and the
+  always-redact word list in plain text, never scanned text. The folder is readable by you alone (0700)
+  and the file too (0600); a file from an older build is tightened at the next settings change. If the
+  file cannot be read, Redactor starts on the defaults, keeps the old file as `settings.json.bad` next to
+  it (so you can copy your word list back out) and says so in the window.
+- **The web view's folder:** `~/.local/share/io.github.its30na.redactor` (in the Flatpak, under
+  `~/.var/app/io.github.its30na.redactor/data/`). WebKitGTK creates it with `hsts-storage.sqlite`, a few
+  files named `salt` and empty cache folders. It holds no page data.
 
-To remove Redactor, delete the program you built (or the AppImage file), then both folders above.
+## Remove it
 
-## Today: the `scrub` command-line tool
+Quit Redactor first (tray icon > **Quit**).
 
-`scrub` is released for Linux already and does the same redaction in a terminal. Install it as the
+| Installed from | Remove the app | What stays behind |
+|---|---|---|
+| `.deb` | `sudo apt remove redactor` | `~/.config/redactor` and `~/.local/share/io.github.its30na.redactor`: delete both. |
+| `.rpm` | `sudo dnf remove redactor` | The same two folders. |
+| Flatpak | `flatpak uninstall --user --delete-data io.github.its30na.redactor` | Nothing of Redactor's: `--delete-data` removes `~/.var/app/io.github.its30na.redactor`. The GNOME runtime stays for other apps; `flatpak uninstall --user --unused` removes it when nothing needs it. |
+| AppImage | Delete the file. | The same two folders as the `.deb`. |
+
+Also remove a keyboard shortcut you added for `--scrub-clipboard`.
+
+## The `scrub` command-line tool
+
+`scrub` does the same redaction in a terminal. Install it as the
 [README describes](../../README.md#install-scrub).
 
-## Today, for developers: build the app
+## Build it from source
 
 The app needs WebKitGTK 4.1 and, to hide in the tray, a desktop that shows tray icons. The steps and the
 packages are in [CONTRIBUTING: Build the app](../../CONTRIBUTING.md#build-the-app). The result is
-`target/release/Redactor`.
+`target/release/Redactor`. To remove it, delete the program and the two folders under **Your files**.
 
 [Back to the overview](../../README.md#download)

@@ -9,15 +9,18 @@ curl -u deploy:<a password> https://ci  ->  curl -u deploy:[REDACTED: Password] 
 login failed for <the same password>   ->  login failed for [REDACTED: Password]
 ```
 
-There are two ways to use it: the **desktop app** for Windows, and the **`scrub`** command line for
-Windows, Linux and macOS. Both use the same engine. Download links and checksum steps are in the
-[README](../README.md#download).
+There are two ways to use it: the **desktop app** for Windows, macOS and Linux, and the **`scrub`**
+command line for Windows, Linux and macOS. Both use the same engine. Download links and the steps to
+verify a download are in the [README](../README.md#download); each OS has a step-by-step guide:
+[Windows](install/windows.md), [Mac](install/macos.md), [Linux](install/linux.md) (which of the four
+Linux files to pick, and how to remove each).
 
-The desktop app for **macOS and Linux** is a preview, an unattested test build: not released yet, with no
-checksums and no attestation. To try it,
-follow [Install on a Mac](install/macos.md) or [Install on Linux](install/linux.md); they also say how
-the clipboard hotkey works there. This guide is written for Windows. On a Mac, `Ctrl` in the app's own
-shortcuts is `Cmd`, and the hotkey `Ctrl+Alt+R` is Control+Option+R, as the app shows it there.
+The desktop app for **macOS and Linux** is in preview: machine-tested, little hand use yet. The install
+guides also say how the clipboard hotkey works there: on some Linux desktops no app may hold a key, and
+Settings shows a command to bind in the desktop's keyboard settings instead
+([Linux guide](install/linux.md#the-hotkey)). This guide is written for Windows. On a Mac,
+`Ctrl` in the app's own shortcuts is `Cmd`, and the hotkey `Ctrl+Alt+R` is Control+Option+R, as the app
+shows it there and in its messages.
 Some protections work differently
 or are missing (no screen-capture shield, no clipboard history cleaning, on Linux a wipe on lock only
 when the desktop announces the lock): the
@@ -90,8 +93,8 @@ plain text, and the sheet says so. If you type something that looks like a passw
 
 ### Scrub the clipboard from anywhere: `Ctrl+Alt+R`
 
-Press `Ctrl+Alt+R` in any app, without opening Redactor. It scrubs whatever text is on the clipboard in
-place and shows a Windows notification. The window shows the same words as a notice:
+Press `Ctrl+Alt+R` (Control+Option+R on a Mac) in any app, without opening Redactor. It scrubs whatever
+text is on the clipboard in place and shows a Windows notification. The window shows the same words as a notice:
 
 - "Clipboard scrubbed. 2 secrets removed, safe to paste.", or
 - "Clipboard scrubbed. 1 secret removed, check before pasting.", when the text was rewritten but the
@@ -163,7 +166,8 @@ starting it again brings the first one forward.
 
 ### Settings
 
-Stored in `%APPDATA%\Redactor\settings.json` and never contain any scanned text. Settings are: sensitivity,
+Stored in `%APPDATA%\Redactor\settings.json` (on macOS and Linux: see the install guides) and never contain
+any scanned text. Settings are: sensitivity,
 personal data, strip invisible characters, placeholder style, screen-capture shield, wipe when idle, wipe
 when Windows locks, the clipboard hotkey, keep running in the tray, theme (follow Windows, dark or light)
 and motion. **Strip invisible characters** removes zero-width, bidirectional and tag characters from the
@@ -393,7 +397,8 @@ A config file can switch detection off, so `scrub` treats one with care:
   for a one-off. Report patterns that are worth adding as an issue, with a made-up example.
 - **Something harmless was redacted.** Press Keep on its finding. For the command line, add an
   `allowlist` regex or disable the rule.
-- **The hotkey does nothing.** Another program may hold `Ctrl+Alt+R`. Pick another in Settings.
+- **The hotkey does nothing.** Another program may hold `Ctrl+Alt+R` (Control+Option+R on a Mac). Pick
+  another in Settings.
 - **SmartScreen warns on the installer.** The binaries are not code-signed. See the
   [threat model](THREAT_MODEL.md#the-unsigned-binary-and-smartscreen) and verify the download.
 - **`scrub scan` flags my test files.** If they contain fake secrets on purpose, allowlist the values or

@@ -1,50 +1,50 @@
 # Install Redactor on a Mac
 
-> **Preview.** The Mac app works and is tested by machines on macOS 15 and 26, but it is not released yet and
-> few people have used it by hand. What you get here is an unattested test build: not a release download,
-> not signed by an Apple developer account, with no checksum and no build attestation. Tell us what you find.
+> **Preview.** macOS and Linux are in preview: machine-tested, little hand use yet. The Mac app is tested
+> by machines on macOS 15 and 26, and every disk image is opened and started on Apple silicon and Intel
+> runners, but few people have used it by hand. It is not signed by an Apple developer account. Tell us
+> what you find.
 
 About 5 minutes. Needs macOS 13 or later.
 
-## 1. Which Mac do you have?
+## 1. Download
 
-Click the **Apple menu** (top left) > **About This Mac**.
+1. Open the [latest release](https://github.com/its30NA/redactor/releases/latest).
+2. Under **Assets**, click **`Redactor_<version>_universal.dmg`** (the version number changes with each
+   release). One file works on every Mac, Apple silicon and Intel. Your browser saves it to **Downloads**.
 
-- It says **Chip: Apple M1, M2, M3…** → you need the **Apple silicon** file (`Redactor-arm64.zip`).
-- It says **Processor: Intel** → you need the **Intel** file (`Redactor-x86_64.zip`).
+## 2. Verify
 
-## 2. Get the app
+Redactor is not signed by an Apple developer account, so macOS cannot tell you who made it. Check the
+file instead. Download **`SHA256SUMS`** from the same page, open **Terminal**, and run:
 
-Until the release, the Mac app is a test build that GitHub makes for every change and keeps for 7 days.
-There is no checksum or attestation to check it against, so download it only from this repository's own
-Actions page:
+```bash
+cd ~/Downloads
+shasum -a 256 --check --ignore-missing SHA256SUMS    # the line for the dmg must say OK
+gh attestation verify Redactor_<version>_universal.dmg --repo its30NA/redactor
+```
 
-1. Sign in to GitHub and open the repository's [**Actions**](https://github.com/its30NA/redactor/actions/workflows/ci.yml?query=branch%3Aport)
-   page, then click the newest run with a green tick.
-2. At the bottom, under **Artifacts**, click **redactor-app-macos-latest** (Apple silicon) or
-   **redactor-app-macos-15-intel** (Intel). This downloads a zip.
-3. Double-click it in **Downloads** until you see the zip named in step 1, and double-click that too. You now
-   have **Redactor**.
-
-No GitHub account? Someone who has one can download it and send you the zip (AirDrop or a USB stick).
-Only take it from someone you trust: nothing lets you check that the zip is the one GitHub built.
+The second line needs the [GitHub CLI](https://cli.github.com/), signed in once with `gh auth login`.
+The [README](../../README.md#verify-the-download) says what each check proves.
 
 ## 3. Install
 
-1. Drag **Redactor** into your **Applications** folder.
-2. Open **Applications** and double-click **Redactor**.
-3. The Mac says **"Redactor" Not Opened** ("Apple could not verify…"). That is because Redactor is not
+1. Double-click the dmg in **Downloads**. A window opens with **Redactor** and an **Applications** folder.
+2. Drag **Redactor** onto **Applications**. Then eject the disk image (the eject button next to
+   **Redactor** in the Finder sidebar) and delete the dmg if you like.
+3. Open **Applications** and double-click **Redactor**.
+4. The Mac says **"Redactor" Not Opened** ("Apple could not verify…"). That is because Redactor is not
    signed by an Apple developer account yet, not because something is wrong with it. Click **Done**.
-4. Open **System Settings** > **Privacy & Security**, scroll down to **Security**. Next to
+5. Open **System Settings** > **Privacy & Security**, scroll down to **Security**. Next to
    *"Redactor" was blocked…*, click **Open Anyway**, then confirm with your password or Touch ID.
-5. Redactor opens. From now on it opens normally.
+6. Redactor opens. From now on it opens normally.
 
 On macOS 13 or 14 there is a shortcut instead: right-click **Redactor** > **Open** > **Open**.
 
 If the Mac says the app **"is damaged"**: that is the same check being stricter. Someone comfortable with the
 Terminal can run `xattr -dr com.apple.quarantine /Applications/Redactor.app` once, then open it again. That
-line switches off macOS's own check of the download, so run it only on a zip you took from the Actions
-page yourself.
+line switches off macOS's own check of the download, so run it only on a copy whose dmg you verified in
+step 2.
 
 ## 4. Try it
 
@@ -75,17 +75,15 @@ Copies from password managers are left alone, and locking the Mac or putting it 
   scrubbed** and leave the clipboard as it was. This has not been tried on a real Mac yet; if it says
   "Nothing to scrub" instead, the raw text is still there, so please tell us. To change your answer later,
   look for Redactor under **System Settings** > **Privacy & Security**.
-- **Some messages still use the Windows key names.** The welcome card and Settings show the shortcut as
-  Control, Option and Command, but a message the app writes about a key it could not set still says Ctrl
-  and Alt (for example "Ctrl+Alt+R").
 - **No warning when another app has the same shortcut.** macOS does not tell Redactor. If the shortcut
   does nothing, pick another one in Settings.
-- **The preview is an unattested test build, not a release download.** It is signed only ad hoc (not by
-  an Apple developer account) and comes with no checksum and no build attestation, so you cannot check
-  that the zip is the one GitHub built. Download it only from this repository's Actions page, or build it
-  yourself. The
+- **Not signed by an Apple developer account, not notarized.** The app is signed only ad hoc, which is
+  why macOS asks for **Open Anyway** the first time. The checksum and the attestation in step 2 are what
+  show the file is the one GitHub built. The
   [threat model](../THREAT_MODEL.md#macos-and-linux-preview-what-is-different) lists what else differs on
   a Mac.
+- **No automatic updates.** To update, download the new dmg and drag Redactor onto **Applications**
+  again (choose **Replace**). Your settings stay.
 
 ## Remove it
 
