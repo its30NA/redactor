@@ -52,8 +52,10 @@ The app gets only what it uses:
 | `--talk-name=org.{freedesktop,gnome,cinnamon,mate,xfce}.ScreenSaver`, `--system-talk-name=org.freedesktop.login1` | Hearing that the screen locks, to wipe the panes and the remembered secrets. |
 
 No network, no file system access (files you open or save go through the desktop's file dialog
-portal), no sound. `tools/ci/l4/flatpak-manifest-check.py` fails CI if the list changes or a
-download is not pinned:
+portal), no sound. `tools/ci/l4/flatpak-manifest-check.py` fails CI if the list changes, a
+download is not pinned, or the pinned Rust and Node drift from the ones the other builds use (the
+Rust release of the `rust-toolchain.toml` channel that `rustc` reports, the Node major version of
+the workflows):
 
 ```bash
 python3 -I tools/ci/l4/flatpak-manifest-check.py packaging/flatpak/io.github.its30na.redactor.json

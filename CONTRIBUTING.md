@@ -248,7 +248,12 @@ machine.
    and `app/ui/package.json`, run `cargo build` and `npm install --package-lock-only` in `app/ui` so both
    lockfiles carry it, and add a `<release version="…" date="…"/>` line at the top of `<releases>` in
    `packaging/flatpak/io.github.its30na.redactor.metainfo.xml`. A pre-release tag such as `v2.2.0-rc.1`
-   needs that exact string in all of them.
+   needs that exact string in all of them. The Flatpak builds with its own pinned Rust and Node
+   archives (the `rust` and `node` modules of `packaging/flatpak/io.github.its30na.redactor.json`),
+   while the other builds take the newest release of the Rust channel in `rust-toolchain.toml` and of
+   Node 22: when a newer one is out, put its URL and sha256 into the manifest.
+   `tools/ci/l4/flatpak-manifest-check.py` fails when the Rust release differs from the local `rustc`
+   or the Node major version from the workflows'; a newer Node 22 release it does not notice.
 2. **Changelog.** Rename `## [Unreleased]` in `CHANGELOG.md` to `## [<version>] - <date>`, with its
    **Known limits** and **Not tested by hand** lists brought up to date. The section becomes the release
    notes.

@@ -14,10 +14,18 @@ every line is PASS:
                  nothing is fetched over plain http, and every local path (patches, the
                  repository) exists.
   build_offline  the app's module builds with --offline / --locked and no network permission.
+  toolchains     the Rust archive is a release of the channel rust-toolchain.toml names and, where
+                 that channel's rustc runs here, the very release it reports (rustup takes the
+                 newest point release, so a new 1.99.x shows up here first); the Node archive has
+                 the major version the workflows' setup-node steps ask for.
 """
 
+import glob
 import json
 import os
+import re
+import shutil
+import subprocess
 import sys
 
 APPROVED_FINISH_ARGS = [
@@ -100,6 +108,84 @@ def source_problem(origin, src, base):
     return None
 
 
+def find_up(start, name):
+    """The first <dir>/<name> from start upwards, or None."""
+    d = start
+    while True:
+        if os.path.exists(os.path.join(d, name)):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+
+def archive_version(all_modules, module, pattern):
+    """The version in the URL of the named module's archive, or None."""
+    for mod, _ in all_modules:
+        if mod.get("name") != module:
+            continue
+        for src in mod.get("sources", []):
+            if isinstance(src, dict) and src.get("type") == "archive":
+                m = re.search(pattern, src.get("url", ""))
+                if m:
+                    return m.group(1)
+    return None
+
+
+def local_rustc(repo):
+    """`rustc --version` run in the repository (so rustup picks rust-toolchain.toml), or None
+    when there is no rustc or it cannot answer. rustup must not install anything for this."""
+    if not shutil.which("rustc"):
+        return None
+    env = dict(os.environ, RUSTUP_AUTO_INSTALL="0")
+    try:
+        out = subprocess.run(
+            ["rustc", "--version"], cwd=repo, env=env, capture_output=True, text=True, timeout=60
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.match(r"rustc (\d+\.\d+\.\d+)", out.stdout) if out.returncode == 0 else None
+    return m.group(1) if m else None
+
+
+def toolchain_problem(all_modules, base):
+    repo = find_up(base, "rust-toolchain.toml")
+    if repo is None:
+        return "no rust-toolchain.toml above the manifest"
+    with open(os.path.join(repo, "rust-toolchain.toml"), encoding="utf-8") as f:
+        m = re.search(r'^channel\s*=\s*"([0-9.]+)"', f.read(), re.M)
+    if not m:
+        return "rust-toolchain.toml names no numbered channel"
+    channel = m.group(1)
+    rust = archive_version(all_modules, "rust", r"/rust-(\d+\.\d+\.\d+)-")
+    if rust is None:
+        return "no rust module with a rust-<version>- archive"
+    if rust != channel and not rust.startswith(channel + "."):
+        return f"the manifest's Rust {rust} is not of the channel {channel} in rust-toolchain.toml"
+    here = local_rustc(repo)
+    if here is None or not (here == channel or here.startswith(channel + ".")):
+        print(f"toolchains: Rust {rust} not compared with a local rustc {channel}", file=sys.stderr)
+    elif here != rust:
+        return (
+            f"the manifest pins Rust {rust}, the {channel} channel here is {here}: pin the same "
+            f"release (url and sha256) or run `rustup update {channel}`"
+        )
+
+    node = archive_version(all_modules, "node", r"/node-v(\d+)\.\d+\.\d+-")
+    if node is None:
+        return "no node module with a node-v<version>- archive"
+    wanted = set()
+    for wf in glob.glob(os.path.join(repo, ".github", "workflows", "*.yml")):
+        with open(wf, encoding="utf-8") as f:
+            wanted.update(re.findall(r'node-version:\s*"?(\d+)', f.read()))
+    if not wanted:
+        return "no node-version in .github/workflows"
+    if wanted != {node}:
+        return f"the manifest's Node is {node}.x, the workflows ask for {' '.join(sorted(wanted))}"
+    return None
+
+
 def main():
     if len(sys.argv) != 2:
         print("usage: flatpak-manifest-check.py <manifest.json>", file=sys.stderr)
@@ -167,6 +253,8 @@ def main():
             result("build_offline", "npm must install with npm ci --offline")
         else:
             result("build_offline", None)
+
+    result("toolchains", toolchain_problem(all_modules, base))
 
     return 1 if failed else 0
 
