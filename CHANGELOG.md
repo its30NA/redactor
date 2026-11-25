@@ -22,7 +22,8 @@ All notable changes to this project are documented here. The format follows
 - Inside the Flatpak, Settings shows the command to bind as
   `flatpak run io.github.its30na.redactor --scrub-clipboard`, the one that works from outside the sandbox.
 - The window starts in the theme's background colour instead of flashing white before the page is drawn
-  (dark for the dark and system themes, light for the light theme).
+  (dark for the dark theme, light for the light theme, and for the system theme the desktop's light or
+  dark setting; dark where the desktop does not say).
 - `--scrub-clipboard`: starting the app with it scrubs the clipboard like the hotkey, through the running
   copy or in a new one. Where the desktop lets no app hold a key, Settings shows this command with the
   app's full path and a Copy button, to bind in the desktop's keyboard settings.
@@ -150,7 +151,7 @@ These were tested by machines only, or not at all. Tell us what you find.
 - On WSLg: the hotkey command with the window minimised, clicking another window right after it, and
   whether the scrubbed text stays on the clipboard after quitting.
 - Handing the clipboard to a real clipboard manager on X11 (GNOME, KDE, Xfce) when Redactor quits.
-- The dark first frame on Windows and on a real Mac.
+- The first frame's colour on Windows and on a real Mac, also with the system theme on a light desktop.
 
 ## [2.1.1] - 2026-11-22
 

@@ -230,8 +230,8 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
     let protected = st.platform.shield && settings.content_protection;
     let os = st.platform.os;
     // The theme's background from the first frame on, instead of a white flash before the page
-    // paints.
-    let (r, g, b) = crate::first_frame::first_frame_rgb(settings.theme);
+    // paints. The desktop's preference is known only once the window exists (below).
+    let (r, g, b) = crate::first_frame::first_frame_rgb(settings.theme, None);
     let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Redactor")
         .inner_size(1280.0, 800.0)
@@ -247,6 +247,20 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
         .on_navigation(move |url| allowed_origin(url, os))
         .on_new_window(|_url, _features| NewWindowResponse::Deny);
     let window = st.platform.webview.prepare(builder).build()?;
+    // `System`: the desktop's light or dark preference, read from the new window before the
+    // event loop draws it, so a light desktop does not see a dark first frame.
+    if settings.theme == crate::settings::Theme::System {
+        let desktop = window
+            .theme()
+            .ok()
+            .and_then(crate::first_frame::DesktopTheme::from_tauri);
+        let rgb = crate::first_frame::first_frame_rgb(settings.theme, desktop);
+        if rgb != (r, g, b) {
+            let (r, g, b) = rgb;
+            // Only the start colour: if it cannot be set, the page still paints its own.
+            let _ = window.set_background_color(Some(tauri::window::Color(r, g, b, 255)));
+        }
+    }
     st.platform.webview.harden(&window);
     Ok(window)
 }
