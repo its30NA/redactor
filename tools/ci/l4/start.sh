@@ -138,11 +138,14 @@ if [ "${1:-}" = "--inside-bus" ]; then
     # their folders there (named one by one, so anything else still counts): the document
     # portal (doc), GSettings (dconf), D-Bus activation (dbus-1) and the accessibility bus.
     # Flatpak keeps its own beside them: the instance records (.flatpak), the session helper
-    # (.flatpak-helper) and the app's shared runtime folder (app/<app-id>).
+    # (.flatpak-helper), the D-Bus proxy sockets (.dbus-proxy), the app's shared runtime folder
+    # (app/<app-id>) and tray-icon, which `flatpak run` creates for the manifest's
+    # xdg-run/tray-icon:create (the test bus has no tray host, so the app writes no icon there).
     keep=(! -name doc ! -name dconf ! -name dbus-1 ! -name at-spi)
     for word in "${cmd[@]}"; do
       if [ "$(basename -- "$word")" = flatpak ]; then
-        keep+=(! -name .flatpak ! -name .flatpak-helper ! -name app)
+        keep+=(! -name .flatpak ! -name .flatpak-helper ! -name .dbus-proxy ! -name app
+          ! -name tray-icon)
         break
       fi
     done
