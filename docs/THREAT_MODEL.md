@@ -334,7 +334,7 @@ verified.
 **Linux packages.** The `.deb` and the `.rpm` are installed as root through the package manager, which
 runs no script of ours (the packages have none) and pulls WebKitGTK, GTK and the tray library from your
 distribution, so your distribution's security updates reach them. They are not signed with a GPG key;
-the attestation proves their origin. The AppImage carries its own copies of about 180 libraries from
+the attestation proves their origin. The AppImage carries its own copies of about 175 libraries from
 Ubuntu 22.04, WebKitGTK among them: those copies get no security update until the next Redactor release,
 and WebKitGTK is the part that renders the window. Prefer the `.deb`, the `.rpm` or the Flatpak where you
 can. The AppImage and the `.deb` need glibc 2.35 or newer (Ubuntu 22.04, Debian 12 or later). The

@@ -130,7 +130,7 @@ Linux:
   window quits.
 - **Copy safe text** reports the clipboard as busy, instead of trying again, when another app copies in
   the same millisecond (X11).
-- The AppImage's own libraries (WebKitGTK and about 180 others from Ubuntu 22.04) get security fixes only
+- The AppImage's own libraries (WebKitGTK and about 170 others from Ubuntu 22.04) get security fixes only
   with a new Redactor release; the `.deb`, `.rpm` and Flatpak use your system's or Flathub's.
 - The `.deb` and `.rpm` are not signed with a GPG key; the attestation proves where they came from.
 - Flatpak: on desktops that hide the background clipboard from sandboxed apps, it works only with the

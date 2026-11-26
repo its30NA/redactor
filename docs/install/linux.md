@@ -224,7 +224,7 @@ characters from a copy with no secret in it, and says "Hidden characters removed
 - **A hotkey that could not be set.** If another app holds the key at start, or the desktop refuses it,
   the window says "Hotkey not active" and Settings shows "Not active: pick another key."
 
-- **The AppImage's libraries are not updated by your system.** It carries WebKitGTK and about 180 other
+- **The AppImage's libraries are not updated by your system.** It carries WebKitGTK and about 170 other
   libraries from Ubuntu 22.04, which get security fixes only with the next Redactor release. The `.deb`,
   the `.rpm` and the Flatpak do not have this limit.
 - **The Flatpak on Wayland may need the window in front.** Some desktops hide the background clipboard
