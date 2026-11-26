@@ -61,12 +61,26 @@ scope=--system
 
 echo "::group::bundle-flatpak: flatpak-builder"
 flatpak remote-add "$scope" --if-not-exists flathub "$flathub"
+# The runtime and SDK from Flathub only when they are missing: --install-deps-from also updates
+# installed ones, and in a container (overlayfs) that update fails with "Invalid cross-device
+# link". CI's image ships them, pinned by its digest, so CI builds with those.
+read -r runtime sdk runtime_version < <(python3 -I -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+print(m["runtime"], m["sdk"], m["runtime-version"])' "$manifest")
+deps=()
+for name in "$runtime" "$sdk"; do
+  if ! flatpak info "$scope" "$name" "$runtime_version" >/dev/null 2>&1; then
+    deps=(--install-deps-from=flathub)
+  fi
+done
+echo "bundle-flatpak: runtime and sdk: ${deps[*]:-installed, not updated}"
 started=$(date +%s)
 flatpak-builder "$scope" \
   --repo="$work/repo" \
   --state-dir="$work/state" \
   --disable-rofiles-fuse \
-  --install-deps-from=flathub \
+  "${deps[@]}" \
   --default-branch="$branch" \
   --arch=x86_64 \
   --force-clean \
