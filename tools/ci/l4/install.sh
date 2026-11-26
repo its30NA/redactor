@@ -16,7 +16,7 @@
 # The test tools are those of tools/ci/l4/start.sh and contents.sh: Xvfb, xdotool, a session bus
 # (dbus-run-session), xprop for a look by hand; on Fedora also setsid, find, cmp, and cpio for
 # the .rpm's contents (rpm2cpio comes with rpm). An AppImage carries most of its libraries but
-# not those every desktop has (the AppImage exclude list: GL/EGL, X11 and xcb, fontconfig,
+# not those every desktop has (the AppImage exclude list: GL/EGL/GLES, X11 and xcb, fontconfig,
 # freetype, harfbuzz, fribidi, gbm, wayland-client, expat), so for it those are installed as a
 # desktop would have them, plus a font.
 set -euo pipefail
@@ -44,12 +44,13 @@ else
 fi
 
 apt_tools=(xvfb xdotool dbus dbus-x11 x11-utils)
-apt_desktop=(libgl1 libegl1 libgl1-mesa-dri libgbm1 libfontconfig1 libfreetype6 libfribidi0
-  libharfbuzz0b libwayland-client0 libx11-6 libx11-xcb1 libxcb1 libexpat1 fonts-dejavu-core)
+apt_desktop=(libgl1 libegl1 libgles2 libgl1-mesa-dri libgbm1 libfontconfig1 libfreetype6
+  libfribidi0 libharfbuzz0b libwayland-client0 libx11-6 libx11-xcb1 libxcb1 libexpat1
+  fonts-dejavu-core)
 dnf_tools=(xorg-x11-server-Xvfb xdotool dbus-daemon dbus-tools xprop util-linux-core findutils
   diffutils cpio)
-dnf_desktop=(libglvnd-glx libglvnd-egl mesa-dri-drivers mesa-libgbm fontconfig freetype fribidi
-  harfbuzz libwayland-client libX11 libX11-xcb libxcb expat dejavu-sans-fonts)
+dnf_desktop=(libglvnd-glx libglvnd-egl libglvnd-gles mesa-dri-drivers mesa-libgbm fontconfig
+  freetype fribidi harfbuzz libwayland-client libX11 libX11-xcb libxcb expat dejavu-sans-fonts)
 
 # install <packages...>: from the distribution, as root, without questions.
 install() {
