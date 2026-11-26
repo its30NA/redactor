@@ -97,7 +97,13 @@ case "$target" in
     need rpm2cpio cpio
     mkdir "$root"
     abs=$(realpath -- "$target")
-    (cd "$root" && rpm2cpio "$abs" | cpio -idm --quiet 2>/dev/null)
+    # rpm2cpio (rpm 4.17/4.18) exits 1 after writing the whole archive when the header has no
+    # archive-size tag, and Tauri's .rpm has none. So cpio's status is the one that counts: an
+    # empty or cut-off archive has no trailer, and cpio fails on it.
+    if ! (cd "$root" && { rpm2cpio "$abs" || true; } | cpio -idm --quiet); then
+      fail unpacked "rpm2cpio | cpio could not unpack $target"
+      exit 1
+    fi
     bin=usr/bin/Redactor res=usr/lib/Redactor desktop=usr/share/applications/Redactor.desktop
     ;;
   *.AppImage)
