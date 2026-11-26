@@ -56,14 +56,16 @@ if [ "${1:-}" = "--inside-bus" ]; then
   windows() { xdotool search --onlyvisible --name '^Redactor$' 2>/dev/null || true; }
   one_window() { [ "$(windows | grep -c .)" -ge 1 ]; }
   alive() { kill -0 "$1" 2>/dev/null; }
-  # session_pids <sid>: the processes of a session, from /proc (no procps in the containers).
+  # session_pids <sid>: the live processes of a session, from /proc (no procps in the containers).
+  # A zombie (state Z) has exited and is skipped: in a CI job container PID 1 is `tail -f
+  # /dev/null`, which never reaps the web view's helpers once the app, their parent, is gone.
   session_pids() {
     local stat rest f
     for stat in /proc/[0-9]*/stat; do
       rest=$(cat "$stat" 2>/dev/null) || continue
       # After the command name, which may hold spaces: state ppid pgrp session ...
       read -r -a f <<<"${rest##*) }"
-      if [ "${f[3]:-}" = "$1" ]; then
+      if [ "${f[3]:-}" = "$1" ] && [ "${f[0]:-}" != Z ]; then
         stat=${stat#/proc/}
         echo "${stat%/stat}"
       fi
@@ -127,7 +129,9 @@ if [ "${1:-}" = "--inside-bus" ]; then
   elif ! kill -TERM -- "-$app" 2>/dev/null; then
     fail quits "SIGTERM could not be sent to process group $app"
   elif ! wait_for 10 none_left "$app"; then
-    fail quits "still running 10 s after SIGTERM: pids $(session_pids "$app" | tr '\n' ' ')"
+    fail quits "still running 10 s after SIGTERM: $(for p in $(session_pids "$app"); do
+      printf '%s(%s) ' "$p" "$(cat "/proc/$p/comm" 2>/dev/null || echo gone)"
+    done)"
     kill -KILL -- "-$app" 2>/dev/null || true
   else
     # The desktop's own services, started on the bus by the libraries the window loads, keep
