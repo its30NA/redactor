@@ -34,6 +34,9 @@
     {
       "name": "rust",
       "buildsystem": "simple",
+      "build-options": {
+        "no-debuginfo": true
+      },
       "cleanup": ["*"],
       "build-commands": [
         "./install.sh --prefix=/app/rust --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu --disable-ldconfig"
