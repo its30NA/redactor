@@ -24,6 +24,7 @@
 #                      and not empty: one per C library built into the Flatpak.
 #   version            (with --expect-version) the package's own version field says <v>; for
 #                      an AppImage, which has none, its file name.
+#   package_fields     (.deb, .rpm) the package's long description is set (not "(none)" or empty).
 # A tool the format needs that is missing here (dpkg-deb, rpm2cpio and cpio, rpm, hdiutil,
 # flatpak) is `FAIL tool-missing <tool>`, never a skip.
 set -euo pipefail
@@ -282,5 +283,22 @@ if [ -n "$expect" ]; then
     fail version "the package says '$got', expected '$expect'"
   fi
 fi
+
+# The package manager's own fields: without bundle.longDescription the bundler writes the
+# literal "(none)" into the .deb and leaves the .rpm's description empty.
+case "$target" in
+  *.deb | *.rpm)
+    if [ "${target##*.}" = deb ]; then
+      long=$(dpkg-deb -f "$target" Description | sed 1d | sed 's/^ //')
+    else
+      need rpm
+      long=$(rpm -qp --qf '%{DESCRIPTION}' "$target" 2>/dev/null || true)
+    fi
+    case "$long" in
+      '' | '(none)') fail package_fields "the long description is '${long:-}' (set bundle.longDescription)" ;;
+      *) pass package_fields ;;
+    esac
+    ;;
+esac
 
 exit "$l4_failed"
