@@ -24,7 +24,8 @@
 #                      and not empty: one per C library built into the Flatpak.
 #   version            (with --expect-version) the package's own version field says <v>; for
 #                      an AppImage, which has none, its file name.
-#   package_fields     (.deb, .rpm) the package's long description is set (not "(none)" or empty).
+#   package_fields     (.deb, .rpm) the long description is set (not "(none)" or empty); (.deb)
+#                      Maintainer is not the identifier fallback "github".
 # A tool the format needs that is missing here (dpkg-deb, rpm2cpio and cpio, rpm, hdiutil,
 # flatpak) is `FAIL tool-missing <tool>`, never a skip.
 set -euo pipefail
@@ -294,9 +295,18 @@ case "$target" in
       need rpm
       long=$(rpm -qp --qf '%{DESCRIPTION}' "$target" 2>/dev/null || true)
     fi
+    # Without Cargo authors the .deb's Maintainer is the identifier's second part ("github").
+    maint=
+    if [ "${target##*.}" = deb ]; then maint=$(dpkg-deb -f "$target" Maintainer); fi
     case "$long" in
       '' | '(none)') fail package_fields "the long description is '${long:-}' (set bundle.longDescription)" ;;
-      *) pass package_fields ;;
+      *)
+        if [ "$maint" = github ]; then
+          fail package_fields "Maintainer is 'github' (set authors in app/src-tauri/Cargo.toml)"
+        else
+          pass package_fields
+        fi
+        ;;
     esac
     ;;
 esac

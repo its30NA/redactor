@@ -1,6 +1,9 @@
 [package]
 name = "redactor-app"
 description = "Redactor desktop app: the Tauri 2 shell around redactor-core."
+# The .deb's Maintainer line (Tauri reads it from here first; without it the line said "github",
+# from the identifier). The Windows installer reads only bundle.publisher, so this changes nothing there.
+authors = ["Sina Kashani"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
