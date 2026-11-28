@@ -38,6 +38,19 @@ pub fn first_frame_rgb(theme: Theme, desktop: Option<DesktopTheme>) -> (u8, u8, 
     }
 }
 
+/// A script run at document start that gives the page the chosen theme before its first paint.
+/// Without it the page follows the OS scheme until the UI has loaded the settings, so a theme
+/// that differs from the OS shows the OS colours for a moment (F16). `System` needs none: the
+/// page follows the desktop on its own.
+pub fn page_theme_script(theme: Theme) -> Option<String> {
+    let name = match theme {
+        Theme::Dark => "dark",
+        Theme::Light => "light",
+        Theme::System => return None,
+    };
+    Some(include_str!("page_theme.js").replace("__THEME__", name))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,6 +87,24 @@ mod tests {
     #[test]
     fn system_starts_dark_when_the_desktop_does_not_say() {
         assert_eq!(first_frame_rgb(Theme::System, None), DARK);
+    }
+
+    #[test]
+    fn a_chosen_theme_reaches_the_page_before_its_first_paint() {
+        // What the script does in a page is tested in app/ui/tests/unit/page-theme-script.test.ts.
+        for (theme, name) in [(Theme::Dark, "dark"), (Theme::Light, "light")] {
+            let script = page_theme_script(theme).expect("a script");
+            assert!(
+                script.contains(&format!("dataset.theme = '{name}'")),
+                "{script}"
+            );
+            assert!(!script.contains("__THEME__"), "{script}");
+        }
+    }
+
+    #[test]
+    fn system_leaves_the_page_to_the_desktop() {
+        assert_eq!(page_theme_script(Theme::System), None);
     }
 
     /// `#rrggbb` as three bytes.

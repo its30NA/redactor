@@ -23,7 +23,8 @@ All notable changes to this project are documented here. The format follows
   `flatpak run io.github.its30na.redactor --scrub-clipboard`, the one that works from outside the sandbox.
 - The window starts in the theme's background colour instead of flashing white before the page is drawn
   (dark for the dark theme, light for the light theme, and for the system theme the desktop's light or
-  dark setting; dark where the desktop does not say).
+  dark setting; dark where the desktop does not say). The page also starts in a chosen Dark or Light
+  theme, so a theme that differs from the system's no longer shows the system's colours for a moment.
 - `--scrub-clipboard`: starting the app with it scrubs the clipboard like the hotkey, through the running
   copy or in a new one. Where the desktop lets no app hold a key, Settings shows this command with the
   app's full path and a Copy button, to bind in the desktop's keyboard settings.

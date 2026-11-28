@@ -246,6 +246,11 @@ fn create_main_window(app: &AppHandle, settings: &Settings) -> tauri::Result<Web
         .devtools(cfg!(debug_assertions))
         .on_navigation(move |url| allowed_origin(url, os))
         .on_new_window(|_url, _features| NewWindowResponse::Deny);
+    // The page starts in the same theme as the window, not the OS's, until the UI loads settings.
+    let builder = match crate::first_frame::page_theme_script(settings.theme) {
+        Some(script) => builder.initialization_script(&script),
+        None => builder,
+    };
     let window = st.platform.webview.prepare(builder).build()?;
     // `System`: the desktop's light or dark preference, read from the new window before the
     // event loop draws it, so a light desktop does not see a dark first frame.
