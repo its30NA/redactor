@@ -18,6 +18,8 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # The core gates (engine, wire, CLI, corpus, dependency policy) need no apt, so a mirror
+  # outage cannot take them down. The app shell's Linux build is the `app-linux` job.
   linux:
     name: Rust (Linux)
     runs-on: ubuntu-latest
@@ -32,17 +34,659 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --exclude redactor-app --all-targets --locked -- -D warnings
       - name: Test (includes the corpus gates)
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude redactor-app --locked
       - name: Install cargo-deny
         run: cargo install --locked --version 0.20.2 cargo-deny
       - name: Dependency policy (Windows graph, includes the Tauri shell)
         run: cargo deny check
-      - name: Dependency policy (Linux, scrub)
-        run: cargo deny --exclude redactor-app --target x86_64-unknown-linux-gnu check
-      - name: Dependency policy (macOS, scrub)
-        run: cargo deny --exclude redactor-app --target aarch64-apple-darwin check
+      - name: Dependency policy (macOS, includes the Tauri shell)
+        run: |
+          cargo deny --target aarch64-apple-darwin check
+          cargo deny --target x86_64-apple-darwin check
+      - name: Dependency policy (Linux, includes the Tauri shell)
+        run: cargo deny --target x86_64-unknown-linux-gnu check
+
+  app-linux:
+    name: App shell (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-app-linux-${{ steps.image.outputs.version }}-v1
+      - name: WebKitGTK and tray packages
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Clippy
+        run: cargo clippy -p redactor-app --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test -p redactor-app --locked
+
+  # The desktop contract (L2: the ignored X11 and D-Bus tests) and the built app under test
+  # (L3: tools/ci/linux-smoke.sh), both on a throwaway Xvfb display with private buses.
+  app-linux-desktop:
+    name: App on X11 (Linux, Xvfb)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-app-linux-desktop-${{ steps.image.outputs.version }}-v2
+      - name: WebKitGTK, tray and X11 test packages
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          xvfb openbox xclip xdotool xbindkeys x11-utils x11-xserver-utils wmctrl python3-dbusmock dbus
+          libglib2.0-bin webkit2gtk-driver imagemagick ffmpeg
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Desktop contract tests (L2, Xvfb)
+        run: tools/ci/x11-tests.sh
+      # Built as the Windows loop builds it, without an installer.
+      - name: Build the app
+        working-directory: app/src-tauri
+        run: ../ui/node_modules/.bin/tauri build --ci --no-bundle -- --locked
+      # mainBinaryName renames the binary to Redactor; fall back to the cargo name.
+      # WebDriver is off: WebKitWebDriver cannot open a session in the app's private-mode view
+      # ("failed to create a new browsing context"), so S1 is "the window is visible" and S2, S5
+      # and S6 are reported as SKIP (their L2 tests above stay). With it on, the job also needs
+      # `cargo install tauri-driver --locked --version 2.1.0`.
+      - name: App smoke (L3, Xvfb)
+        env:
+          SMOKE_WEBDRIVER: "0"
+        run: |
+          app=target/release/Redactor
+          [ -x "$app" ] || app=target/release/redactor-app
+          tools/ci/linux-smoke.sh "$app"
+      - name: Upload screenshots, video and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-smoke
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The Wayland desktop contract (L2: the ignored Wayland and portal tests) and the built app
+  # under test (L3: tools/ci/wayland-smoke.sh), both on headless sway with a private bus.
+  app-linux-wayland:
+    name: App on Wayland (Linux, sway)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-app-linux-wayland-${{ steps.image.outputs.version }}-v2
+      - name: WebKitGTK, tray and Wayland test packages
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          sway grim wl-clipboard python3-gi gir1.2-glib-2.0 dbus jq
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      # The count makes a test that went missing fail the job: wayland_clipboard 19,
+      # wayland_focused 12, wayland_portal 10 (plus the no-portal pass), wayland_webview 1.
+      - name: Desktop contract tests (L2, sway)
+        env:
+          WAYLAND_TESTS_EXPECT: "42"
+        run: tools/ci/wayland-tests.sh
+      # Built as the Windows loop builds it, without an installer.
+      - name: Build the app
+        working-directory: app/src-tauri
+        run: ../ui/node_modules/.bin/tauri build --ci --no-bundle -- --locked
+      # mainBinaryName renames the binary to Redactor; fall back to the cargo name.
+      # WebDriver is off, as in the X11 job: WebKitWebDriver cannot open a session in the app's
+      # incognito web context, so W6 (Settings without a portal) is reported as SKIP (the UI tests
+      # of the Settings notes stay). The script passes when all 8 checks report and none is FAIL;
+      # only W6 can report SKIP, and that SKIP is accepted. With WebDriver on, the job also needs
+      # webkit2gtk-driver and `cargo install tauri-driver --locked --version 2.1.0`.
+      - name: App smoke (L3, sway)
+        env:
+          SMOKE_WEBDRIVER: "0"
+        run: |
+          app=target/release/Redactor
+          [ -x "$app" ] || app=target/release/redactor-app
+          tools/ci/wayland-smoke.sh "$app"
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wayland-smoke
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The data-control contract on KWin (Plasma 6), where `ext-data-control-v1` is offered: the
+  # `wayland_clipboard` tests in a fedora:42 container (tools/ci/desktop-container.sh), with
+  # `ext_or_wlr_is_reported` expecting `Ext`. Ubuntu 24.04 has no Plasma 6.
+  #
+  # The test binary is built here, on the runner (toolchain, rust-cache and the WebKitGTK
+  # packages as in the other app jobs), and only run in the container: it links nothing but
+  # glibc, so the container needs no Rust and no -dev packages. A test build is a debug build,
+  # which loads the UI from devUrl, so app/ui/dist is not needed.
+  app-linux-plasma:
+    name: App on Wayland (Plasma 6, KWin)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-app-linux-plasma-${{ steps.image.outputs.version }}-v1
+      - name: WebKitGTK and tray packages
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      # On kwin the run lists wayland_clipboard alone; the skipped binaries are named in the
+      # job summary.
+      - name: Build the test binaries for the KWin run
+        env:
+          REDACTOR_WAYLAND_COMPOSITOR: kwin
+        run: tools/ci/wayland-tests.sh --build target/wayland-tests
+      # The count (wayland_clipboard: 19) makes a test that went missing fail the job.
+      # The container does not see GITHUB_STEP_SUMMARY; the OBSERVED lines go there from the log.
+      # `shell: bash` runs with pipefail: without it the step would report tee's status.
+      - name: Data-control tests on KWin (L2, Plasma 6 container)
+        shell: bash
+        run: |
+          tools/ci/desktop-container.sh env REDACTOR_WAYLAND_COMPOSITOR=kwin WAYLAND_TESTS_EXPECT=19 \
+            WAYLAND_TEST_BINARIES=target/wayland-tests tools/ci/wayland-tests.sh 2>&1 |
+            tee wayland-plasma.log
+      - name: Observed on KWin
+        if: always()
+        run: |
+          {
+            echo "### Wayland desktop tests: observed on kwin"
+            echo '```'
+            grep -E '^ *[0-9]+ OBSERVED ' wayland-plasma.log || echo "(none)"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  # The Linux downloads (AppImage, .deb, .rpm), built by the release's own script on the release's
+  # base (Ubuntu 22.04: the glibc the bundles need at least) with the release's path remapping.
+  # The script ends with tools/ci/l4/contents.sh on each file; l4-linux then installs and starts
+  # them in clean containers.
+  bundle-linux:
+    name: Linux bundles (Ubuntu 22.04)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      # Two fast guards that need no bundle: the L4 start check never reaches the desktop it is
+      # started from (start.sh --print-env), and the Flatpak manifest's permissions, pins and
+      # toolchains (its Rust against this job's rustc). bundle-flatpak runs the manifest check
+      # again, but only after its long build.
+      - name: L4 guard self-test
+        run: tools/ci/l4/selftest.sh
+      - name: Flatpak manifest check
+        run: python3 -I tools/ci/l4/flatpak-manifest-check.py packaging/flatpak/io.github.its30na.redactor.json
+      # As release.yml: the runner's checkout, cargo home and rustup home stay out of the
+      # binaries (contents.sh's no_build_paths checks it). Set before rust-cache, whose key
+      # includes RUSTFLAGS.
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The .deb cache is valid for one runner image; bump v1 when the package list changes.
+      - name: Runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-cache
+          key: apt-bundle-linux-${{ steps.image.outputs.version }}-v1
+      # `file` for the AppImage step; rpm, rpm2cpio and cpio for the .rpm's contents check.
+      - name: WebKitGTK, tray and packaging tools
+        run: >-
+          tools/ci/apt-install.sh ~/apt-cache libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          file rpm rpm2cpio cpio
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      # The app's tests against 22.04's WebKitGTK and GTK, the libraries the bundles are built on.
+      - name: Test (app shell, Ubuntu 22.04)
+        run: cargo test -p redactor-app --locked
+      - name: Build and check the bundles
+        run: tools/release/bundle-linux.sh dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles-linux
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # L4: each Linux download installs and starts on a clean system and carries LICENSE and the
+  # notices. One clean container per format and distribution (images pinned by digest, looked
+  # up 2026-11-25); the package is installed as a user would, then tools/ci/l4/contents.sh and
+  # tools/ci/l4/start.sh (--version with no display, then the window, a second launch and the
+  # quit on a private Xvfb and session bus). No retries: a flaky check is a finding.
+  l4-linux:
+    name: L4 ${{ matrix.format }} (${{ matrix.name }})
+    needs: bundle-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - format: deb
+            name: ubuntu-22.04
+            image: ubuntu:22.04@sha256:b000e69a50ff940390233025e7a337fb8469b509e2334fa4d018ac30f3e18cdb
+          - format: deb
+            name: ubuntu-24.04
+            image: ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
+          - format: deb
+            name: debian-12
+            image: debian:12@sha256:1d04200c2ece1d4d75a2a6f8e11ebce7d86a2ae28b34bb2c9cbb3ee9f4953e75
+          - format: rpm
+            name: fedora-45
+            image: fedora:45@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c
+          - format: appimage
+            name: ubuntu-22.04
+            image: ubuntu:22.04@sha256:b000e69a50ff940390233025e7a337fb8469b509e2334fa4d018ac30f3e18cdb
+          - format: appimage
+            name: fedora-45
+            image: fedora:45@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c
+    container:
+      image: ${{ matrix.image }}
+      # WebKit keeps its shared memory in /dev/shm; Docker's default 64 MB is too small.
+      options: --shm-size=1g
+    defaults:
+      run:
+        shell: bash
+    env:
+      FORMAT: ${{ matrix.format }}
+      L4_LABEL: ${{ matrix.format }}-${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundles-linux
+          path: dist
+      # install.sh prints the command that starts the app on its only stdout line.
+      - name: Install (${{ matrix.format }})
+        run: |
+          case "$FORMAT" in
+            deb) file=$(ls dist/*.deb) ;;
+            rpm) file=$(ls dist/*.rpm) ;;
+            appimage) file=$(ls dist/*.AppImage) ;;
+          esac
+          cmd=$(tools/ci/l4/install.sh "$FORMAT" "$file")
+          echo "starts with: $cmd"
+          echo "L4_FILE=$file" >> "$GITHUB_ENV"
+          echo "L4_CMD=$cmd" >> "$GITHUB_ENV"
+      - name: Contents (license, notices, binary, desktop file, build paths)
+        if: ${{ !cancelled() && env.L4_FILE != '' }}
+        run: tools/ci/l4/contents.sh "$L4_FILE" --expect-version "$(tools/ci/l4/lib.sh app-version)"
+      # L4_CMD is a command line (the AppImage takes --appimage-extract-and-run): split on purpose.
+      - name: Start (version, window, second launch, quit)
+        if: ${{ !cancelled() && env.L4_CMD != '' }}
+        run: |
+          # shellcheck disable=SC2086
+          tools/ci/l4/start.sh "$(tools/ci/l4/lib.sh app-version)" $L4_CMD
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-${{ matrix.format }}-${{ matrix.name }}
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The Flatpak, built from source in the GNOME 51 SDK by the release's own script, inside
+  # flathub-infra's image for it (pinned by digest, read 2026-11-25). The build runs offline from
+  # packaging/flatpak/*-sources.json; l4-flatpak then installs and starts the bundle.
+  bundle-flatpak:
+    name: Flatpak bundle (GNOME 51 SDK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
+      # flatpak-builder sandboxes each build step with bubblewrap, which needs namespaces.
+      options: --privileged
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Metainfo is valid
+        run: appstreamcli validate --no-net packaging/flatpak/io.github.its30na.redactor.metainfo.xml
+      - name: Build the Flatpak
+        run: tools/release/bundle-flatpak.sh dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-flatpak
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # L4 for the Flatpak: installed --user in a clean Fedora container (the runtime from Flathub),
+  # then the same contents and start checks as the other formats. --privileged for bubblewrap.
+  l4-flatpak:
+    name: L4 flatpak (fedora-45)
+    needs: bundle-flatpak
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: fedora:45@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c
+      options: --privileged --shm-size=1g
+    defaults:
+      run:
+        shell: bash
+    env:
+      L4_LABEL: flatpak-fedora-45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-flatpak
+          path: dist
+      - name: Install (flatpak)
+        run: |
+          file=$(ls dist/*.flatpak)
+          cmd=$(tools/ci/l4/install.sh flatpak "$file")
+          echo "starts with: $cmd"
+          echo "L4_CMD=$cmd" >> "$GITHUB_ENV"
+      - name: Contents (license, notices, binary, desktop file, build paths, module licenses)
+        if: ${{ !cancelled() && env.L4_CMD != '' }}
+        run: |
+          tools/ci/l4/contents.sh flatpak:io.github.its30na.redactor \
+            --expect-version "$(tools/ci/l4/lib.sh app-version)"
+      # L4_CMD is a command line (env FLATPAK_USER_DIR=... flatpak run <id>): split on purpose.
+      - name: Start (version, window, second launch, quit)
+        if: ${{ !cancelled() && env.L4_CMD != '' }}
+        run: |
+          # shellcheck disable=SC2086
+          tools/ci/l4/start.sh "$(tools/ci/l4/lib.sh app-version)" $L4_CMD
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-flatpak-fedora-45
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  app-macos:
+    name: Rust and app shell (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test (includes the corpus gates)
+        run: cargo test --workspace --locked
+
+  # The desktop contract (L2: the ignored pasteboard, lock and hotkey tests), the built bundle
+  # under test (L3: tools/ci/macos-smoke.sh, with screenshots), and the UI tests in WebKit, the
+  # engine of the macOS app. On Apple silicon and on Intel.
+  app-macos-desktop:
+    name: App on macOS (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Desktop contract tests (L2)
+        run: tools/ci/macos-tests.sh
+      # Each round should show every result: the steps after the L2 tests run even when a test
+      # before them failed (a CI round is one push by hand).
+      # Only the .app (ad hoc signed, bundle.macOS in tauri.conf.json), no disk image.
+      - name: Build the app bundle
+        if: ${{ !cancelled() }}
+        working-directory: app/src-tauri
+        run: ../ui/node_modules/.bin/tauri build --ci --bundles app -- --locked
+      # For a hand test on a real Mac, packed before the smoke run touches anything. ditto keeps
+      # the bundle's permissions and signature, which a plain artifact upload of the folder loses.
+      - name: Pack the app for a hand test
+        if: ${{ !cancelled() && hashFiles('target/release/bundle/macos/Redactor.app/Contents/Info.plist') != '' }}
+        run: ditto -c -k --keepParent target/release/bundle/macos/Redactor.app "Redactor-$(uname -m).zip"
+      - name: Upload the app for a hand test
+        if: ${{ !cancelled() && hashFiles('Redactor-*.zip') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: redactor-app-${{ matrix.os }}
+          path: Redactor-*.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: App smoke (L3)
+        if: ${{ !cancelled() && hashFiles('target/release/bundle/macos/Redactor.app/Contents/Info.plist') != '' }}
+        run: tools/ci/macos-smoke.sh target/release/bundle/macos/Redactor.app
+      # The snapshots were made in Chromium: the WebKit project compares no pictures.
+      - name: Install WebKit
+        if: ${{ !cancelled() }}
+        working-directory: app/ui
+        run: npx playwright install webkit
+      - name: UI tests in WebKit (mocked IPC)
+        if: ${{ !cancelled() }}
+        working-directory: app/ui
+        env:
+          PW_WEBKIT: "1"
+          PLAYWRIGHT_HTML_OPEN: never
+        run: npx playwright test --project=webkit --reporter=github,html
+      - name: Upload screenshots, logs and the Playwright report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-desktop-${{ matrix.os }}
+          path: |
+            smoke-out/
+            app/ui/playwright-report/
+            app/ui/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The macOS download: one universal disk image, built by the release's own script with the
+  # release's path remapping (the script ends with the archs, the ad hoc signature and
+  # tools/ci/l4/contents.sh). Then L4: tools/ci/l4/dmg.sh installs the app from the image and
+  # starts it as arm64 and, where Rosetta 2 is installed, as x86_64, plus the L3 smoke on the
+  # installed copy. l4-macos-intel starts the same file on an Intel Mac.
+  bundle-macos:
+    name: macOS disk image (universal)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      # As release.yml. Set before rust-cache, whose key includes RUSTFLAGS.
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The Tauri context macro embeds the built UI, so the app crate needs app/ui/dist to compile.
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Build and check the disk image
+        run: tools/release/bundle-macos.sh dist
+      # Uploaded before the start check, so the Intel job also runs when this one's check fails
+      # (a CI round is one push by hand and should show every result).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles-macos
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Install from the image and start (L4, Apple silicon)
+        run: tools/ci/l4/dmg.sh dist/Redactor_*_universal.dmg "$(tools/ci/l4/lib.sh app-version)"
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-dmg-macos-latest
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  l4-macos-intel:
+    name: L4 dmg (macos-15-intel)
+    needs: bundle-macos
+    # Also after a failed start check above, as long as the image was uploaded.
+    if: ${{ !cancelled() }}
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundles-macos
+          path: dist
+      - name: Install from the image and start (L4, Intel)
+        run: tools/ci/l4/dmg.sh dist/Redactor_*_universal.dmg "$(tools/ci/l4/lib.sh app-version)"
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: l4-dmg-macos-15-intel
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7
 
   windows:
     name: Rust (Windows)
@@ -104,6 +748,13 @@ jobs:
           cargo fetch --locked
           tools/gen-notices.sh
           git diff --exit-code THIRD_PARTY_NOTICES.md
+      # The Flatpak builds offline from these lists of every crate and npm package; a lockfile
+      # change without a fresh run of the generator would break that build.
+      - name: Flatpak sources are up to date
+        working-directory: .
+        run: |
+          tools/gen-flatpak-sources.sh
+          git diff --exit-code packaging/flatpak/
       - name: Typecheck
         run: npm run check
       - name: Lint

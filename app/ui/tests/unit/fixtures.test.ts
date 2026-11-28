@@ -33,6 +33,72 @@ describe('fixtures', () => {
     expect(Object.keys(FIXTURES).map((k) => `${k}.json`).sort()).toEqual([...files].sort());
   });
 
+  test('app_info: the hotkey mode and the focus flag may be absent (Windows, macOS)', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo(base, 'i')).toEqual([]);
+    for (const hotkey of ['keys', 'portal', 'command']) {
+      expect(schema.appInfo({ ...base, hotkey, clipboardNeedsFocus: true }, 'i')).toEqual([]);
+    }
+    expect(schema.appInfo({ ...base, hotkey: 'other' }, 'i')).toEqual([
+      'i.hotkey: expected one of keys | portal | command, got other',
+    ]);
+    expect(schema.appInfo({ ...base, clipboardNeedsFocus: 'yes' }, 'i')).toEqual([
+      'i.clipboardNeedsFocus: expected boolean',
+    ]);
+  });
+
+  test('app_info: the hotkey state may be absent (an older shell); the status event is exact', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, hotkeyActive: false }, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, hotkeyActive: 'no' }, 'i')).toEqual(['i.hotkeyActive: expected boolean']);
+    // As the shell's own test pins them (commands.rs).
+    expect(schema.appStatus({ hotkeyActive: true, notice: null }, 's')).toEqual([]);
+    for (const notice of ['hotkeyNotActive', 'hotkeyLost', 'settingsNotSaved', 'settingsUnreadable'])
+      expect(schema.appStatus({ hotkeyActive: false, notice }, 's')).toEqual([]);
+    expect(schema.appStatus({ hotkeyActive: false }, 's')).toEqual(['s.notice: missing']);
+    expect(schema.appStatus({ hotkeyActive: false, notice: 'other' }, 's')).not.toEqual([]);
+  });
+
+  test('app_info: whether a lock is heard may be absent (not known in time)', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, lockWatched: false }, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, lockWatched: 0 }, 'i')).toEqual(['i.lockWatched: expected boolean']);
+  });
+
+  test('app_info: the program path may be absent (a path that is not Unicode)', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, executable: '/opt/redactor/Redactor' }, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, executable: 7 }, 'i')).toEqual(['i.executable: expected string']);
+  });
+
+  test('app_info: the Flatpak app id is optional and a string', () => {
+    const base = { version: '2', engineVersion: '2', ruleCount: 1, platform: 'linux', tray: true, shield: false };
+    expect(schema.appInfo({ ...base, flatpak: 'a.b.c' }, 'i')).toEqual([]);
+    expect(schema.appInfo(base, 'i')).toEqual([]);
+    expect(schema.appInfo({ ...base, flatpak: 7 }, 'i')).toEqual(['i.flatpak: expected string']);
+  });
+
+  test('the scrub events carry the press they belong to', () => {
+    const scrub = FIXTURES['clipboard-cleaned'];
+    expect(schema.scrubResult({ ...scrub, press: 3 }, 'r')).toEqual([]);
+    expect(schema.scrubResult(scrub, 'r')).toEqual(['r.press: missing']);
+    expect(schema.scrubWaiting({ press: 3 }, 'w')).toEqual([]);
+    expect(schema.scrubWaiting(null, 'w')).not.toEqual([]);
+    // The expiry names the press that waited in vain; a shell from before that sends null.
+    expect(schema.scrubExpired({ press: 3 }, 'e')).toEqual([]);
+    expect(schema.scrubExpired(null, 'e')).toEqual([]);
+    expect(schema.scrubExpired({}, 'e')).toEqual(['e.press: missing']);
+    expect(schema.scrubExpired({ press: -1 }, 'e')).not.toEqual([]);
+  });
+
+  test('the scrub statuses are the ones the shell sends', () => {
+    // As the shell's own test pins them (commands.rs).
+    const scrub = FIXTURES['clipboard-stripped'];
+    for (const status of ['cleaned', 'unverified', 'stripped', 'clean', 'empty', 'protected', 'tooLarge', 'error'])
+      expect(schema.scrubResult({ ...scrub, status, press: 1 }, 'r')).toEqual([]);
+    expect(schema.scrubResult({ ...scrub, status: 'other', press: 1 }, 'r')).not.toEqual([]);
+  });
+
   test('validators reject a finding that carries a value field', () => {
     const scan = FIXTURES['scan-demo'] as ScanResponse;
     const leaky = { ...scan.findings[0], value: 'x' };

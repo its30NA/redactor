@@ -28,8 +28,8 @@ jobs:
   preflight:
     name: Preflight
     runs-on: ubuntu-latest
-    # Up to 20 minutes waiting for CI, then cargo-deny install and the tests.
-    timeout-minutes: 60
+    # Up to 120 minutes waiting for CI, then cargo-deny install and the tests (about 40).
+    timeout-minutes: 160
     permissions:
       contents: read
       actions: read # read the CI workflow runs for the tagged commit
@@ -45,14 +45,17 @@ jobs:
       - name: CHANGELOG has a section for this version
         run: tools/release/changelog-section.sh "$TAG" > /dev/null
       # The latest CI run for this commit on a push to main must have succeeded. A run still in
-      # progress is waited for (up to 20 minutes); no run, or any other conclusion, fails here.
+      # progress is waited for, up to 120 minutes: CI's longest chain is bundle-flatpak (limit 60
+      # minutes) then l4-flatpak (30), so 90 minutes when every job runs to its limit, plus about
+      # 30 for jobs queued behind the account's runner limits (macOS above all). No run, or any
+      # other conclusion, fails here.
       - name: CI passed for the tagged commit
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 40); do
+          for attempt in $(seq 1 120); do
             run="$(gh api -X GET "repos/$REPO/actions/workflows/ci.yml/runs" \
               -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f per_page=1 \
               --jq '.workflow_runs[0] // empty | [.status, (.conclusion // "none"), .html_url] | @tsv')"
@@ -69,25 +72,29 @@ jobs:
               echo "::error::CI for $GITHUB_SHA concluded '$conclusion': $url"
               exit 1
             fi
-            echo "CI for $GITHUB_SHA is '$status' (check $attempt of 40), waiting: $url"
-            sleep 30
+            echo "CI for $GITHUB_SHA is '$status' (check $attempt of 120), waiting: $url"
+            sleep 60
           done
-          echo "::error::CI for $GITHUB_SHA did not finish within 20 minutes"
+          echo "::error::CI for $GITHUB_SHA did not finish within 120 minutes"
           exit 1
       - name: Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # The app crate needs WebKitGTK on Linux; its tests run in `app-windows` below, and this
+      # job already requires the whole CI run (Linux and macOS app jobs included) to be green.
       - name: Tests (Rust workspace)
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude redactor-app --locked
       # The same dependency policy as CI, re-run here so an advisory published since the last
       # CI run stops the release.
       - name: Install cargo-deny
         run: cargo install --locked --version 0.20.2 cargo-deny
       - name: Dependency policy (Windows graph, includes the Tauri shell)
         run: cargo deny check
-      - name: Dependency policy (Linux, scrub)
-        run: cargo deny --exclude redactor-app --target x86_64-unknown-linux-gnu check
-      - name: Dependency policy (macOS, scrub)
-        run: cargo deny --exclude redactor-app --target aarch64-apple-darwin check
+      - name: Dependency policy (macOS, includes the Tauri shell)
+        run: |
+          cargo deny --target aarch64-apple-darwin check
+          cargo deny --target x86_64-apple-darwin check
+      - name: Dependency policy (Linux, includes the Tauri shell)
+        run: cargo deny --target x86_64-unknown-linux-gnu check
 
   app-windows:
     name: Windows app
@@ -234,9 +241,129 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The Linux downloads (AppImage, .deb, .rpm), built by the same script as CI's bundle-linux job
+  # on the same base (Ubuntu 22.04, the oldest glibc the bundles support). The script checks each
+  # file's contents; then the shipped AppImage itself starts once (tools/ci/l4/start.sh: its own
+  # Xvfb and session bus). The clean-container install checks ran in CI for this commit.
+  app-linux:
+    name: Linux app (AppImage, deb, rpm)
+    needs: preflight
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
+      # The packages of CI's bundle-linux job, plus the start check's Xvfb, xdotool and session
+      # bus. The .deb folder is a fresh one: no cache in this workflow.
+      - name: WebKitGTK, tray, packaging and start check tools
+        run: >-
+          tools/ci/apt-install.sh "$RUNNER_TEMP/apt" libwebkit2gtk-4.1-dev
+          libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          file rpm rpm2cpio cpio xvfb xdotool dbus
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Build and check the bundles
+        run: tools/release/bundle-linux.sh dist
+      - name: The AppImage starts (version, window, second launch, quit)
+        run: |
+          set -euo pipefail
+          appimages=(dist/*.AppImage)
+          tools/ci/l4/start.sh "${TAG#v}" "${appimages[0]}" --appimage-extract-and-run
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-app-linux
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # The macOS download: one universal disk image (ad hoc signed, not notarized), built by the
+  # same script as CI's bundle-macos job, then installed from the image and started
+  # (tools/ci/l4/dmg.sh). The Intel start ran in CI for this commit (l4-macos-intel).
+  app-macos:
+    name: macOS app (universal disk image)
+    needs: preflight
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Path remapping
+        run: |
+          set -euo pipefail
+          flags="$(tools/release/remap-path-flags.sh "$GITHUB_WORKSPACE")"
+          echo "RUSTFLAGS=$flags" >> "$GITHUB_ENV"
+      - name: Build the UI
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Build and check the disk image
+        run: tools/release/bundle-macos.sh dist
+      - name: Install from the image and start
+        run: |
+          set -euo pipefail
+          dmgs=(dist/*.dmg)
+          tools/ci/l4/dmg.sh "${dmgs[0]}" "${TAG#v}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-app-macos
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # The Flatpak, built from source in the GNOME 51 SDK by the same script and in the same image
+  # (pinned by digest) as CI's bundle-flatpak job. The build itself runs offline from the
+  # checked-in sources; the clean install and start ran in CI for this commit (l4-flatpak).
+  app-flatpak:
+    name: Flatpak (GNOME 51 SDK)
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
+      # flatpak-builder sandboxes each build step with bubblewrap, which needs namespaces.
+      options: --privileged
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Metainfo is valid
+        run: appstreamcli validate --no-net packaging/flatpak/io.github.its30na.redactor.metainfo.xml
+      - name: Build the Flatpak
+        run: tools/release/bundle-flatpak.sh dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-app-flatpak
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Draft release
-    needs: [app-windows, scrub]
+    needs: [app-windows, app-linux, app-macos, app-flatpak, scrub]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

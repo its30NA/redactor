@@ -2,21 +2,28 @@
  * Runtime validators for the IPC contract in `types.ts`.
  *
  * Objects are checked with an exact key set: a missing key and an unknown key are both errors,
- * so a field like `value` sneaking into a Finding fails loudly. Each object shape is typed
- * against its interface (`{ [K in keyof T]-?: Check }`), so adding a field to `types.ts`
- * without adding it here fails the typecheck.
+ * so a field like `value` sneaking into a Finding fails loudly; only a key whose check is
+ * wrapped in `optional` may be missing. Each object shape is typed against its interface
+ * (`{ [K in keyof T]-?: Check }`), so adding a field to `types.ts` without adding it here fails
+ * the typecheck.
  */
 import {
   MAX_ALWAYS_REDACT,
   MIN_ALWAYS_REDACT,
   type AppInfo,
+  type AppNotice,
+  type AppStatus,
   type ClipboardScrub,
   type Finding,
+  type HotkeyMode,
   type LabelCount,
   type OutputSpan,
   type ScanRequest,
   type ScanResponse,
   type ScanStats,
+  type ScrubExpired,
+  type ScrubResult,
+  type ScrubWaiting,
   type SessionSecret,
   type Settings,
   type Tier,
@@ -38,6 +45,16 @@ export const oneOf =
   <T extends string | number>(...values: readonly T[]): Check =>
   (v, p) =>
     values.includes(v as T) ? ok : [`${p}: expected one of ${values.join(' | ')}, got ${String(v)}`];
+
+/** The checks a missing key is fine for. */
+const optionalChecks = new WeakSet<Check>();
+
+/** The key may be missing; when present, `inner` checks it. */
+export const optional = (inner: Check): Check => {
+  const check: Check = (v, p) => inner(v, p);
+  optionalChecks.add(check);
+  return check;
+};
 
 export const nullable =
   (inner: Check): Check =>
@@ -66,8 +83,8 @@ export function object<T>(shape: { [K in keyof T]-?: Check }): Check {
     const rec = v as Record<string, unknown>;
     const errors: string[] = [];
     for (const k of keys) {
-      if (!(k in rec)) errors.push(`${p}.${k}: missing`);
-      else errors.push(...shape[k](rec[k], `${p}.${k}`));
+      if (k in rec) errors.push(...shape[k](rec[k], `${p}.${k}`));
+      else if (!optionalChecks.has(shape[k])) errors.push(`${p}.${k}: missing`);
     }
     for (const k of Object.keys(rec)) {
       if (!keys.includes(k as keyof T & string)) errors.push(`${p}.${k}: unknown key`);
@@ -140,12 +157,23 @@ export const scanResponse = object<ScanResponse>({
   stats: scanStats,
 });
 
-export const clipboardScrub = object<ClipboardScrub>({
-  status: oneOf('cleaned', 'unverified', 'clean', 'empty', 'protected', 'tooLarge', 'error'),
+const clipboardScrubShape = {
+  status: oneOf('cleaned', 'unverified', 'stripped', 'clean', 'empty', 'protected', 'tooLarge', 'error'),
   removed: uint,
   byLabel: arrayOf(labelCount),
   historyCleaned: bool,
-});
+};
+
+export const clipboardScrub = object<ClipboardScrub>(clipboardScrubShape);
+
+/** The `clipboard-scrubbed` event: the result and the latest press it covers. */
+export const scrubResult = object<ScrubResult>({ ...clipboardScrubShape, press: uint });
+
+/** The `clipboard-scrub-waiting` event. */
+export const scrubWaiting = object<ScrubWaiting>({ press: uint });
+
+/** The `clipboard-scrub-expired` event: the press that waited in vain (null from an older shell). */
+export const scrubExpired = nullable(object<ScrubExpired>({ press: uint }));
 
 /** A session secret: id, label and time only; never the value, not even its length. */
 export const sessionSecret = object<SessionSecret>({
@@ -188,6 +216,20 @@ export const appInfo = object<AppInfo>({
   engineVersion: str,
   ruleCount: uint,
   platform: str,
+  tray: bool,
+  shield: bool,
+  hotkey: optional(oneOf<HotkeyMode>('keys', 'portal', 'command')),
+  clipboardNeedsFocus: optional(bool),
+  hotkeyActive: optional(bool),
+  lockWatched: optional(bool),
+  executable: optional(str),
+  flatpak: optional(str),
+});
+
+/** The `app-status` event. */
+export const appStatus = object<AppStatus>({
+  hotkeyActive: bool,
+  notice: nullable(oneOf<AppNotice>('hotkeyNotActive', 'hotkeyLost', 'settingsNotSaved', 'settingsUnreadable')),
 });
 
 /** Throws with every problem listed when `value` does not match `check`. */

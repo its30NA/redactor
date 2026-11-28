@@ -1,9 +1,12 @@
-//! App settings (`Settings`), validated and stored as `%APPDATA%\Redactor\settings.json`.
+//! App settings (`Settings`), validated and stored as `settings.json` in the OS's config folder
+//! (`config_file`): `%APPDATA%\Redactor` on Windows, `~/Library/Application Support/Redactor` on
+//! macOS, `$XDG_CONFIG_HOME/redactor` (or `~/.config/redactor`) on Linux.
 //!
 //! The file holds settings only: never scanned text, never session secrets. The only free text is
 //! `alwaysRedact`, the plain words the user chose to store.
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,6 +15,7 @@ use redactor_core::{PlaceholderStyle, Sensitivity};
 use serde::{Deserialize, Serialize};
 
 use crate::hotkey::{Hotkey, DEFAULT_HOTKEY};
+use crate::os::Os;
 
 /// Always-redact words: at least 3 characters, at most 500 entries.
 pub const MIN_ALWAYS_REDACT: usize = 3;
@@ -126,9 +130,10 @@ const AUTO_WIPE: [u32; 4] = [0, 5, 10, 30];
 impl Settings {
     /// Checks settings that came over IPC and returns their normalized form: the hotkey in
     /// canonical spelling, always-redact words trimmed and de-duplicated (case-insensitive).
-    pub fn validated(mut self) -> Result<Settings, SettingsError> {
-        let hk = Hotkey::parse(&self.hotkey).map_err(|e| SettingsError::Hotkey(e.to_string()))?;
-        self.hotkey = hk.to_string();
+    pub fn validated(mut self, os: Os) -> Result<Settings, SettingsError> {
+        let hk =
+            Hotkey::parse(&self.hotkey, os).map_err(|e| SettingsError::Hotkey(e.to_string()))?;
+        self.hotkey = hk.name(os);
         if !AUTO_WIPE.contains(&self.auto_wipe_minutes) {
             return Err(SettingsError::AutoWipe);
         }
@@ -163,11 +168,11 @@ impl Settings {
 
     /// Repairs settings read from disk: every invalid field falls back to its default, so one
     /// bad value (an edited file, an older version) never resets the rest.
-    pub fn sanitized(self) -> Settings {
+    pub fn sanitized(self, os: Os) -> Settings {
         let d = Settings::default();
         let mut s = self;
-        s.hotkey = Hotkey::parse(&s.hotkey)
-            .map(|h| h.to_string())
+        s.hotkey = Hotkey::parse(&s.hotkey, os)
+            .map(|h| h.name(os))
             .unwrap_or(d.hotkey);
         if !AUTO_WIPE.contains(&s.auto_wipe_minutes) {
             s.auto_wipe_minutes = d.auto_wipe_minutes;
@@ -194,25 +199,62 @@ impl Settings {
         s.always_redact = words;
         s
     }
+
+    /// Turns off what this desktop cannot do: without `shield` (the OS cannot hide the window
+    /// from screenshots) the screen-share shield is off, so the app never claims protection it
+    /// does not give.
+    pub fn without_unsupported(mut self, shield: bool) -> Settings {
+        if !shield {
+            self.content_protection = false;
+        }
+        self
+    }
+}
+
+/// Where `os` keeps the settings file, from the environment `var` reads. Empty or relative values
+/// count as unset, so a bad variable never puts the file in the working directory.
+pub fn config_file(os: Os, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    let dir = |name: &str| var(name).map(PathBuf::from).filter(|p| p.is_absolute());
+    let folder = match os {
+        Os::Windows => dir("APPDATA")?.join("Redactor"),
+        Os::Mac => dir("HOME")?
+            .join("Library")
+            .join("Application Support")
+            .join("Redactor"),
+        Os::Linux => dir("XDG_CONFIG_HOME")
+            .or_else(|| dir("HOME").map(|h| h.join(".config")))?
+            .join("redactor"),
+    };
+    Some(folder.join("settings.json"))
+}
+
+/// What became of the settings file at start.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Loaded {
+    /// Read, or there was nothing to read (no file, a read error, a file that could not be
+    /// moved aside): nothing to tell.
+    #[default]
+    Read,
+    /// It could not be used and is kept as `settings.json.bad`; the app runs on defaults.
+    KeptAsBad,
 }
 
 /// Where the settings live.
 #[derive(Clone, Debug)]
 pub struct SettingsFile {
     path: PathBuf,
+    os: Os,
 }
 
 impl SettingsFile {
-    pub fn new(path: PathBuf) -> SettingsFile {
-        SettingsFile { path }
+    pub fn new(path: PathBuf, os: Os) -> SettingsFile {
+        SettingsFile { path, os }
     }
 
-    /// `%APPDATA%\Redactor\settings.json`, or None when `APPDATA` is not set.
-    pub fn in_appdata() -> Option<SettingsFile> {
-        let base = std::env::var_os("APPDATA")?;
-        Some(SettingsFile::new(
-            Path::new(&base).join("Redactor").join("settings.json"),
-        ))
+    /// The settings file in this OS's config folder, or None when the environment names none
+    /// (the app then runs on defaults).
+    pub fn for_os(os: Os) -> Option<SettingsFile> {
+        config_file(os, |k| std::env::var_os(k)).map(|p| SettingsFile::new(p, os))
     }
 
     pub fn path(&self) -> &Path {
@@ -221,35 +263,115 @@ impl SettingsFile {
 
     /// The stored settings, repaired; defaults when the file is missing or unreadable.
     pub fn load(&self) -> Settings {
+        self.load_noting().0
+    }
+
+    /// As [`SettingsFile::load`], and what became of the file.
+    ///
+    /// A file that is there but cannot be used (too big to be ours, not settings JSON) is moved
+    /// to `settings.json.bad` next to it, replacing an older one, so the next save does not
+    /// overwrite the always-redact list in it without a trace. When the move fails, nothing
+    /// changes.
+    pub fn load_noting(&self) -> (Settings, Loaded) {
+        let unusable = || (Settings::default(), self.keep_as_bad());
         let Ok(meta) = std::fs::metadata(&self.path) else {
-            return Settings::default();
+            return Default::default();
         };
         if meta.len() > MAX_FILE_BYTES {
-            return Settings::default();
+            return unusable();
         }
-        std::fs::read(&self.path)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
-            .map(Settings::sanitized)
-            .unwrap_or_default()
+        let Ok(bytes) = std::fs::read(&self.path) else {
+            return Default::default();
+        };
+        match serde_json::from_slice::<Settings>(&bytes) {
+            Ok(s) => (s.sanitized(self.os), Loaded::Read),
+            Err(_) => unusable(),
+        }
+    }
+
+    /// Moves the settings file to `settings.json.bad` (the user's alone on macOS and Linux).
+    fn keep_as_bad(&self) -> Loaded {
+        let bad = self.path.with_extension("json.bad");
+        if std::fs::rename(&self.path, &bad).is_err() {
+            return Loaded::Read;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o600));
+        }
+        Loaded::KeptAsBad
     }
 
     /// Writes atomically: a temporary file next to the target, then a rename.
+    ///
+    /// On macOS and Linux the app's own folder is the user's alone (0700, tightened when it
+    /// already exists) and so is the file (0600): the always-redact list names people,
+    /// companies and hosts. A shared parent such as `~/.config` is never changed.
     pub fn save(&self, settings: &Settings) -> std::io::Result<()> {
         let dir = self
             .path
             .parent()
             .ok_or_else(|| std::io::Error::other("settings path has no parent"))?;
-        std::fs::create_dir_all(dir)?;
+        create_private_dir(dir)?;
         let json = serde_json::to_vec_pretty(settings).map_err(std::io::Error::other)?;
         let tmp = self.path.with_extension("json.tmp");
         {
-            let mut f = std::fs::File::create(&tmp)?;
+            let mut f = create_private_file(&tmp)?;
             f.write_all(&json)?;
             f.sync_all()?;
         }
         std::fs::rename(&tmp, &self.path)
     }
+}
+
+/// Creates `dir` (and any missing parent, with the usual permissions).
+#[cfg(not(unix))]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
+/// Creates `dir` as 0700 (its missing parents with the usual permissions), or takes group and
+/// other access away from it when it exists.
+#[cfg(unix)]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    let mode = std::fs::metadata(dir)?.permissions().mode();
+    if mode & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode & 0o700))?;
+    }
+    Ok(())
+}
+
+/// Creates `path` empty; a file left there before is truncated.
+#[cfg(not(unix))]
+fn create_private_file(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::create(path)
+}
+
+/// Creates `path` new, empty and 0600. A file left there before (a save that stopped
+/// half-way) is removed first, so the new one never keeps its permissions.
+#[cfg(unix)]
+fn create_private_file(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
 }
 
 #[cfg(test)]
@@ -262,13 +384,36 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        SettingsFile::new(dir.join("settings.json"))
+        SettingsFile::new(dir.join("settings.json"), Os::Windows)
     }
 
     fn cleanup(f: &SettingsFile) {
         if let Some(dir) = f.path().parent() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+
+    #[test]
+    fn shield_is_forced_off_where_unsupported() {
+        let on = Settings {
+            content_protection: true,
+            ..Settings::default()
+        };
+        assert!(!on.clone().without_unsupported(false).content_protection);
+        assert!(on.clone().without_unsupported(true).content_protection);
+        assert_eq!(
+            on.clone().without_unsupported(false),
+            Settings {
+                content_protection: false,
+                ..on
+            },
+            "only the shield changes"
+        );
+        let off = Settings {
+            content_protection: false,
+            ..Settings::default()
+        };
+        assert!(!off.without_unsupported(true).content_protection);
     }
 
     #[test]
@@ -334,12 +479,99 @@ mod tests {
         assert_eq!(json["firstRunDone"], false);
     }
 
+    fn bad_copy(f: &SettingsFile) -> PathBuf {
+        f.path().with_extension("json.bad")
+    }
+
     #[test]
     fn missing_file_and_garbage_give_defaults() {
         let f = temp_file("garbage");
-        assert_eq!(f.load(), Settings::default());
+        assert_eq!(f.load_noting(), (Settings::default(), Loaded::Read));
+        assert!(!bad_copy(&f).exists(), "a missing file left a .bad copy");
         std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
         std::fs::write(f.path(), b"{ not json").unwrap();
+        assert_eq!(f.load(), Settings::default());
+        cleanup(&f);
+    }
+
+    /// A file that cannot be used is kept as `settings.json.bad` (the always-redact list in it
+    /// is not lost to the next save), replacing an older one.
+    #[test]
+    fn unusable_file_is_kept_as_bad() {
+        let f = temp_file("bad");
+        std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
+        std::fs::write(bad_copy(&f), b"older").unwrap();
+        std::fs::write(f.path(), b"{\"alwaysRedact\":[\"Nightjar\"] not json").unwrap();
+        assert_eq!(f.load_noting(), (Settings::default(), Loaded::KeptAsBad));
+        assert!(!f.path().exists());
+        assert_eq!(
+            std::fs::read(bad_copy(&f)).unwrap(),
+            b"{\"alwaysRedact\":[\"Nightjar\"] not json"
+        );
+        #[cfg(unix)]
+        assert_eq!(mode(&bad_copy(&f)) & 0o077, 0);
+
+        // Valid JSON of the wrong shape is not settings either.
+        std::fs::write(f.path(), b"[1, 2]").unwrap();
+        assert_eq!(f.load(), Settings::default());
+        assert_eq!(std::fs::read(bad_copy(&f)).unwrap(), b"[1, 2]");
+
+        // Too big to be ours.
+        let big = vec![b' '; MAX_FILE_BYTES as usize + 1];
+        std::fs::write(f.path(), &big).unwrap();
+        assert_eq!(f.load(), Settings::default());
+        assert_eq!(std::fs::read(bad_copy(&f)).unwrap().len(), big.len());
+
+        // A save afterwards does not touch the kept copy.
+        f.save(&Settings::default()).unwrap();
+        assert_eq!(std::fs::read(bad_copy(&f)).unwrap().len(), big.len());
+        cleanup(&f);
+    }
+
+    #[test]
+    fn valid_file_is_left_alone() {
+        let f = temp_file("valid");
+        std::fs::create_dir_all(f.path().parent().unwrap()).unwrap();
+        let raw = br#"{"theme":"dark","alwaysRedact":["Nightjar"]}"#;
+        std::fs::write(f.path(), raw).unwrap();
+        assert_eq!(f.load().always_redact, ["Nightjar"]);
+        assert_eq!(std::fs::read(f.path()).unwrap(), raw);
+        assert!(!bad_copy(&f).exists());
+        cleanup(&f);
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode()
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    /// The always-redact list names people, companies and hosts: other users on the machine
+    /// must not read it, nor see the folder's contents.
+    #[cfg(unix)]
+    #[test]
+    fn saved_settings_are_private_to_the_user() {
+        let f = temp_file("private");
+        let dir = f.path().parent().unwrap().to_path_buf();
+        f.save(&Settings::default()).unwrap();
+        assert_eq!(mode(f.path()) & 0o077, 0, "file {:o}", mode(f.path()));
+        assert_eq!(mode(&dir) & 0o077, 0, "folder {:o}", mode(&dir));
+
+        // Left by an older version, or by a save that stopped half-way: tightened by the next.
+        set_mode(&dir, 0o755);
+        set_mode(f.path(), 0o644);
+        let stale = f.path().with_extension("json.tmp");
+        std::fs::write(&stale, b"stale").unwrap();
+        set_mode(&stale, 0o644);
+        f.save(&Settings::default()).unwrap();
+        assert_eq!(mode(f.path()) & 0o077, 0, "file {:o}", mode(f.path()));
+        assert_eq!(mode(&dir) & 0o077, 0, "folder {:o}", mode(&dir));
         assert_eq!(f.load(), Settings::default());
         cleanup(&f);
     }
@@ -371,14 +603,14 @@ mod tests {
             ],
             ..Settings::default()
         };
-        let v = s.validated().unwrap();
+        let v = s.validated(Os::Windows).unwrap();
         assert_eq!(v.hotkey, "Ctrl+Alt+K");
         assert_eq!(v.always_redact, ["Müller GmbH & Co. KG"]);
 
         let with = |f: fn(&mut Settings)| {
             let mut s = Settings::default();
             f(&mut s);
-            s.validated()
+            s.validated(Os::Windows)
         };
         assert!(matches!(
             with(|s| s.hotkey = "Ctrl+R".into()),
@@ -425,5 +657,101 @@ mod tests {
                 .collect()),
             Err(SettingsError::TooManyWords)
         );
+    }
+
+    /// An absolute directory on whichever OS runs the test.
+    fn base(name: &str) -> PathBuf {
+        std::env::temp_dir().join(name)
+    }
+
+    fn env(pairs: &[(&str, PathBuf)]) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+        let pairs: Vec<(String, PathBuf)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone().into_os_string())
+        }
+    }
+
+    #[test]
+    fn config_file_windows_uses_appdata() {
+        let appdata = base("AppData-Roaming");
+        assert_eq!(
+            config_file(
+                Os::Windows,
+                env(&[("APPDATA", appdata.clone()), ("HOME", base("h"))])
+            ),
+            Some(appdata.join("Redactor").join("settings.json"))
+        );
+        assert_eq!(config_file(Os::Windows, env(&[("HOME", base("h"))])), None);
+    }
+
+    #[test]
+    fn config_file_mac_uses_application_support() {
+        let home = base("Users-sam");
+        assert_eq!(
+            config_file(
+                Os::Mac,
+                env(&[("HOME", home.clone()), ("XDG_CONFIG_HOME", base("x"))])
+            ),
+            Some(
+                home.join("Library")
+                    .join("Application Support")
+                    .join("Redactor")
+                    .join("settings.json")
+            )
+        );
+    }
+
+    #[test]
+    fn config_file_linux_prefers_absolute_xdg() {
+        let (home, xdg) = (base("home-sam"), base("xdg-config"));
+        assert_eq!(
+            config_file(
+                Os::Linux,
+                env(&[("HOME", home.clone()), ("XDG_CONFIG_HOME", xdg.clone())])
+            ),
+            Some(xdg.join("redactor").join("settings.json"))
+        );
+        assert_eq!(
+            config_file(Os::Linux, env(&[("HOME", home.clone())])),
+            Some(home.join(".config").join("redactor").join("settings.json"))
+        );
+    }
+
+    #[test]
+    fn config_file_linux_ignores_empty_or_relative_xdg() {
+        let home = base("home-sam");
+        let want = Some(home.join(".config").join("redactor").join("settings.json"));
+        for xdg in ["", "relative/config", "."] {
+            assert_eq!(
+                config_file(
+                    Os::Linux,
+                    env(&[
+                        ("HOME", home.clone()),
+                        ("XDG_CONFIG_HOME", PathBuf::from(xdg))
+                    ])
+                ),
+                want,
+                "{xdg:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn config_file_without_home_is_none() {
+        for os in [Os::Windows, Os::Mac, Os::Linux] {
+            assert_eq!(config_file(os, env(&[])), None, "{os:?}");
+            let bad = env(&[
+                ("APPDATA", PathBuf::new()),
+                ("HOME", PathBuf::from("relative-home")),
+                ("XDG_CONFIG_HOME", PathBuf::new()),
+            ]);
+            assert_eq!(config_file(os, bad), None, "{os:?}");
+        }
     }
 }

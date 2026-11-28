@@ -2,5 +2,10 @@
   "version": "2.0.0",
   "engineVersion": "2.0.0",
   "ruleCount": 175,
-  "platform": "windows-x86_64"
+  "platform": "windows-x86_64",
+  "tray": true,
+  "shield": true,
+  "hotkeyActive": true,
+  "lockWatched": true,
+  "executable": "C:\\Program Files\\Redactor\\Redactor.exe"
 }

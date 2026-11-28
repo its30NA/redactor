@@ -4,6 +4,7 @@
   import { cubicOut } from 'svelte/easing';
   import Bookmark from '@lucide/svelte/icons/bookmark';
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
+  import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import Copy from '@lucide/svelte/icons/copy';
   import Eraser from '@lucide/svelte/icons/eraser';
@@ -29,8 +30,11 @@
   import Toast from './components/Toast.svelte';
   import Workspace from './components/Workspace.svelte';
   import { appInfo, onEvent } from './lib/api';
+  import { hotkeyState, listenForAppStatus } from './lib/app-status.svelte';
+  import { listenForClipboardScrubs, scrubClipboardNow } from './lib/clipboard-notices';
   import { appearance, applyAppearance } from './lib/appearance.svelte';
-  import { actionFor, keysFor, type Action } from './lib/keys';
+  import { actionFor, keyOsFrom, keysFor, type Action } from './lib/keys';
+  import { shieldNote } from './lib/platform';
   import { session } from './lib/session.svelte';
   import { settings } from './lib/settings.svelte';
   import { toasts } from './lib/toast.svelte';
@@ -38,6 +42,16 @@
   import type { AppInfo, Sensitivity, ThemeSetting } from './lib/types';
 
   let info = $state<AppInfo | null>(null);
+  /** app_info answered or failed: until then the page does not know what this desktop can do. */
+  let infoSettled = $state(false);
+  // Windows rules until app_info answers, so nothing changes on Windows.
+  const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
+  // The shield is promised (welcome card, pill) only once app_info says this desktop has it.
+  const shieldKnown = $derived(info !== null && shieldNote(info, keyOs) === null);
+  // Settings shows whether the hotkey works: app_info's answer, then each `app-status` event.
+  const settingsInfo = $derived(
+    info && hotkeyState.active !== null ? { ...info, hotkeyActive: hotkeyState.active } : info,
+  );
   let settingsOpen = $state(false);
   let rememberedOpen = $state(false);
   let addingSecret = $state(false);
@@ -45,9 +59,10 @@
   let firstRunOpen = $state(false);
   let firstRunChecked = false;
 
-  // The first-run card, once settings are known.
+  // The first-run card, once settings are known and app_info has answered (or failed): before
+  // that its rows would be the Windows promises.
   $effect(() => {
-    if (!settings.loaded || firstRunChecked) return;
+    if (!settings.loaded || !infoSettled || firstRunChecked) return;
     firstRunChecked = true;
     if (!settings.value.firstRunDone) firstRunOpen = true;
   });
@@ -57,39 +72,36 @@
   onMount(() => {
     void settings.load();
     void session.load();
-    appInfo()
-      .then((i) => (info = i))
-      .catch(() => {});
 
     const unlisten = [
       onEvent('wipe', ({ reason }) => {
         // Like Ctrl+Shift+X: a sheet or dialog may hold a typed secret.
         closeOverlays();
         session.set([]);
-        workspace.wipe(reason);
+        workspace.wipe(reason, keyOs);
       }),
       onEvent('session-changed', (items) => session.set(items)),
       onEvent('settings-changed', (s) => (settings.value = s)),
-      onEvent('clipboard-scrubbed', (s) => {
-        if (s.status === 'cleaned')
-          toasts.show({
-            tone: 'success',
-            title: 'Clipboard scrubbed',
-            detail: `${s.removed} ${s.removed === 1 ? 'secret' : 'secrets'} removed${s.historyCleaned ? ' · history cleaned' : ''}`,
-          });
-        else if (s.status === 'unverified')
-          toasts.show({
-            tone: 'warning',
-            title: 'Clipboard scrubbed',
-            detail: `${s.removed} ${s.removed === 1 ? 'secret' : 'secrets'} removed · check before pasting${s.historyCleaned ? ' · history cleaned' : ''}`,
-          });
-        else if (s.status === 'clean') toasts.show({ tone: 'info', title: 'Clipboard is clean' });
-        else if (s.status === 'protected')
-          toasts.show({ tone: 'warning', title: 'Left alone', detail: 'A password manager marked that copy private.' });
-        else if (s.status === 'tooLarge')
-          toasts.show({ tone: 'warning', title: 'Left alone', detail: 'The clipboard text is larger than 20 MiB.' });
+      ...listenForClipboardScrubs(),
+      listenForAppStatus(() => {
+        closeOverlays();
+        settingsOpen = true;
       }),
     ];
+    // Asked for once the events are heard: the shell holds a `--scrub-clipboard` it started with
+    // until this first app_info, so the scrub's notices reach the window.
+    void Promise.allSettled(unlisten).then(() =>
+      appInfo()
+        .then((i) => (info = i))
+        .catch(() =>
+          toasts.show({
+            tone: 'warning',
+            title: 'App details could not be loaded',
+            detail: 'Whether the screen-capture shield works here is unknown.',
+          }),
+        )
+        .finally(() => (infoSettled = true)),
+    );
 
     // Decorative loops rest while the window is in the background.
     const root = document.documentElement;
@@ -120,10 +132,15 @@
   const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en')} ${n === 1 ? one : many}`;
 
   const pill = $derived.by<{ tone: 'ok' | 'busy' | 'warn' | 'alert'; segments: PillSegment[]; announce?: string }>(() => {
-    const shield: PillSegment = settings.value.contentProtection
-      ? { text: 'Shield on', icon: ShieldCheck }
-      : { text: 'Shield off', icon: ShieldOff };
-    const off = !settings.value.contentProtection;
+    // No shield segment (and no warning about it) where the desktop cannot hide the window, or
+    // while app_info has not said whether it can.
+    const noShield = !shieldKnown;
+    const shield: PillSegment[] = noShield
+      ? []
+      : settings.value.contentProtection
+        ? [{ text: 'Shield on', icon: ShieldCheck }]
+        : [{ text: 'Shield off', icon: ShieldOff }];
+    const off = !noShield && !settings.value.contentProtection;
     const res = workspace.response;
     if (workspace.tooLarge) return { tone: 'warn', segments: [{ text: 'Offline' }, { text: 'Too large to scan' }] };
     if (workspace.hasText && (workspace.busy || workspace.stale || !res))
@@ -139,7 +156,7 @@
         announce: `Offline. ${n ? `${plural(n, 'secret')} neutralized` : 'Nothing sensitive'}, ${verified}.${off ? ' Shield off.' : ''}`,
       };
     }
-    return { tone: off ? 'warn' : 'ok', segments: [{ text: 'Offline' }, shield] };
+    return { tone: off ? 'warn' : 'ok', segments: [{ text: 'Offline' }, ...shield] };
   });
 
   // ── Keyboard ──────────────────────────────────────────────────────
@@ -194,7 +211,7 @@
     const t = e.target instanceof HTMLElement ? e.target : null;
     const inTextField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || !!t.closest('.cm-content'));
     if (e.defaultPrevented) return;
-    const action = actionFor(e, { inTextField, overlayOpen: overlayOpen() });
+    const action = actionFor(e, { inTextField, overlayOpen: overlayOpen(), os: keyOs });
     if (!action || action === 'escape') return;
     e.preventDefault();
     run(action);
@@ -215,16 +232,24 @@
   const setPii = (pii: boolean) => workspace.rescanAfter(settings.update({ pii }));
 
   const commands = $derived<Command[]>([
-    { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste'), hint: 'clipboard', run: () => run('paste') },
-    { id: 'copy', label: 'Copy safe text', icon: Copy, keys: keysFor('copySafe'), disabled: !workspace.ready, run: () => run('copySafe') },
-    { id: 'open', label: 'Open a text file', icon: FolderOpen, keys: keysFor('open'), hint: 'file load', run: () => run('open') },
-    { id: 'save', label: 'Save a safe copy', icon: Save, keys: keysFor('save'), hint: 'file export', disabled: !workspace.ready, run: () => run('save') },
-    { id: 'wipe', label: 'Wipe both panes', icon: Eraser, keys: keysFor('wipe'), hint: 'clear erase', run: () => run('wipe') },
+    { id: 'paste', label: 'Paste and scrub', icon: ClipboardPaste, keys: keysFor('paste', keyOs), hint: 'clipboard', run: () => run('paste') },
+    {
+      // The tray item's scrub, in place. Ctrl+K reaches it over an open sheet too.
+      id: 'scrub-clipboard',
+      label: 'Scrub the clipboard now',
+      icon: ClipboardCheck,
+      hint: 'clean hotkey tray',
+      run: scrubClipboardNow,
+    },
+    { id: 'copy', label: 'Copy safe text', icon: Copy, keys: keysFor('copySafe', keyOs), disabled: !workspace.ready, run: () => run('copySafe') },
+    { id: 'open', label: 'Open a text file', icon: FolderOpen, keys: keysFor('open', keyOs), hint: 'file load', run: () => run('open') },
+    { id: 'save', label: 'Save a safe copy', icon: Save, keys: keysFor('save', keyOs), hint: 'file export', disabled: !workspace.ready, run: () => run('save') },
+    { id: 'wipe', label: 'Wipe both panes', icon: Eraser, keys: keysFor('wipe', keyOs), hint: 'clear erase', run: () => run('wipe') },
     ...(['relaxed', 'balanced', 'paranoid'] as const).map((level) => ({
       id: `sens-${level}`,
       label: `Sensitivity: ${level[0]?.toUpperCase()}${level.slice(1)}`,
       icon: Gauge,
-      keys: keysFor(`sensitivity:${level}`),
+      keys: keysFor(`sensitivity:${level}`, keyOs),
       hint: settings.value.sensitivity === level ? 'current' : undefined,
       run: () => setSensitivity(level),
     })),
@@ -261,8 +286,8 @@
 
 <Aurora />
 
-<div class="app" data-ready={settings.loaded ? '' : undefined}>
-  <TitleBar>
+<div class="app" data-ready={settings.loaded && infoSettled ? '' : undefined}>
+  <TitleBar os={keyOs}>
     {#snippet status()}
       <StatusPill tone={pill.tone} segments={pill.segments} announce={pill.announce} />
     {/snippet}
@@ -306,6 +331,7 @@
 
   <div class="dock-wrap">
     <Dock
+      os={keyOs}
       bind:sensitivity={settings.value.sensitivity}
       bind:pii={settings.value.pii}
       onsensitivity={(sensitivity) => workspace.rescanAfter(settings.update({ sensitivity }))}
@@ -319,10 +345,10 @@
 
 <Toast />
 
-<SettingsSheet bind:open={settingsOpen} {info} />
-<RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} />
+<SettingsSheet bind:open={settingsOpen} info={settingsInfo} />
+<RememberedSheet bind:open={rememberedOpen} bind:adding={addingSecret} os={keyOs} />
 <CommandPalette bind:open={paletteOpen} {commands} />
-<FirstRun bind:open={firstRunOpen} />
+<FirstRun bind:open={firstRunOpen} shield={shieldKnown} os={keyOs} {info} />
 
 <style>
   .app {

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Redactor
+Comment=Strips secrets out of text before you paste it anywhere.
+Exec=Redactor
+Icon=io.github.its30na.redactor
+Terminal=false
+Categories=Utility;
+Keywords=secret;password;token;redact;clipboard;
+StartupWMClass=Redactor

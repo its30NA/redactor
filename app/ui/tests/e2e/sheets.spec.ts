@@ -206,17 +206,47 @@ test.describe('clipboard-scrubbed event', () => {
   test('a verified scrub says removed; an unverified one says check before pasting', async ({ page, problems: _ }) => {
     await openApp(page);
     await page.evaluate(() =>
-      window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'cleaned', removed: 2, byLabel: [], historyCleaned: true }),
+      window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'cleaned', removed: 2, byLabel: [], historyCleaned: true, press: 1 }),
     );
-    const verified = page.locator('.toast', { hasText: '2 secrets removed · history cleaned' });
+    const verified = page.locator('.toast', { hasText: '2 secrets removed, safe to paste · history cleaned' });
     await expect(verified).toBeVisible();
     await expect(verified).toHaveClass(/success/);
     await page.evaluate(() =>
-      window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'unverified', removed: 1, byLabel: [], historyCleaned: true }),
+      window.__REDACTOR_MOCK__?.emit('clipboard-scrubbed', { status: 'unverified', removed: 1, byLabel: [], historyCleaned: true, press: 2 }),
     );
-    const unverified = page.locator('.toast', { hasText: '1 secret removed · check before pasting · history cleaned' });
+    const unverified = page.locator('.toast', { hasText: '1 secret removed, check before pasting · history cleaned' });
     await expect(unverified).toBeVisible();
     await expect(unverified).toHaveClass(/warning/);
+  });
+
+  test('hidden characters removed with no secret say so', async ({ page, problems: _ }) => {
+    // `--scrub-clipboard` on a copy with a zero-width space, tag characters and a bidi override.
+    await openApp(page, '?scrub&clipboard=hidden');
+    const notice = page.locator('.toast', { hasText: 'Hidden characters removed' });
+    await expect(notice).toContainText('Nothing sensitive found');
+    await expect(notice).toHaveClass(/success/);
+  });
+
+  test('a scrub asked for at start reaches the window', async ({ page, problems: _ }) => {
+    // `--scrub-clipboard` started the app: the result must not come before the page listens.
+    await openApp(page, '?scrub&clipboard=empty');
+    await expect(page.locator('.toast', { hasText: 'Nothing to scrub' })).toBeVisible();
+  });
+
+  test('a scrub that expired waiting for the window offers Scrub now', async ({ page, problems: _ }) => {
+    await openApp(page);
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-waiting', { press: 1 }));
+    const waiting = page.locator('.toast', { hasText: "Waiting for Redactor's window to scrub the clipboard…" });
+    await expect(waiting).toBeVisible();
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.emit('clipboard-scrub-expired', { press: 1 }));
+    await expect(waiting).toHaveCount(0);
+    const expired = page.locator('.toast', { hasText: 'Not scrubbed' });
+    await expect(expired).toContainText("Redactor's window did not come to the front in time.");
+    await expect(expired).toHaveClass(/warning/);
+    await expect(expired.locator('.life')).toHaveCount(0);
+    await expired.getByRole('button', { name: 'Scrub now' }).click();
+    await expect(expired).toHaveCount(0);
+    await expect(page.locator('.toast', { hasText: 'Clipboard scrubbed' })).toBeVisible();
   });
 });
 
@@ -279,6 +309,29 @@ test.describe('Settings sheet', () => {
     await hotkey.click();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  });
+
+  test('a hotkey the shell refuses says why under the key until the next try', async ({ page, problems: _ }) => {
+    const refusal = 'Your desktop did not accept Ctrl+Alt+K. No hotkey is set now; pick another in Settings.';
+    await openApp(page);
+    await page.evaluate((m) => window.__REDACTOR_MOCK__?.rejectSettings(m), refusal);
+    await page.getByTestId('settings-open').click();
+    const sheet = page.getByRole('dialog', { name: 'Settings' });
+    const hotkey = sheet.getByTestId('hotkey');
+    await hotkey.click();
+    await page.keyboard.press('Control+Alt+K');
+    const alert = sheet.getByRole('alert');
+    await expect(alert).toHaveText(refusal);
+    // The toast leaves on its own; the line under the key stays.
+    await expect(page.locator('.toast', { hasText: 'Setting not saved' })).toHaveCount(0, { timeout: 8000 });
+    await expect(alert).toHaveText(refusal);
+    // The next try starts clean, and a key the shell takes leaves no line.
+    await page.evaluate(() => window.__REDACTOR_MOCK__?.rejectSettings(null));
+    await hotkey.click();
+    await expect(alert).toHaveCount(0);
+    await page.keyboard.press('Control+Alt+J');
+    await expect.poll(async () => (await lastSettings(page))?.hotkey).toBe('Ctrl+Alt+J');
+    await expect(alert).toHaveCount(0);
   });
 
   test('switches and choices save', async ({ page, problems: _ }) => {

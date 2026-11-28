@@ -3,17 +3,47 @@
   hotkey and tray, appearance, and About.
 -->
 <script lang="ts">
+  import Copy from '@lucide/svelte/icons/copy';
   import Keyboard from '@lucide/svelte/icons/keyboard';
   import Kbd from './Kbd.svelte';
   import Segmented, { type SegmentOption } from './Segmented.svelte';
   import Sheet from './Sheet.svelte';
   import Toggle from './Toggle.svelte';
-  import { hotkeyFrom, hotkeyProblem } from '../lib/keys';
+  import { hotkeyCaps, hotkeyFrom, hotkeyProblem, keyOsFrom, modifiersOf } from '../lib/keys';
+  import { copyText } from '../lib/api';
+  import {
+    focusNote,
+    hotkeyInactiveNote,
+    hotkeyMode,
+    hotkeyNote,
+    lockDesc,
+    lockNote,
+    lockTitle,
+    scrubCommand,
+    scrubRowDesc,
+    settingsNote,
+    shieldNote,
+    themeDesc,
+    trayNote,
+    traySection,
+    trayTitle,
+  } from '../lib/platform';
+  import { toasts } from '../lib/toast.svelte';
   import { settings } from '../lib/settings.svelte';
   import { workspace } from '../lib/workspace.svelte';
   import type { AppInfo, MotionSetting, Sensitivity, Settings, ThemeSetting } from '../lib/types';
 
   let { open = $bindable(false), info }: { open: boolean; info: AppInfo | null } = $props();
+  const keyOs = $derived(keyOsFrom(info?.platform ?? ''));
+  const noShield = $derived(shieldNote(info, keyOs));
+  const noTray = $derived(trayNote(info));
+  // Where app_info does not say (Windows, macOS): the app registers the key, no notes.
+  const mode = $derived(hotkeyMode(info));
+  const howHotkey = $derived(hotkeyNote(info));
+  const needsFocus = $derived(focusNote(info));
+  const inactive = $derived(hotkeyInactiveNote(info));
+  const noLock = $derived(lockNote(info));
+  const command = $derived(scrubCommand(info));
 
   const themeOptions: SegmentOption<ThemeSetting>[] = [
     { value: 'system', label: 'System' },
@@ -52,10 +82,16 @@
   let hotkeyError = $state<string | null>(null);
   let pending = $state<string | null>(null);
 
-  function startCapture() {
+  /** Counts tries, so a slow answer to an earlier one cannot overwrite the line of a later one. */
+  let hotkeyAttempt = 0;
+
+  function startCapture(e: MouseEvent) {
+    // WebKit on a Mac does not focus a clicked button; the keys must still reach this one.
+    (e.currentTarget as HTMLElement).focus();
     capturing = true;
     pending = null;
     hotkeyError = null;
+    hotkeyAttempt++;
   }
 
   function onHotkeyKey(e: KeyboardEvent) {
@@ -67,27 +103,42 @@
       pending = null;
       return;
     }
-    const combo = hotkeyFrom(e);
+    const combo = hotkeyFrom(e, keyOs);
     if (!combo) {
-      pending = [e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean).join('+') || null;
+      pending = modifiersOf(e, keyOs).join('+') || null;
       return;
     }
-    const problem = hotkeyProblem(combo);
+    const problem = hotkeyProblem(combo, keyOs);
     if (problem) {
-      hotkeyError = `${combo}: ${problem}`;
+      hotkeyError = `${hotkeyCaps(combo, keyOs).join('+')}: ${problem}`;
       pending = null;
       return;
     }
     capturing = false;
     pending = null;
     hotkeyError = null;
-    update({ hotkey: combo });
+    // A key the shell refuses (another app holds it, the desktop said no) stays said under the
+    // key until the next try: the toast leaves after a few seconds.
+    const attempt = ++hotkeyAttempt;
+    void settings.update({ hotkey: combo }).then((refused) => {
+      if (attempt === hotkeyAttempt) hotkeyError = refused;
+    });
   }
 
-  const shownKeys = $derived((capturing ? (pending ?? '') : settings.value.hotkey).split('+').filter(Boolean));
+  async function copyCommand() {
+    try {
+      await copyText(command);
+      toasts.show({ tone: 'success', title: 'Command copied' });
+    } catch {
+      toasts.show({ tone: 'error', title: 'Could not copy' });
+    }
+  }
+
+  // Shown with this OS's key names (Control, Option on a Mac); stored as the shell names them.
+  const shownKeys = $derived(hotkeyCaps(capturing ? (pending ?? '') : settings.value.hotkey, keyOs));
 </script>
 
-<Sheet bind:open title="Settings" description="Stored on this PC only. Never any text." width={460}>
+<Sheet bind:open title="Settings" description={settingsNote(keyOs)} width={460}>
   <section class="group">
     <h3 class="eyebrow">Scanning</h3>
     <div class="row">
@@ -144,12 +195,13 @@
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Screen-capture shield</p>
-        <p class="row-desc">Screenshots and screen sharing see a blank window.</p>
+        <p class="row-desc">{noShield ?? 'Screenshots and screen sharing see a blank window.'}</p>
       </div>
       <Toggle
         quiet
         label="Screen-capture shield"
-        checked={settings.value.contentProtection}
+        disabled={noShield !== null}
+        checked={noShield === null && settings.value.contentProtection}
         onchange={(contentProtection) => update({ contentProtection })}
       />
     </div>
@@ -168,50 +220,83 @@
     </div>
     <div class="row">
       <div class="row-copy">
-        <p class="row-title">Wipe when Windows locks</p>
-        <p class="row-desc">Win+L or the screen saver lock.</p>
+        <p class="row-title">{lockTitle(keyOs)}</p>
+        <p class="row-desc">{lockDesc(keyOs)}</p>
       </div>
       <Toggle
         quiet
-        label="Wipe when Windows locks"
+        label={lockTitle(keyOs)}
         checked={settings.value.wipeOnLock}
         onchange={(wipeOnLock) => update({ wipeOnLock })}
       />
     </div>
+    {#if noLock}<p class="row-desc note" data-testid="lock-note">{noLock}</p>{/if}
   </section>
 
   <section class="group">
-    <h3 class="eyebrow">Hotkey and tray</h3>
+    <h3 class="eyebrow">{traySection(keyOs)}</h3>
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Scrub the clipboard</p>
-        <p class="row-desc">From any app, without opening the window.</p>
+        <p class="row-desc" data-testid="scrub-row-desc">{scrubRowDesc(info)}</p>
       </div>
-      <button
-        type="button"
-        class="hotkey"
-        class:capturing
-        onclick={startCapture}
-        onkeydown={onHotkeyKey}
-        onblur={() => {
-          capturing = false;
-          pending = null;
-        }}
-        aria-label={capturing ? 'Press the new shortcut, or Esc to cancel' : `Hotkey ${settings.value.hotkey}. Change`}
-        data-testid="hotkey"
-      >
-        <Keyboard size={14} strokeWidth={1.9} aria-hidden="true" />
-        {#if shownKeys.length}<Kbd keys={shownKeys} />{:else}<span class="press">Press keys…</span>{/if}
-        {#if !capturing}<span class="change">Change</span>{/if}
-      </button>
+      {#if mode !== 'command'}
+        <button
+          type="button"
+          class="hotkey"
+          class:capturing
+          onclick={startCapture}
+          onkeydown={onHotkeyKey}
+          onblur={() => {
+            capturing = false;
+            pending = null;
+          }}
+          aria-label={capturing
+            ? 'Press the new shortcut, or Esc to cancel'
+            : `Hotkey ${hotkeyCaps(settings.value.hotkey, keyOs).join('+')}${inactive ? ', not active' : ''}. Change`}
+          data-testid="hotkey"
+        >
+          <Keyboard size={14} strokeWidth={1.9} aria-hidden="true" />
+          {#if shownKeys.length}<Kbd keys={shownKeys} />{:else}<span class="press">Press keys…</span>{/if}
+          {#if !capturing}<span class="change">Change</span>{/if}
+        </button>
+      {/if}
     </div>
-    {#if hotkeyError}<p class="error" role="alert">{hotkeyError}</p>{/if}
+    <!-- A refused key leaves none held (a portal refusal, or an old key another app took): the
+         key shown is marked as not active, and the reason stays under it. -->
+    {#if inactive}
+      <p class="inactive" data-testid="hotkey-inactive">{inactive}</p>
+    {/if}
+    {#if hotkeyError}
+      <p class="error" role="alert">{hotkeyError}</p>
+    {/if}
+    {#if mode === 'command'}
+      <div class="note" data-testid="hotkey-note">
+        <p class="row-desc">{howHotkey}</p>
+        <div class="command">
+          <code class="mono">{command}</code>
+          <button type="button" class="copy" onclick={copyCommand} data-testid="copy-command">
+            <Copy size={13} strokeWidth={1.9} aria-hidden="true" />
+            Copy
+          </button>
+        </div>
+      </div>
+    {:else if howHotkey}
+      <p class="row-desc note" data-testid="hotkey-note">{howHotkey}</p>
+    {/if}
+    {#if needsFocus}<p class="row-desc note" data-testid="focus-note">{needsFocus}</p>{/if}
     <div class="row">
       <div class="row-copy">
-        <p class="row-title">Keep running in the tray</p>
-        <p class="row-desc">Closing the window keeps the hotkey working.</p>
+        <p class="row-title">{trayTitle(keyOs)}</p>
+        <p class="row-desc">{noTray ?? 'Closing the window keeps the hotkey working.'}</p>
       </div>
-      <Toggle quiet label="Keep running in the tray" checked={settings.value.trayMode} onchange={(trayMode) => update({ trayMode })} />
+      <Toggle
+        quiet
+        label={trayTitle(keyOs)}
+        disabled={noTray !== null}
+        checked={noTray === null && settings.value.trayMode}
+        onchange={(trayMode) => update({ trayMode })}
+      />
     </div>
   </section>
 
@@ -220,7 +305,7 @@
     <div class="row">
       <div class="row-copy">
         <p class="row-title">Theme</p>
-        <p class="row-desc">Follows Windows by default.</p>
+        <p class="row-desc">{themeDesc(keyOs)}</p>
       </div>
       <Segmented size="sm" label="Theme" options={themeOptions} value={settings.value.theme} onchange={(theme) => update({ theme })} />
     </div>
@@ -324,6 +409,46 @@
     margin-top: 6px;
     font-size: var(--text-xs);
     color: var(--red);
+  }
+  .inactive {
+    margin-top: 6px;
+    font-size: var(--text-xs);
+    color: var(--amber);
+  }
+  .note {
+    padding: 10px 0 12px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .command {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+    padding: 6px 6px 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--glass);
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+  }
+  .command code {
+    font-size: var(--text-xs);
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  .copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--cyan);
+  }
+  .copy:hover {
+    background: var(--glass);
   }
   .about {
     display: grid;

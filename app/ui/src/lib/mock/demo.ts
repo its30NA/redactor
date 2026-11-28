@@ -146,6 +146,14 @@ export function tiledDemo(units: number): string {
 }
 
 /**
+ * Clipboard texts with no secret and no fixture: `hidden` carries a zero-width space, two tag
+ * characters and a bidi override, which a scrub with strip invisible on removes.
+ */
+export const HIDDEN_INPUTS: Record<string, () => string> = {
+  hidden: () => 'lunch at\u200B noon\u{E0041}\u{E0042} on friday\u202E',
+};
+
+/**
  * Big pastes for the responsiveness check (5 MiB) and the 20 MiB cap notice. They have no
  * fixture: the mock tiles the demo response over them.
  */

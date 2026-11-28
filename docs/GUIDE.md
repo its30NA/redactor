@@ -9,9 +9,22 @@ curl -u deploy:<a password> https://ci  ->  curl -u deploy:[REDACTED: Password] 
 login failed for <the same password>   ->  login failed for [REDACTED: Password]
 ```
 
-There are two ways to use it: the **desktop app** for Windows, and the **`scrub`** command line for
-Windows, Linux and macOS. Both use the same engine. Download links and checksum steps are in the
-[README](../README.md#download).
+There are two ways to use it: the **desktop app** for Windows, macOS and Linux, and the **`scrub`**
+command line for Windows, Linux and macOS. Both use the same engine. Download links and the steps to
+verify a download are in the [README](../README.md#download); each OS has a step-by-step guide:
+[Windows](install/windows.md), [Mac](install/macos.md), [Linux](install/linux.md) (which of the four
+Linux files to pick, and how to remove each).
+
+The desktop app for **macOS and Linux** is in preview: machine-tested, little hand use yet. The install
+guides also say how the clipboard hotkey works there: on some Linux desktops no app may hold a key, and
+Settings shows a command to bind in the desktop's keyboard settings instead
+([Linux guide](install/linux.md#the-hotkey)). This guide is written for Windows. On a Mac,
+`Ctrl` in the app's own shortcuts is `Cmd`, and the hotkey `Ctrl+Alt+R` is Control+Option+R, as the app
+shows it there and in its messages.
+Some protections work differently
+or are missing (no screen-capture shield, no clipboard history cleaning, on Linux a wipe on lock only
+when the desktop announces the lock): the
+[threat model](THREAT_MODEL.md#macos-and-linux-preview-what-is-different) lists each difference.
 
 ## The desktop app
 
@@ -80,21 +93,35 @@ plain text, and the sheet says so. If you type something that looks like a passw
 
 ### Scrub the clipboard from anywhere: `Ctrl+Alt+R`
 
-Press `Ctrl+Alt+R` in any app, without opening Redactor. It scrubs whatever text is on the clipboard in
-place and shows a Windows notification:
+Press `Ctrl+Alt+R` (Control+Option+R on a Mac) in any app, without opening Redactor. It scrubs whatever
+text is on the clipboard in place and shows a Windows notification. The window shows the same words as a notice:
 
-- "2 secrets removed, safe to paste", or
-- "Check before pasting", when the text was rewritten but the engine could not verify the result, or
-- "Nothing sensitive found", or
-- "Left alone: a password manager marked that copy private", or
-- "Left alone: the clipboard text is larger than 20 MiB".
+- "Clipboard scrubbed. 2 secrets removed, safe to paste.", or
+- "Clipboard scrubbed. 1 secret removed, check before pasting.", when the text was rewritten but the
+  engine could not verify the result, or
+- "Hidden characters removed. Nothing sensitive found.", when there was no secret but zero-width, bidi or
+  tag characters were removed (only with **Strip invisible characters** on, the default), or
+- "Clipboard is clean. Nothing sensitive found.", or
+- "Check before pasting. Nothing was removed, but the scan could not be verified.", or
+- "Nothing to scrub. The clipboard holds no text.", or
+- "Left alone. A password manager marked that copy private.", or
+- "Left alone. The clipboard text is larger than 20 MiB.", or
+- "Clipboard not scrubbed. It could not be read, or it changed during the scrub."
 
 Copies that a password manager marked private are never read or changed. If something else is copied
-while the scan runs, the new copy is left alone and the scrub reports an error; press the hotkey again. When something was removed, the
-raw copy is also deleted from the Win+V clipboard history, on a best-effort basis. The hotkey uses your
-current sensitivity and PII settings. You can change it in Settings (use at least two modifier keys; a few
-combinations are reserved). If another program already holds the key, Redactor keeps the old one and says
-so.
+while the scan runs, the new copy is left alone and the scrub reports an error; press the hotkey again, or
+**Scrub now** on the window's notice. When the text was rewritten, the raw copy is also deleted from the
+Win+V clipboard history, on a best-effort basis (the notice then ends with "· history cleaned"). The hotkey
+uses your current sensitivity and PII settings. The tray's **Scrub clipboard** and the command palette's
+**Scrub the clipboard now** (`Ctrl+K`) do the same.
+
+You can change the key in Settings (use at least two modifier keys; a few combinations are reserved). If
+another program already holds the new key, Redactor keeps the old one and says so. If no key could be set
+(another program held it when Redactor started, or the old key could not come back), the window says
+"Hotkey not active" and Settings shows "Not active: pick another key." under the key.
+
+Starting `Redactor.exe --scrub-clipboard` does the same as the hotkey: it asks the running Redactor to
+scrub, or starts Redactor, which scrubs at once and shows the result once its window is up.
 
 ### Screen-share shield
 
@@ -109,7 +136,8 @@ Redactor clears its text panes and forgets every remembered secret:
 - after the idle timeout: **Wipe when idle**, 5, 10 or 30 minutes, or off (default 10). Idle means that
   the window made no request to the app's backend (a scan, a copy, a settings change) for that long.
   Reading the output without doing any of those also counts as idle, so the panes can be cleared while you
-  read. The timer runs only while there is text or a remembered secret to wipe;
+  read. Time the PC spends asleep counts as idle. The timer runs only while there is text or a remembered
+  secret to wipe;
 - when Windows locks or goes to sleep: **Wipe when Windows locks** (on by default);
 - when you quit, or choose **Wipe now** in the tray.
 
@@ -133,16 +161,23 @@ starting it again brings the first one forward.
 | `Ctrl+Shift+X` | Wipe both panes |
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Relaxed / Balanced / Paranoid |
 | `Ctrl+K` | Command palette |
-| `Esc` | Close the sheet or dialog |
+| `Esc` | Close the sheet or dialog; on a focused notice, dismiss that notice only |
 | `Ctrl+Alt+R` | Scrub the clipboard (global, remappable) |
 
 ### Settings
 
-Stored in `%APPDATA%\Redactor\settings.json` and never contain any scanned text. Settings are: sensitivity,
+Stored in `%APPDATA%\Redactor\settings.json` (on macOS and Linux: see the install guides) and never contain
+any scanned text. Settings are: sensitivity,
 personal data, strip invisible characters, placeholder style, screen-capture shield, wipe when idle, wipe
 when Windows locks, the clipboard hotkey, keep running in the tray, theme (follow Windows, dark or light)
 and motion. **Strip invisible characters** removes zero-width, bidirectional and tag characters from the
-output; they can hide text from you, so leave it on unless you need them.
+output and from what the clipboard hotkey writes back; they can hide text from you, so leave it on unless
+you need them.
+
+If the settings cannot be written to disk, they still apply until Redactor closes, and Redactor says so
+once. If the file cannot be read at start, Redactor starts with the defaults, keeps the old file as
+`settings.json.bad` next to it (your always-redact list can be copied back out of it) and says so in the
+window.
 
 ## The `scrub` command line
 
@@ -274,7 +309,7 @@ it.
 scrub clipboard
 ```
 
-Windows only. Cleans the clipboard text in place and prints what it did. Copies marked private by a
+Windows only. Scrubs the clipboard text in place and prints what it did. Copies marked private by a
 password manager are left alone. One PowerShell helper reads the clipboard, waits for the redacted text,
 reads the clipboard again and writes only if it still holds exactly what was read. If you copied something
 else in the meantime (a fresh password-manager copy, say), nothing is written and the command exits 2;
@@ -362,7 +397,8 @@ A config file can switch detection off, so `scrub` treats one with care:
   for a one-off. Report patterns that are worth adding as an issue, with a made-up example.
 - **Something harmless was redacted.** Press Keep on its finding. For the command line, add an
   `allowlist` regex or disable the rule.
-- **The hotkey does nothing.** Another program may hold `Ctrl+Alt+R`. Pick another in Settings.
+- **The hotkey does nothing.** Another program may hold `Ctrl+Alt+R` (Control+Option+R on a Mac). Pick
+  another in Settings.
 - **SmartScreen warns on the installer.** The binaries are not code-signed. See the
   [threat model](THREAT_MODEL.md#the-unsigned-binary-and-smartscreen) and verify the download.
 - **`scrub scan` flags my test files.** If they contain fake secrets on purpose, allowlist the values or

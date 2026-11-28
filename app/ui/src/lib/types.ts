@@ -85,14 +85,44 @@ export interface ScanResponse {
   stats: ScanStats;
 }
 
-/** `unverified`: rewritten, but the engine could not verify the output (check before pasting). */
-export type ClipboardStatus = 'cleaned' | 'unverified' | 'clean' | 'empty' | 'protected' | 'tooLarge' | 'error';
+/**
+ * `unverified`: the engine could not verify its output (check before pasting); the clipboard was
+ * rewritten when something was removed, and left as it was when `removed` is 0.
+ */
+/** `stripped`: no secret, but hidden (zero-width, bidi, tag) characters were removed and written back. */
+export type ClipboardStatus =
+  | 'cleaned'
+  | 'unverified'
+  | 'stripped'
+  | 'clean'
+  | 'empty'
+  | 'protected'
+  | 'tooLarge'
+  | 'error';
 
 export interface ClipboardScrub {
   status: ClipboardStatus;
   removed: number;
   byLabel: LabelCount[];
   historyCleaned: boolean;
+}
+
+/**
+ * The `clipboard-scrubbed` event: a scrub's result and the latest press it covers (it read the
+ * clipboard after that press). The shell counts presses (hotkey, tray, flag, "Scrub now") from 1.
+ */
+export interface ScrubResult extends ClipboardScrub {
+  press: number;
+}
+
+/** The `clipboard-scrub-waiting` event: the press that waits for the window. */
+export interface ScrubWaiting {
+  press: number;
+}
+
+/** The `clipboard-scrub-expired` event: the press that waited for the window in vain. */
+export interface ScrubExpired {
+  press: number;
 }
 
 /**
@@ -142,6 +172,51 @@ export interface AppInfo {
   engineVersion: string;
   ruleCount: number;
   platform: string;
+  /** The desktop shows a tray (status notifier) icon, so closing can keep Redactor running. */
+  tray: boolean;
+  /** The window can be hidden from screenshots and screen sharing. */
+  shield: boolean;
+  /** How a hotkey press reaches the app. Absent (Windows, macOS) means `keys`. */
+  hotkey?: HotkeyMode;
+  /** The clipboard works only while the window is in front. Absent means false. */
+  clipboardNeedsFocus?: boolean;
+  /**
+   * The hotkey works now. False: it could not be registered at start (another app holds it, the
+   * desktop refused it), the desktop dropped it, or a new one was refused and none is held.
+   * Changes come as the `app-status` event. Absent means true.
+   */
+  hotkeyActive?: boolean;
+  /**
+   * Something reports a screen lock here. False where no lock source could be subscribed at all
+   * (Linux: no logind session, no screen saver on the session bus): a lock does not wipe, suspend
+   * and the idle timer still do. Absent: not known in time.
+   */
+  lockWatched?: boolean;
+  /**
+   * The program a desktop shortcut runs with `--scrub-clipboard`: this executable, or the
+   * AppImage file. Absent where its path is not Unicode, and inside a Flatpak.
+   */
+  executable?: string;
+  /**
+   * The Flatpak app id when the app runs inside a Flatpak: the desktop shortcut then runs
+   * `flatpak run <id>`, since the sandbox's own path does not exist on the host. Absent elsewhere.
+   */
+  flatpak?: string;
+}
+
+/**
+ * `keys`: the app registers the key from Settings. `portal`: the desktop binds it and may ask
+ * the user. `command`: the app holds no key; a desktop shortcut runs it with `--scrub-clipboard`.
+ */
+export type HotkeyMode = 'keys' | 'portal' | 'command';
+
+/** What the window shows once, as a notice (`app-status`). */
+export type AppNotice = 'hotkeyNotActive' | 'hotkeyLost' | 'settingsNotSaved' | 'settingsUnreadable';
+
+/** The `app-status` event: whether the hotkey works now, and a notice, if any. */
+export interface AppStatus {
+  hotkeyActive: boolean;
+  notice: AppNotice | null;
 }
 
 export interface OpenedFile {
@@ -153,12 +228,18 @@ export type WipeReason = 'idle' | 'lock' | 'sleep' | 'tray';
 
 /** Events emitted by Rust to the UI, keyed by event name. */
 export interface AppEvents {
-  'clipboard-scrubbed': ClipboardScrub;
+  'clipboard-scrubbed': ScrubResult;
+  /** A hotkey scrub waits for the window to come to the front (the clipboard needs focus). */
+  'clipboard-scrub-waiting': ScrubWaiting;
+  /** That scrub waited in vain and did not run; null from a shell that does not name the press. */
+  'clipboard-scrub-expired': ScrubExpired | null;
   /** Also clears the session secrets. */
   wipe: { reason: WipeReason };
   'session-changed': SessionSecret[];
   /** Settings changed outside the Settings sheet (the tray's Screen-share shield toggle). */
   'settings-changed': Settings;
+  /** The hotkey's state changed, or the window has something to say (`AppNotice`). */
+  'app-status': AppStatus;
 }
 
 export type AppEventName = keyof AppEvents;

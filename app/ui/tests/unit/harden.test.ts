@@ -1,7 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { removeWebRtc, WEBRTC_GLOBALS } from '../../src/lib/harden';
+import { blockContextMenu, removeWebRtc, WEBRTC_GLOBALS } from '../../src/lib/harden';
+
+describe('blockContextMenu', () => {
+  test('cancels every contextmenu event that reaches the target', () => {
+    const target = new EventTarget();
+    blockContextMenu(target);
+    const e = new Event('contextmenu', { cancelable: true });
+    target.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    const other = new Event('click', { cancelable: true });
+    target.dispatchEvent(other);
+    expect(other.defaultPrevented).toBe(false);
+  });
+});
 
 describe('removeWebRtc', () => {
   test('removes the WebRTC constructors, configurable or not', () => {
@@ -16,6 +29,11 @@ describe('removeWebRtc', () => {
       'use strict';
       w.RTCDataChannel = Fake;
     }).toThrow();
+  });
+
+  test('the start-up hardening also blocks the right-click menu', () => {
+    const now = readFileSync(join(import.meta.dirname, '../../src/lib/harden-now.ts'), 'utf8');
+    expect(now).toContain('blockContextMenu();');
   });
 
   test('runs before anything else at start-up', () => {

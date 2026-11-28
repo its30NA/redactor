@@ -6,6 +6,154 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The desktop app on macOS and Linux (X11 and Wayland), in preview: machine-tested, little hand use yet.
+  Five new downloads, each in `SHA256SUMS` and with a build attestation like the Windows files:
+  `Redactor_<version>_universal.dmg` (one app for Apple silicon and Intel, macOS 13 or later),
+  `Redactor_<version>_amd64.deb`, `Redactor-<version>-1.x86_64.rpm`, `Redactor_<version>_x86_64.flatpak`
+  and `Redactor_<version>_amd64.AppImage` (Linux x86_64; the `.deb`, `.rpm` and AppImage need glibc 2.35
+  or newer). The
+  [install guides](docs/install/linux.md) say which to pick, how to verify, install and remove each, and
+  the [threat model](docs/THREAT_MODEL.md#macos-and-linux-preview-what-is-different) lists what differs
+  from Windows.
+- `Redactor --version` prints the version and exits, before any window opens. On Windows the app has no
+  console, so the line shows only when the output is redirected to a file or a pipe.
+- Inside the Flatpak, Settings shows the command to bind as
+  `flatpak run io.github.its30na.redactor --scrub-clipboard`, the one that works from outside the sandbox.
+- The window starts in the theme's background colour instead of flashing white before the page is drawn
+  (dark for the dark theme, light for the light theme, and for the system theme the desktop's light or
+  dark setting; dark where the desktop does not say). The page also starts in a chosen Dark or Light
+  theme, so a theme that differs from the system's no longer shows the system's colours for a moment.
+- `--scrub-clipboard`: starting the app with it scrubs the clipboard like the hotkey, through the running
+  copy or in a new one. Where the desktop lets no app hold a key, Settings shows this command with the
+  app's full path and a Copy button, to bind in the desktop's keyboard settings.
+- Scrub notices in the window, next to the desktop notification: the result of every scrub, "Waiting for
+  Redactor's window to scrub the clipboard…" where the clipboard needs the window in front, and "Not
+  scrubbed" or "Clipboard not scrubbed" with a **Scrub now** button. A failed notice leaves after a later
+  result or 10 minutes.
+- The command palette has "Scrub the clipboard now", also over an open sheet. Esc on a focused notice
+  dismisses only that notice.
+- A hotkey that could not be set at start, or that the desktop dropped, shows as "Not active: pick another
+  key." in Settings, and the window says so with an **Open Settings** button.
+
+### Changed
+
+- The desktop shell reaches the operating system through one platform layer.
+- The hotkey scrub removes zero-width, bidi and tag characters from a copy with no secret in it, as
+  `scrub clipboard` does, and says "Hidden characters removed" (with **Strip invisible characters** on,
+  the default).
+- "Scrub" is the verb in every app text ("Scrub now", "Not scrubbed"), and the window's notice and the
+  desktop notification use the same words for the same result.
+- A scan that could not be verified and removed nothing says "Check before pasting", not "Clipboard
+  scrubbed".
+- A file that cannot be opened says why, and the size cap reads 20 MiB everywhere.
+- CI builds and tests the app shell on Linux and macOS too, and checks the dependency policy for both with
+  the shell included. On Linux this allows the ISC licence and five advisories inside Tauri's GTK3 and D-Bus
+  stack, each with its reason in `deny.toml`.
+- CI builds every download on every pull request with the release's own scripts, and installs and starts
+  each one on a clean system: the `.deb` on Ubuntu 22.04, 24.04 and Debian 12, the `.rpm` and the Flatpak on
+  Fedora 45, the AppImage on Ubuntu 22.04 and Fedora 45, the disk image on Apple silicon and Intel Macs.
+  Each check also looks for the license, the notices and the build machine's paths inside the package.
+
+### Fixed
+
+- Detection: a file path with a generated folder name (macOS temp folders under `/var/folders`, Xcode
+  DerivedData, a timestamped release folder) is no longer a Random String in Balanced. A path is judged by
+  the names in it, not as one run with its slashes; a random name inside a path and a secret with slashes
+  in it are found as before, and Paranoid reports what it reported.
+- The idle wipe counts time asleep, so text and remembered secrets do not outlive a night's sleep.
+- A settings file that cannot be read is kept as `settings.json.bad` instead of being overwritten at the
+  next save, and the window says so. Settings that cannot be saved say so once instead of failing
+  silently.
+- A key refused in Settings says why under the key until the next try, together with "Not active: pick
+  another key." when no hotkey is set.
+- On a Mac, the app's messages about the hotkey use the Mac's key names (Control+Option+R), like the
+  keycaps.
+- The welcome card and the shield promise wait until the app knows what the desktop can do.
+- A notice meant to stay until dismissed is no longer pushed out by newer ones.
+
+### Security
+
+- The window loads `http://tauri.localhost` only without a port and never over https.
+- Opening a pipe, a device or a file that keeps growing no longer reads without limit: only regular files
+  are read, up to 20 MiB.
+- On macOS and Linux the settings file is readable by you alone (0600, in a 0700 folder), and a crash
+  writes no core file with the app's memory in it.
+- The Flatpak asks only for the permissions the app uses: the window (Wayland, X11 only as a fallback),
+  GPU drawing, the tray, notifications and the lock signals. No network, no file system access but the
+  tray icon's own folder (files go through the desktop's file dialog), no sound. CI fails if the list
+  changes.
+- The AppImage's build tools are pinned by checksum, and it carries the license of every library it
+  bundles and of the parts that start it (the AppImage runtime, AppRun and the GTK hook script).
+
+### Known limits
+
+On macOS and Linux:
+
+- No screen-capture shield: macOS 15.4 and later ignore the window flag it would set, and Linux has none.
+  Anyone who sees your shared screen sees the window.
+- No clipboard history cleaning: the raw copy can stay in a clipboard manager, in Spotlight's clipboard
+  history (macOS 26, off by default) and on your other Apple devices through Universal Clipboard.
+- A copy you make in the very same instant as a scrub can be lost under the safe text of the earlier copy
+  (macOS and Wayland; at most about 2 in 100 forced tries). It is never a secret that ends up on top.
+- Some copies of clipboard text that the system or the window toolkit keeps cannot be wiped by Redactor.
+- Wiping on a screen lock needs a lock the desktop announces: `swaylock` or `i3lock` started directly, and
+  locking Windows while the app runs in WSLg, go unseen. Settings says when no lock signal is found;
+  suspend and the idle timer still wipe.
+- A crash reporter that ignores the core-file limit could still keep the app's memory; the stronger Linux
+  setting is not used because it may break the GNOME and KDE hotkey.
+- No automatic updates, no Linux build for ARM, and no package repository (apt, dnf, Flathub, Homebrew):
+  download each new release.
+
+macOS:
+
+- Signed only ad hoc and not notarized: the first start needs **Open Anyway** in Privacy & Security.
+- macOS gives no warning when another app already uses the hotkey; if it does nothing, pick another.
+- If you choose **Don't Allow** at macOS's "paste from other apps" prompt, the hotkey cannot read the
+  clipboard. Redactor should say "Clipboard not scrubbed"; it may say "Nothing to scrub" instead.
+- The lock signal macOS sends is not documented by Apple.
+- The menu-bar icon is the app icon in colour, and the Edit menu keeps Services, AutoFill and Writing
+  Tools.
+- If another user of the Mac holds the single-instance socket in `/tmp`, a second launch opens a second
+  window instead of handing over.
+
+Linux:
+
+- On GNOME, Weston and WSLg the clipboard works only with Redactor's window in front: the hotkey brings
+  the window forward first and gives up after 30 seconds. WSLg shows no notifications.
+- Where the desktop has no shortcut service (sway, older GNOME and KDE, WSLg), you bind the command
+  Settings shows in the desktop's own keyboard settings. GNOME 48+ and KDE Plasma 6 ask once to allow the
+  key and may change it. A shortcut the desktop drops is reported once and not set again by itself.
+- Text Redactor put on the clipboard is gone when it quits, unless a clipboard manager keeps it.
+- Middle-click paste (the primary selection) is not scrubbed.
+- A tray that appears after Redactor started is seen only at the next start; without a tray, closing the
+  window quits.
+- **Copy safe text** reports the clipboard as busy, instead of trying again, when another app copies in
+  the same millisecond (X11).
+- The AppImage's own libraries (WebKitGTK and about 170 others from Ubuntu 22.04) get security fixes only
+  with a new Redactor release; the `.deb`, `.rpm` and Flatpak use your system's or Flathub's.
+- The `.deb` and `.rpm` are not signed with a GPG key; the attestation proves where they came from.
+- Flatpak: on desktops that hide the background clipboard from sandboxed apps, it works only with the
+  window in front. On an X11 session the sandbox does not separate it from other apps' clipboard and
+  keys.
+
+### Not tested by hand
+
+These were tested by machines only, or not at all. Tell us what you find.
+
+- The macOS app: nobody has used it by hand yet, including the disk image and **Open Anyway**. Machines
+  test it on macOS 15 and 26; macOS 13 and 14 are not tested. A real screen lock, sleep and switching
+  users are tested only with posted signals, and file dialogs and notifications not at all.
+- All four Linux downloads on a real desktop: the `.deb`, `.rpm`, AppImage and Flatpak are installed and
+  started only in CI's clean containers.
+- The Flatpak's tray, notifications, shortcut service and lock signals inside the sandbox.
+- GNOME and KDE Plasma end to end, including their shortcut dialogs; Hyprland.
+- On WSLg: the hotkey command with the window minimised, clicking another window right after it, and
+  whether the scrubbed text stays on the clipboard after quitting.
+- Handing the clipboard to a real clipboard manager on X11 (GNOME, KDE, Xfce) when Redactor quits.
+- The first frame's colour on Windows and on a real Mac, also with the system theme on a light desktop.
+
 ## [2.1.1] - 2026-11-22
 
 ### Fixed

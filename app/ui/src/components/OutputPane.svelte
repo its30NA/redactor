@@ -14,9 +14,11 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Button from './Button.svelte';
   import Panel from './Panel.svelte';
+  import { keysFor, type KeyOs } from '../lib/keys';
   import { MAX_INPUT_BYTES } from '../lib/scan-request';
   import { workspace } from '../lib/workspace.svelte';
 
+  let { os = 'windows' }: { os?: KeyOs } = $props();
   let host: HTMLDivElement;
 
   onMount(() => {
@@ -70,7 +72,7 @@
         variant="ghost"
         size="sm"
         icon={Save}
-        label="Save a safe copy (Ctrl+S)"
+        label="Save a safe copy ({keysFor('save', os).join('+')})"
         disabled={!workspace.ready}
         onclick={() => workspace.save()}
       />
@@ -78,7 +80,7 @@
         variant="ghost"
         size="sm"
         icon={Copy}
-        label="Copy safe text (Ctrl+Shift+C)"
+        label="Copy safe text ({keysFor('copySafe', os).join('+')})"
         disabled={!workspace.ready}
         onclick={() => workspace.copySafe()}
       />
@@ -93,8 +95,8 @@
         <p class="notice-title">Too large to scan</p>
         <p class="notice-text">
           This text is {workspace.tooLarge.bytes
-            ? `${mb(workspace.tooLarge.bytes)} MB`
-            : `over ${mb(workspace.tooLarge.chars)} MB`}. Redactor scans up to {mb(MAX_INPUT_BYTES)} MB at
+            ? `${mb(workspace.tooLarge.bytes)} MiB`
+            : `over ${mb(workspace.tooLarge.chars)} MiB`}. Redactor scans up to {mb(MAX_INPUT_BYTES)} MiB at
           a time, so nothing was redacted and there is nothing to copy.
         </p>
         <p class="notice-text muted">Split it into smaller parts, or open the part you need.</p>

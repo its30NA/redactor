@@ -27,6 +27,8 @@ import { addRange, mapRanges, minimalChange, removeOverlapping, selectionToManua
 import { inputExtensions, outputExtensions } from './editor/setup';
 import { EMPTY_GROUPS, freshKeys, groupFindings, type FindingGroup } from './findings';
 import { buildScanRequest, definitelyTooLarge } from './scan-request';
+import type { KeyOs } from './keys';
+import { trayWipeNotice, wipeNotice } from './platform';
 import { createScheduler } from './scheduler';
 import { session } from './session.svelte';
 import { settings } from './settings.svelte';
@@ -366,8 +368,13 @@ class Workspace {
       this.#replaceAll(file.text);
       this.fileName = file.name;
       toasts.show({ tone: 'info', title: `Opened ${file.name}`, detail: plural(file.text.length, 'character') });
-    } catch {
-      toasts.show({ tone: 'error', title: 'Could not open the file', detail: 'Text files up to 20 MB, UTF-8 or UTF-16.' });
+    } catch (e) {
+      // The shell says why in a fixed sentence (too large, not text, unreadable), never content.
+      toasts.show({
+        tone: 'error',
+        title: 'Could not open the file',
+        detail: typeof e === 'string' && e.trim() ? e : 'Text files up to 20 MiB, UTF-8 or UTF-16.',
+      });
     }
   }
 
@@ -381,7 +388,7 @@ class Workspace {
     while (this.#pendingRescan) await this.#pendingRescan;
     if (this.busy) await this.#scheduler.idle();
     if (this.tooLarge) {
-      toasts.show({ tone: 'error', title: 'Too large to scan', detail: 'Nothing was copied. Split the text into parts under 20 MB.' });
+      toasts.show({ tone: 'error', title: 'Too large to scan', detail: 'Nothing was copied. Split the text into parts under 20 MiB.' });
       return null;
     }
     if (!this.response || this.stale) {
@@ -423,7 +430,8 @@ class Workspace {
     }
   }
 
-  wipe(reason?: WipeReason): void {
+  /** `os` words the lock, sleep and tray notices (Windows until app_info answers). */
+  wipe(reason?: WipeReason, os: KeyOs = 'windows'): void {
     const input = this.#input;
     const output = this.#output;
     const had = this.hasText;
@@ -454,12 +462,10 @@ class Workspace {
     const detail =
       reason === 'idle'
         ? `After ${settings.value.autoWipeMinutes} idle minutes. Both panes are empty.`
-        : reason === 'lock'
-          ? 'Windows was locked. Both panes are empty.'
-          : reason === 'sleep'
-            ? 'Windows went to sleep. Both panes are empty.'
-            : reason === 'tray'
-              ? 'From the tray. Both panes are empty.'
+        : reason === 'lock' || reason === 'sleep'
+          ? wipeNotice(reason, os)
+          : reason === 'tray'
+              ? trayWipeNotice(os)
               : 'Both panes are empty. Undo cannot bring it back.';
     if (had || reason) toasts.show({ tone: 'success', title: 'Wiped', detail });
   }

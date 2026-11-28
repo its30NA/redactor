@@ -1,0 +1,15 @@
+[
+  { "status": "cleaned", "removed": 2, "historyCleaned": true, "title": "Clipboard scrubbed", "detail": "2 secrets removed, safe to paste · history cleaned" },
+  { "status": "cleaned", "removed": 1, "historyCleaned": false, "title": "Clipboard scrubbed", "detail": "1 secret removed, safe to paste" },
+  { "status": "unverified", "removed": 2, "historyCleaned": true, "title": "Clipboard scrubbed", "detail": "2 secrets removed, check before pasting · history cleaned" },
+  { "status": "unverified", "removed": 1, "historyCleaned": false, "title": "Clipboard scrubbed", "detail": "1 secret removed, check before pasting" },
+  { "status": "unverified", "removed": 0, "historyCleaned": false, "title": "Check before pasting", "detail": "Nothing was removed, but the scan could not be verified." },
+  { "status": "stripped", "removed": 0, "historyCleaned": true, "title": "Hidden characters removed", "detail": "Nothing sensitive found · history cleaned" },
+  { "status": "stripped", "removed": 0, "historyCleaned": false, "title": "Hidden characters removed", "detail": "Nothing sensitive found" },
+  { "status": "clean", "removed": 0, "historyCleaned": false, "title": "Clipboard is clean", "detail": "Nothing sensitive found" },
+  { "status": "empty", "removed": 0, "historyCleaned": false, "title": "Nothing to scrub", "detail": "The clipboard holds no text." },
+  { "status": "protected", "removed": 0, "historyCleaned": false, "title": "Left alone", "detail": "A password manager marked that copy private." },
+  { "status": "tooLarge", "removed": 0, "historyCleaned": false, "title": "Left alone", "detail": "The clipboard text is larger than 20 MiB." },
+  { "status": "error", "removed": 0, "historyCleaned": false, "title": "Clipboard not scrubbed", "detail": "It could not be read, or it changed during the scrub." },
+  { "status": "expired", "removed": 0, "historyCleaned": false, "title": "Not scrubbed", "detail": "Redactor's window did not come to the front in time." }
+]

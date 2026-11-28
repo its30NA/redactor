@@ -1,6 +1,7 @@
 <!--
   Toast region, bottom centre above the dock. Renders the `toasts` queue; each toast carries a
-  hairline that drains over its lifetime (a scaleX transform). Polite live region.
+  hairline that drains over its lifetime (a scaleX transform). Polite live region. Esc on a
+  focused toast dismisses it (not the sheet behind it) and hands focus back to where it was.
 -->
 <script lang="ts">
   import { fly } from 'svelte/transition';
@@ -18,9 +19,29 @@
     ToastTone,
     unknown
   >;
+
+  let region: HTMLDivElement | undefined = $state();
+  /** Where focus was before it came into a toast. */
+  let returnTo: HTMLElement | null = null;
+
+  function onfocus(e: FocusEvent) {
+    const from = e.relatedTarget;
+    if (from instanceof HTMLElement && !region?.contains(from)) returnTo = from;
+  }
+
+  function onkeydown(e: KeyboardEvent, id: number) {
+    if (e.key !== 'Escape' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toasts.dismiss(id);
+    // The toast stays in the page while it flies out: focus must not stay on it.
+    if (returnTo?.isConnected) returnTo.focus();
+    else (e.currentTarget as HTMLElement).blur();
+    returnTo = null;
+  }
 </script>
 
-<div class="region" role="status" aria-live="polite" aria-relevant="additions">
+<div class="region" role="status" aria-live="polite" aria-relevant="additions" bind:this={region}>
   {#each toasts.items as t (t.id)}
     {@const Icon = ICONS[t.tone]}
     <div
@@ -33,7 +54,19 @@
         <span class="title">{t.title}</span>
         {#if t.detail}<span class="detail">{t.detail}</span>{/if}
       </div>
-      <button type="button" class="dismiss" aria-label="Dismiss" onclick={() => toasts.dismiss(t.id)}>
+      {#if t.action}
+        <button type="button" class="action" onclick={() => toasts.act(t.id)} {onfocus} onkeydown={(e) => onkeydown(e, t.id)}>
+          {t.action.label}
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="dismiss"
+        aria-label="Dismiss"
+        onclick={() => toasts.dismiss(t.id)}
+        {onfocus}
+        onkeydown={(e) => onkeydown(e, t.id)}
+      >
         <X size={14} aria-hidden="true" />
       </button>
       {#if t.duration > 0 && !appearance.reducedMotion}
@@ -100,6 +133,17 @@
   .detail {
     font-size: var(--text-sm);
     color: var(--muted);
+  }
+  .action {
+    flex: none;
+    padding: 4px 10px;
+    border-radius: var(--radius-xs);
+    font-weight: 500;
+    color: var(--tone);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 45%, transparent);
+  }
+  .action:hover {
+    background: var(--glass-hover);
   }
   .dismiss {
     display: grid;

@@ -14,13 +14,19 @@
   import Button from './Button.svelte';
   import Sheet from './Sheet.svelte';
   import { checkWord } from '../lib/always-redact';
+  import type { KeyOs } from '../lib/keys';
+  import { lockShort, thisComputer } from '../lib/platform';
   import { addToList, keepForSession } from '../lib/remembered.svelte';
   import { session } from '../lib/session.svelte';
   import { settings } from '../lib/settings.svelte';
   import { MAX_ALWAYS_REDACT } from '../lib/types';
   import { workspace } from '../lib/workspace.svelte';
 
-  let { open = $bindable(false), adding = $bindable(false) }: { open: boolean; adding?: boolean } = $props();
+  let {
+    open = $bindable(false),
+    adding = $bindable(false),
+    os = 'windows',
+  }: { open: boolean; adding?: boolean; os?: KeyOs } = $props();
 
   let word = $state('');
   let wordError = $state<string | null>(null);
@@ -47,7 +53,7 @@
   const forgetNote = $derived(
     [
       'when you quit',
-      settings.value.wipeOnLock ? 'when Windows locks' : null,
+      settings.value.wipeOnLock ? lockShort(os) : null,
       idle ? `after ${idle} idle minutes` : null,
     ]
       .filter(Boolean)
@@ -160,7 +166,7 @@
     </p>
     <p class="caution">
       <TriangleAlert size={13} strokeWidth={2} aria-hidden="true" />
-      <span>Not for passwords: this list is stored on this PC in plain text. Use <em>This session</em> for secrets.</span>
+      <span>Not for passwords: this list is stored on {thisComputer(os)} in plain text. Use <em>This session</em> for secrets.</span>
     </p>
 
     <form class="add-word" onsubmit={add}>
@@ -188,7 +194,7 @@
         <div class="warn-copy">
           <p class="warn-title">This looks like a password.</p>
           <p class="warn-text">
-            This list is stored on this PC in plain text. This session keeps it in memory only, and it is forgotten
+            This list is stored on {thisComputer(os)} in plain text. This session keeps it in memory only, and it is forgotten
             when you quit, lock or wipe.
           </p>
           <div class="warn-actions">

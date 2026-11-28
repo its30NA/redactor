@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+use crate::os::Os;
+
 /// The default hotkey.
 pub const DEFAULT_HOTKEY: &str = "Ctrl+Alt+R";
 
@@ -42,36 +44,49 @@ const NAMED: &[(&str, Key)] = &[
     ("Tab", Key::Tab),
 ];
 
-/// A parsed, valid global hotkey.
+/// A parsed, valid global hotkey. `meta` is Cmd on macOS and Super on Linux; on Windows it is
+/// never set (the Windows key is the system's).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Hotkey {
     pub ctrl: bool,
     pub shift: bool,
     pub alt: bool,
+    pub meta: bool,
     pub key: Key,
 }
 
 /// Why a hotkey string cannot be used. The messages are shown to the user as they are.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HotkeyError {
-    Unreadable,
-    TooFewModifiers,
+    Unreadable(Os),
+    TooFewModifiers(Os),
     Reserved,
-    ReservedByWindows,
+    ReservedBySystem(Os),
     UsedInApp,
 }
 
 impl fmt::Display for HotkeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            HotkeyError::Unreadable => {
+            HotkeyError::Unreadable(Os::Mac) => {
+                "That hotkey cannot be read. Use modifiers and one key, like Control+Option+R."
+            }
+            HotkeyError::Unreadable(Os::Windows | Os::Linux) => {
                 "That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R."
             }
-            HotkeyError::TooFewModifiers => {
+            HotkeyError::TooFewModifiers(Os::Windows) => {
                 "Use at least two modifier keys (Ctrl, Alt, Shift), so it never fires while typing."
             }
+            HotkeyError::TooFewModifiers(Os::Mac) => {
+                "Use at least two modifier keys (Cmd, Control, Option, Shift), so it never fires while typing."
+            }
+            HotkeyError::TooFewModifiers(Os::Linux) => {
+                "Use at least two modifier keys (Ctrl, Alt, Shift, Super), so it never fires while typing."
+            }
             HotkeyError::Reserved => "This shortcut is reserved.",
-            HotkeyError::ReservedByWindows => "Windows keeps this one.",
+            HotkeyError::ReservedBySystem(Os::Windows) => "Windows keeps this one.",
+            HotkeyError::ReservedBySystem(Os::Mac) => "macOS keeps this one.",
+            HotkeyError::ReservedBySystem(Os::Linux) => "Your desktop keeps this one.",
             HotkeyError::UsedInApp => "Redactor already uses this inside its window.",
         })
     }
@@ -92,63 +107,217 @@ const IN_APP: &[&str] = &[
     "Ctrl+3",
 ];
 
+/// The same shortcuts on a Mac, where they use Cmd.
+const IN_APP_MAC: &[&str] = &[
+    "Cmd+V",
+    "Shift+Cmd+C",
+    "Cmd+K",
+    "Cmd+O",
+    "Cmd+S",
+    "Shift+Cmd+X",
+    "Cmd+1",
+    "Cmd+2",
+    "Cmd+3",
+];
+
 /// Shortcuts kept free for other local tools, so the global hotkey never takes them.
 const RESERVED: &[&str] = &["Ctrl+Alt+Space", "Ctrl+Alt+A"];
 
 /// Windows' own secure attention and task manager keys.
-const WINDOWS: &[&str] = &["Ctrl+Alt+Delete", "Ctrl+Shift+Escape"];
+const SYSTEM_WINDOWS: &[&str] = &["Ctrl+Alt+Delete", "Ctrl+Shift+Escape"];
+
+/// macOS screenshots, quit and log out, lock, emoji, full screen, force quit, Finder search,
+/// Dock hiding, look up.
+const SYSTEM_MAC: &[&str] = &[
+    "Shift+Cmd+3",
+    "Shift+Cmd+4",
+    "Shift+Cmd+5",
+    "Shift+Cmd+Q",
+    "Ctrl+Cmd+Q",
+    "Ctrl+Cmd+Space",
+    "Ctrl+Cmd+F",
+    "Alt+Cmd+Escape",
+    "Alt+Cmd+Space",
+    "Alt+Cmd+D",
+    "Ctrl+Cmd+D",
+];
+
+/// Linux desktops: log out, terminal, X server kill, virtual consoles.
+const SYSTEM_LINUX: &[&str] = &[
+    "Ctrl+Alt+Delete",
+    "Ctrl+Alt+T",
+    "Ctrl+Alt+Backspace",
+    "Ctrl+Alt+F1",
+    "Ctrl+Alt+F2",
+    "Ctrl+Alt+F3",
+    "Ctrl+Alt+F4",
+    "Ctrl+Alt+F5",
+    "Ctrl+Alt+F6",
+    "Ctrl+Alt+F7",
+    "Ctrl+Alt+F8",
+    "Ctrl+Alt+F9",
+    "Ctrl+Alt+F10",
+    "Ctrl+Alt+F11",
+    "Ctrl+Alt+F12",
+];
+
+/// How the meta modifier is written: Cmd on macOS, Super on Linux. Windows never reads one.
+fn meta_name(os: Os) -> &'static str {
+    match os {
+        Os::Mac => "Cmd",
+        Os::Linux | Os::Windows => "Super",
+    }
+}
 
 impl Hotkey {
-    /// Parses and checks a hotkey. Tokens are case-insensitive; `Control` is accepted for `Ctrl`.
-    pub fn parse(s: &str) -> Result<Hotkey, HotkeyError> {
+    /// Parses and checks a hotkey for `os`. Tokens are case-insensitive; `Control` is accepted
+    /// for `Ctrl`; on macOS `Command` for `Cmd` and `Option`/`Opt` for `Alt`; on Linux `Meta`
+    /// for `Super`.
+    pub fn parse(s: &str, os: Os) -> Result<Hotkey, HotkeyError> {
         let parts: Vec<&str> = s.split('+').map(str::trim).collect();
-        let (key_part, mods) = parts.split_last().ok_or(HotkeyError::Unreadable)?;
-        let (mut ctrl, mut shift, mut alt) = (false, false, false);
+        let (key_part, mods) = parts.split_last().ok_or(HotkeyError::Unreadable(os))?;
+        let (mut ctrl, mut shift, mut alt, mut meta) = (false, false, false, false);
         for m in mods {
-            let flag = match m.to_ascii_lowercase().as_str() {
-                "ctrl" | "control" => &mut ctrl,
-                "shift" => &mut shift,
-                "alt" => &mut alt,
-                _ => return Err(HotkeyError::Unreadable),
+            let flag = match (m.to_ascii_lowercase().as_str(), os) {
+                ("ctrl" | "control", _) => &mut ctrl,
+                ("shift", _) => &mut shift,
+                ("alt", _) | ("option" | "opt", Os::Mac) => &mut alt,
+                ("cmd" | "command", Os::Mac) | ("super" | "meta", Os::Linux) => &mut meta,
+                _ => return Err(HotkeyError::Unreadable(os)),
             };
             if *flag {
-                return Err(HotkeyError::Unreadable);
+                return Err(HotkeyError::Unreadable(os));
             }
             *flag = true;
         }
-        // Check the reserved combinations by name first, before the key is restricted to the
+        // Check the system's combinations by name first, before the key is restricted to the
         // supported set (Escape is not a supported key, but Ctrl+Shift+Escape is still Windows').
-        let canonical = canonical_mods(ctrl, shift, alt, key_part);
-        if WINDOWS.iter().any(|w| w.eq_ignore_ascii_case(&canonical)) {
-            return Err(HotkeyError::ReservedByWindows);
+        let canonical = canonical_mods(ctrl, shift, alt, meta.then(|| meta_name(os)), key_part);
+        let (system, in_app) = match os {
+            Os::Windows => (SYSTEM_WINDOWS, IN_APP),
+            Os::Mac => (SYSTEM_MAC, IN_APP_MAC),
+            Os::Linux => (SYSTEM_LINUX, IN_APP),
+        };
+        if system.iter().any(|w| w.eq_ignore_ascii_case(&canonical)) {
+            return Err(HotkeyError::ReservedBySystem(os));
         }
-        let key = parse_key(key_part).ok_or(HotkeyError::Unreadable)?;
+        let key = parse_key(key_part).ok_or(HotkeyError::Unreadable(os))?;
         let hk = Hotkey {
             ctrl,
             shift,
             alt,
+            meta,
             key,
         };
-        let name = hk.to_string();
+        let name = hk.name(os);
         if RESERVED.iter().any(|v| *v == name) {
             return Err(HotkeyError::Reserved);
         }
-        if IN_APP.iter().any(|v| *v == name) {
+        if in_app.iter().any(|v| *v == name) {
             return Err(HotkeyError::UsedInApp);
         }
-        if [ctrl, shift, alt].iter().filter(|b| **b).count() < 2 {
-            return Err(HotkeyError::TooFewModifiers);
+        if [ctrl, shift, alt, meta].iter().filter(|b| **b).count() < 2 {
+            return Err(HotkeyError::TooFewModifiers(os));
         }
         Ok(hk)
     }
+
+    /// The canonical form, in the UI's order: `Ctrl+Shift+Alt+<Cmd|Super>+Key`.
+    pub fn name(&self, os: Os) -> String {
+        canonical_mods(
+            self.ctrl,
+            self.shift,
+            self.alt,
+            self.meta.then(|| meta_name(os)),
+            &self.key.to_string(),
+        )
+    }
 }
 
-fn canonical_mods(ctrl: bool, shift: bool, alt: bool, key: &str) -> String {
+/// A stored hotkey (`Ctrl+Alt+R`) as `os` names it to the user: on macOS Control, Option and
+/// Command (as `hotkeyCaps` in `app/ui/src/lib/keys.ts`), elsewhere the stored names.
+pub fn label(combo: &str, os: Os) -> String {
+    if os != Os::Mac {
+        return combo.to_string();
+    }
+    combo
+        .split('+')
+        .map(|part| match part {
+            "Ctrl" => "Control",
+            "Alt" => "Option",
+            "Cmd" | "Super" => "Command",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// Why a new hotkey `new` was not set, as Settings shows it: through the desktop's shortcut
+/// portal (`portal`) a refusal leaves no key; otherwise `kept` is the old key held again, or
+/// `None` when it could not be held either. Keys are named as `os` names them ([`label`]).
+pub fn refusal(os: Os, new: &str, portal: bool, kept: Option<&str>) -> String {
+    let new = label(new, os);
+    match (portal, kept) {
+        (true, _) => format!(
+            "Your desktop did not accept {new}. No hotkey is set now; pick another in Settings."
+        ),
+        (false, Some(kept)) => {
+            format!("Another app already uses {new}. Kept {}.", label(kept, os))
+        }
+        (false, None) => format!(
+            "Another app already uses {new}. No hotkey is set now; pick another in Settings."
+        ),
+    }
+}
+
+/// Swaps the registered global hotkey from `old` to `new`: unregisters `old` (if any), then
+/// registers `new`. When the OS or another app refuses `new`, `old` is registered again and the
+/// result is false, so the user keeps a working hotkey.
+pub fn replace_registration(
+    old: Option<&Hotkey>,
+    new: &Hotkey,
+    mut register: impl FnMut(&Hotkey) -> bool,
+    mut unregister: impl FnMut(&Hotkey),
+) -> bool {
+    if let Some(old) = old {
+        unregister(old);
+    }
+    if register(new) {
+        return true;
+    }
+    if let Some(old) = old {
+        let _ = register(old);
+    }
+    false
+}
+
+/// Swaps the hotkey where the desktop binds it (the shortcuts portal): unregisters `old` (if
+/// any), then registers `new`. When the desktop refuses `new`, `old` is not asked for again:
+/// its binding ended with its session, and asking again could show the desktop's dialog a
+/// second time. False: no hotkey is set now.
+pub fn rebind(
+    old: Option<&Hotkey>,
+    new: &Hotkey,
+    register: impl FnOnce(&Hotkey) -> bool,
+    unregister: impl FnOnce(&Hotkey),
+) -> bool {
+    if let Some(old) = old {
+        unregister(old);
+    }
+    register(new)
+}
+
+fn canonical_mods(ctrl: bool, shift: bool, alt: bool, meta: Option<&str>, key: &str) -> String {
     let mut s = String::new();
-    for (on, name) in [(ctrl, "Ctrl+"), (shift, "Shift+"), (alt, "Alt+")] {
+    for (on, name) in [(ctrl, "Ctrl"), (shift, "Shift"), (alt, "Alt")] {
         if on {
             s.push_str(name);
+            s.push('+');
         }
+    }
+    if let Some(m) = meta {
+        s.push_str(m);
+        s.push('+');
     }
     s.push_str(key);
     s
@@ -198,43 +367,34 @@ impl fmt::Display for Key {
     }
 }
 
-impl fmt::Display for Hotkey {
-    /// The canonical form, in the UI's order: `Ctrl+Shift+Alt+Key`.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&canonical_mods(
-            self.ctrl,
-            self.shift,
-            self.alt,
-            &self.key.to_string(),
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn default_parses_and_round_trips() {
-        let hk = Hotkey::parse(DEFAULT_HOTKEY).unwrap();
+        let hk = Hotkey::parse(DEFAULT_HOTKEY, Os::Windows).unwrap();
         assert_eq!(
             hk,
             Hotkey {
                 ctrl: true,
                 shift: false,
                 alt: true,
+                meta: false,
                 key: Key::Letter('R')
             }
         );
-        assert_eq!(hk.to_string(), DEFAULT_HOTKEY);
+        assert_eq!(hk.name(Os::Windows), DEFAULT_HOTKEY);
     }
 
     #[test]
     fn canonical_order_and_case() {
-        let hk = Hotkey::parse("alt+control+shift+f9").unwrap();
-        assert_eq!(hk.to_string(), "Ctrl+Shift+Alt+F9");
+        let hk = Hotkey::parse("alt+control+shift+f9", Os::Windows).unwrap();
+        assert_eq!(hk.name(Os::Windows), "Ctrl+Shift+Alt+F9");
         assert_eq!(
-            Hotkey::parse("Ctrl+Alt+pageup").unwrap().to_string(),
+            Hotkey::parse("Ctrl+Alt+pageup", Os::Windows)
+                .unwrap()
+                .name(Os::Windows),
             "Ctrl+Alt+PageUp"
         );
     }
@@ -242,28 +402,98 @@ mod tests {
     #[test]
     fn hotkey_needs_two_modifiers() {
         for s in ["R", "Ctrl+R", "Alt+F4", "Shift+Space"] {
-            assert_eq!(Hotkey::parse(s), Err(HotkeyError::TooFewModifiers), "{s}");
+            assert_eq!(
+                Hotkey::parse(s, Os::Windows),
+                Err(HotkeyError::TooFewModifiers(Os::Windows)),
+                "{s}"
+            );
         }
     }
 
     #[test]
     fn hotkey_refuses_reserved_and_windows_keys() {
-        assert_eq!(Hotkey::parse("Ctrl+Alt+Space"), Err(HotkeyError::Reserved));
-        assert_eq!(Hotkey::parse("Alt+Ctrl+a"), Err(HotkeyError::Reserved));
         assert_eq!(
-            Hotkey::parse("Ctrl+Alt+Delete"),
-            Err(HotkeyError::ReservedByWindows)
+            Hotkey::parse("Ctrl+Alt+Space", Os::Windows),
+            Err(HotkeyError::Reserved)
         );
         assert_eq!(
-            Hotkey::parse("Ctrl+Shift+Escape"),
-            Err(HotkeyError::ReservedByWindows)
+            Hotkey::parse("Alt+Ctrl+a", Os::Windows),
+            Err(HotkeyError::Reserved)
+        );
+        assert_eq!(
+            Hotkey::parse("Ctrl+Alt+Delete", Os::Windows),
+            Err(HotkeyError::ReservedBySystem(Os::Windows))
+        );
+        assert_eq!(
+            Hotkey::parse("Ctrl+Shift+Escape", Os::Windows),
+            Err(HotkeyError::ReservedBySystem(Os::Windows))
         );
     }
 
     #[test]
     fn hotkey_refuses_in_app_shortcuts() {
         for s in ["Ctrl+Shift+C", "Ctrl+Shift+X", "ctrl+shift+x"] {
-            assert_eq!(Hotkey::parse(s), Err(HotkeyError::UsedInApp), "{s}");
+            assert_eq!(
+                Hotkey::parse(s, Os::Windows),
+                Err(HotkeyError::UsedInApp),
+                "{s}"
+            );
+        }
+    }
+
+    #[test]
+    fn mac_labels_use_the_mac_names() {
+        assert_eq!(label("Ctrl+Alt+R", Os::Mac), "Control+Option+R");
+        assert_eq!(
+            label("Ctrl+Shift+Alt+Cmd+K", Os::Mac),
+            "Control+Shift+Option+Command+K"
+        );
+        // Elsewhere the stored names are the names shown.
+        assert_eq!(label("Ctrl+Alt+R", Os::Windows), "Ctrl+Alt+R");
+        assert_eq!(label("Ctrl+Alt+Super+R", Os::Linux), "Ctrl+Alt+Super+R");
+    }
+
+    #[test]
+    fn refusals_name_the_keys_the_mac_way() {
+        assert_eq!(
+            refusal(Os::Mac, "Ctrl+Alt+K", false, Some("Ctrl+Alt+R")),
+            "Another app already uses Control+Option+K. Kept Control+Option+R."
+        );
+        assert_eq!(
+            refusal(Os::Mac, "Ctrl+Alt+Cmd+K", false, None),
+            "Another app already uses Control+Option+Command+K. No hotkey is set now; pick another in Settings."
+        );
+    }
+
+    #[test]
+    fn refusals_elsewhere_keep_their_words() {
+        assert_eq!(
+            refusal(Os::Windows, "Ctrl+Alt+K", false, Some("Ctrl+Alt+R")),
+            "Another app already uses Ctrl+Alt+K. Kept Ctrl+Alt+R."
+        );
+        assert_eq!(
+            refusal(Os::Linux, "Ctrl+Alt+K", false, None),
+            "Another app already uses Ctrl+Alt+K. No hotkey is set now; pick another in Settings."
+        );
+        // Through the desktop's shortcut portal a refusal leaves no key.
+        assert_eq!(
+            refusal(Os::Linux, "Ctrl+Alt+K", true, None),
+            "Your desktop did not accept Ctrl+Alt+K. No hotkey is set now; pick another in Settings."
+        );
+    }
+
+    #[test]
+    fn unreadable_names_the_example_the_os_way() {
+        let unreadable = |os| Hotkey::parse("", os).unwrap_err().to_string();
+        assert_eq!(
+            unreadable(Os::Mac),
+            "That hotkey cannot be read. Use modifiers and one key, like Control+Option+R."
+        );
+        for os in [Os::Windows, Os::Linux] {
+            assert_eq!(
+                unreadable(os),
+                "That hotkey cannot be read. Use modifiers and one key, like Ctrl+Alt+R."
+            );
         }
     }
 
@@ -281,7 +511,113 @@ mod tests {
             "Ctrl+Alt+RR",
             "Ctrl+Alt+ä",
         ] {
-            assert_eq!(Hotkey::parse(s), Err(HotkeyError::Unreadable), "{s:?}");
+            assert_eq!(
+                Hotkey::parse(s, Os::Windows),
+                Err(HotkeyError::Unreadable(Os::Windows)),
+                "{s:?}"
+            );
         }
+    }
+    fn hk(s: &str) -> Hotkey {
+        Hotkey::parse(s, Os::Windows).unwrap()
+    }
+
+    /// A fake OS: `held` is what we registered, `taken` belongs to another app.
+    fn swap(held: &mut Vec<Hotkey>, taken: &[Hotkey], old: Option<&Hotkey>, new: &Hotkey) -> bool {
+        let held = std::cell::RefCell::new(held);
+        replace_registration(
+            old,
+            new,
+            |h| {
+                if taken.contains(h) {
+                    false
+                } else {
+                    held.borrow_mut().push(*h);
+                    true
+                }
+            },
+            |h| held.borrow_mut().retain(|x| x != h),
+        )
+    }
+
+    #[test]
+    fn replacing_registers_the_new_key_and_drops_the_old() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert!(swap(&mut held, &[], Some(&old), &new));
+        assert_eq!(held, [new]);
+        let mut none = vec![];
+        assert!(swap(&mut none, &[], None, &new));
+        assert_eq!(none, [new]);
+    }
+
+    #[test]
+    fn a_refused_key_keeps_the_old_one_registered() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert!(!swap(&mut held, &[new], Some(&old), &new));
+        assert_eq!(held, [old]);
+    }
+
+    /// The old key, refused at start (another app held it), is asked for again after a refused
+    /// new one: a key is held after the swap exactly when that last request succeeded, which is
+    /// what Settings shows as the hotkey's state.
+    #[test]
+    fn after_a_refused_key_the_old_one_is_held_only_if_it_could_be_registered_again() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![];
+        assert!(!swap(&mut held, &[new], Some(&old), &new));
+        assert_eq!(held, [old], "freed meanwhile: held again");
+        let mut held = vec![];
+        assert!(!swap(&mut held, &[new, old], Some(&old), &new));
+        assert!(held.is_empty(), "still taken: no key is held");
+    }
+
+    /// A fake desktop that binds keys: like `swap`, and every key asked for is recorded.
+    fn desktop_swap(
+        held: &mut Vec<Hotkey>,
+        taken: &[Hotkey],
+        old: Option<&Hotkey>,
+        new: &Hotkey,
+    ) -> (bool, Vec<Hotkey>) {
+        let held = std::cell::RefCell::new(held);
+        let mut asked = vec![];
+        let bound = rebind(
+            old,
+            new,
+            |h| {
+                asked.push(*h);
+                if taken.contains(h) {
+                    false
+                } else {
+                    held.borrow_mut().push(*h);
+                    true
+                }
+            },
+            |h| held.borrow_mut().retain(|x| x != h),
+        );
+        (bound, asked)
+    }
+
+    #[test]
+    fn rebinding_binds_the_new_key_and_drops_the_old() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert_eq!(
+            desktop_swap(&mut held, &[], Some(&old), &new),
+            (true, vec![new])
+        );
+        assert_eq!(held, [new]);
+    }
+
+    #[test]
+    fn a_key_the_desktop_refuses_leaves_none_and_never_asks_for_the_old() {
+        let (old, new) = (hk("Ctrl+Alt+R"), hk("Ctrl+Alt+K"));
+        let mut held = vec![old];
+        assert_eq!(
+            desktop_swap(&mut held, &[new], Some(&old), &new),
+            (false, vec![new])
+        );
+        assert!(held.is_empty(), "no hotkey is set: {held:?}");
     }
 }

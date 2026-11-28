@@ -1,5 +1,6 @@
 <!--
-  First-run card: the offline promise, the global hotkey and the screen-capture shield.
+  First-run card: the offline promise, the global hotkey and, where the desktop has one, the
+  screen-capture shield.
   Shown once; "Get started" sets `firstRunDone`.
 -->
 <script lang="ts">
@@ -10,9 +11,21 @@
   import Dialog from './Dialog.svelte';
   import Kbd from './Kbd.svelte';
   import Mark from './Mark.svelte';
+  import { hotkeyCaps, type KeyOs } from '../lib/keys';
+  import type { AppInfo } from '../lib/types';
+  import { firstRunHotkeyDesc, hotkeyCommandLine, thisComputer } from '../lib/platform';
   import { settings } from '../lib/settings.svelte';
 
-  let { open = $bindable(false) }: { open: boolean } = $props();
+  // `shield`: false where the desktop cannot hide a window from screenshots (Linux, macOS).
+  let {
+    open = $bindable(false),
+    shield = true,
+    os = 'windows',
+    info = null,
+  }: { open: boolean; shield?: boolean; os?: KeyOs; info?: Pick<AppInfo, 'hotkey' | 'clipboardNeedsFocus'> | null } = $props();
+
+  // Where the desktop runs a command instead of a key, there are no keycaps to show.
+  const commandLine = $derived(hotkeyCommandLine(info));
 
   const seen = () => void settings.update({ firstRunDone: true });
 
@@ -35,23 +48,30 @@
         <span class="icon mint" aria-hidden="true"><CloudOff size={16} strokeWidth={1.9} /></span>
         <div>
           <p class="title">Offline by design</p>
-          <p class="desc">No network code. What you paste stays on this PC and is never written to disk.</p>
+          <p class="desc">No network code. What you paste stays on {thisComputer(os)} and is never written to disk.</p>
         </div>
       </li>
       <li>
         <span class="icon cyan" aria-hidden="true"><Keyboard size={16} strokeWidth={1.9} /></span>
         <div>
-          <p class="title">Scrub from anywhere <Kbd keys={settings.value.hotkey.split('+')} /></p>
-          <p class="desc">Cleans the clipboard in place, without opening this window.</p>
+          {#if commandLine}
+            <p class="title">Scrub from anywhere</p>
+            <p class="desc" data-testid="hotkey-command-line">{commandLine}</p>
+          {:else}
+            <p class="title">Scrub from anywhere <Kbd keys={hotkeyCaps(settings.value.hotkey, os)} /></p>
+            <p class="desc" data-testid="hotkey-desc">{firstRunHotkeyDesc(info)}</p>
+          {/if}
         </div>
       </li>
-      <li>
-        <span class="icon violet" aria-hidden="true"><ShieldCheck size={16} strokeWidth={1.9} /></span>
-        <div>
-          <p class="title">Shielded from screen capture</p>
-          <p class="desc">Screenshots and screen sharing see a blank window. You can turn it off in Settings.</p>
-        </div>
-      </li>
+      {#if shield}
+        <li>
+          <span class="icon violet" aria-hidden="true"><ShieldCheck size={16} strokeWidth={1.9} /></span>
+          <div>
+            <p class="title">Shielded from screen capture</p>
+            <p class="desc">Screenshots and screen sharing see a blank window. You can turn it off in Settings.</p>
+          </div>
+        </li>
+      {/if}
     </ul>
 
     <Button variant="primary" size="lg" onclick={done} data-autofocus class="start">Get started</Button>

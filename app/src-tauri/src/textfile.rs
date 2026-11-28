@@ -3,6 +3,9 @@
 //! refused as binary.
 
 use std::fmt;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 
 use zeroize::Zeroize;
 
@@ -27,6 +30,40 @@ impl fmt::Display for FileError {
 
 impl std::error::Error for FileError {}
 
+/// Reads the file the user picked, at most [`MAX_INPUT_BYTES`]. Only a regular file is read: a
+/// folder, a pipe or a device is refused before it is opened (opening a pipe can block, and a
+/// device such as `/dev/zero` reports no length and never ends), and checked again once it is
+/// open. A file that grows while it is read stops one byte past the limit and is refused. The
+/// buffer is allocated once, so no copy of the text is left behind by a reallocation, and it is
+/// zeroized on every error.
+pub fn read_bounded(path: &Path) -> Result<Vec<u8>, FileError> {
+    let meta = std::fs::metadata(path).map_err(|_| FileError::Unreadable)?;
+    check(&meta)?;
+    let file = File::open(path).map_err(|_| FileError::Unreadable)?;
+    // The path may name something else by now.
+    check(&file.metadata().map_err(|_| FileError::Unreadable)?)?;
+    let mut buf = Vec::with_capacity(MAX_INPUT_BYTES + 1);
+    let read = file.take(MAX_INPUT_BYTES as u64 + 1).read_to_end(&mut buf);
+    let refused = match read {
+        Err(_) => FileError::Unreadable,
+        Ok(_) if buf.len() > MAX_INPUT_BYTES => FileError::TooLarge,
+        Ok(_) => return Ok(buf),
+    };
+    buf.zeroize();
+    Err(refused)
+}
+
+/// A regular file within the limit.
+fn check(meta: &std::fs::Metadata) -> Result<(), FileError> {
+    if !meta.is_file() {
+        return Err(FileError::Unreadable);
+    }
+    if meta.len() > MAX_INPUT_BYTES as u64 {
+        return Err(FileError::TooLarge);
+    }
+    Ok(())
+}
+
 /// Decodes file bytes. The byte buffer is zeroized before returning.
 pub fn decode(mut bytes: Vec<u8>) -> Result<String, FileError> {
     let r = decode_inner(&bytes);
@@ -44,7 +81,7 @@ fn decode_inner(bytes: &[u8]) -> Result<String, FileError> {
 }
 
 /// A file name for display: the last path component only (no folders reach the UI).
-pub fn display_name(path: &std::path::Path) -> String {
+pub fn display_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file.txt".to_string())
@@ -85,6 +122,61 @@ mod tests {
         assert_eq!(
             decode(vec![b'a'; MAX_INPUT_BYTES + 1]),
             Err(FileError::TooLarge)
+        );
+    }
+
+    /// A folder of its own for one test, removed when dropped.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Scratch {
+            let dir = std::env::temp_dir()
+                .join(format!("redactor-textfile-{name}-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn read_bounded_reads_a_text_file() {
+        let dir = Scratch::new("small");
+        let path = dir.0.join("a.txt");
+        std::fs::write(&path, b"plain text").unwrap();
+        assert_eq!(read_bounded(&path).unwrap(), b"plain text");
+    }
+
+    #[test]
+    fn read_bounded_refuses_a_file_over_the_limit() {
+        let dir = Scratch::new("large");
+        let path = dir.0.join("big.log");
+        let f = std::fs::File::create(&path).unwrap();
+        // Sparse: no 20 MiB written to disk.
+        f.set_len(MAX_INPUT_BYTES as u64 + 1).unwrap();
+        assert_eq!(read_bounded(&path), Err(FileError::TooLarge));
+
+        f.set_len(MAX_INPUT_BYTES as u64).unwrap();
+        assert_eq!(read_bounded(&path).unwrap().len(), MAX_INPUT_BYTES);
+    }
+
+    #[test]
+    fn read_bounded_refuses_a_folder() {
+        let dir = Scratch::new("folder");
+        assert_eq!(read_bounded(&dir.0), Err(FileError::Unreadable));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_bounded_refuses_a_device_at_once() {
+        // Its length is 0 and it never ends: it must not be read at all.
+        assert_eq!(
+            read_bounded(std::path::Path::new("/dev/zero")),
+            Err(FileError::Unreadable)
         );
     }
 

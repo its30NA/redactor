@@ -197,10 +197,11 @@ fn check_skips_submodules_with_a_line() {
 #[test]
 fn check_reads_a_staged_symlink_as_its_target_path() {
     let d = repo();
-    let outside = tempfile::tempdir().unwrap();
-    put(outside.path(), "secret.env", env_file(&pw()));
-    let target = outside.path().join("secret.env");
-    let target = target.to_string_lossy();
+    // The target is an untracked file next to the link, named by a plain relative path: an
+    // absolute temp path would make the test depend on the OS (macOS temp directories contain
+    // a random-looking segment).
+    put(d.path(), "outside/secret.env", env_file(&pw()));
+    let target = "outside/secret.env";
     let p = d.path().join("payload.tmp");
     fs::write(&p, target.as_bytes()).unwrap();
     let id = git(d.path(), &["hash-object", "-w", "payload.tmp"]);

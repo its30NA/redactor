@@ -4,8 +4,10 @@
 # Usage: tools/release/check-version.sh <tag> [repo-root]      (for example v2.0.0)
 # Checks: the tag is vMAJOR.MINOR.PATCH with an optional -prerelease suffix, and equals the
 # workspace version in Cargo.toml, app/src-tauri/tauri.conf.json and app/ui/package.json, the
-# version of every workspace package in Cargo.lock, and the root version in
-# app/ui/package-lock.json (top-level field and packages[""]).
+# version of every workspace package in Cargo.lock, the root version in
+# app/ui/package-lock.json (top-level field and packages[""]), and the newest release in the
+# Flatpak metainfo (the first <release> in packaging/flatpak/io.github.its30na.redactor.metainfo.xml,
+# the version Flatpak and software centres show).
 set -euo pipefail
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
@@ -52,6 +54,11 @@ check "app/src-tauri/tauri.conf.json" "$tauri_version"
 check "app/ui/package.json" "$ui_version"
 check "app/ui/package-lock.json (top level)" "$ui_lock_top"
 check "app/ui/package-lock.json (packages[\"\"])" "$ui_lock_root"
+
+# AppStream lists releases newest first; the first <release ...> element's version attribute.
+metainfo=packaging/flatpak/io.github.its30na.redactor.metainfo.xml
+metainfo_version="$(sed -n 's/.*<release[[:space:]][^>]*version="\([^"]*\)".*/\1/p' "$root/$metainfo" 2>/dev/null | head -n1 || true)"
+check "$metainfo (newest <release>)" "$metainfo_version"
 
 # Workspace packages are the members whose manifest says `version.workspace = true`; each must
 # appear exactly once in Cargo.lock with the tag's version.

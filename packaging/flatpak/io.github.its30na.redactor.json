@@ -1,0 +1,228 @@
+{
+  "app-id": "io.github.its30na.redactor",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "command": "Redactor",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--filesystem=xdg-run/tray-icon:create",
+    "--talk-name=org.freedesktop.Notifications",
+    "--talk-name=org.freedesktop.ScreenSaver",
+    "--talk-name=org.gnome.ScreenSaver",
+    "--talk-name=org.cinnamon.ScreenSaver",
+    "--talk-name=org.mate.ScreenSaver",
+    "--talk-name=org.xfce.ScreenSaver",
+    "--system-talk-name=org.freedesktop.login1"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/lib/*.la",
+    "/lib/*.a",
+    "/lib/girepository-1.0",
+    "/share/gir-1.0",
+    "/share/gtk-doc",
+    "/share/doc",
+    "/share/man"
+  ],
+  "modules": [
+    {
+      "name": "rust",
+      "buildsystem": "simple",
+      "build-options": {
+        "no-debuginfo": true
+      },
+      "cleanup": ["*"],
+      "build-commands": [
+        "./install.sh --prefix=/app/rust --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu --disable-ldconfig"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://static.rust-lang.org/dist/rust-1.99.1-x86_64-unknown-linux-gnu.tar.xz",
+          "sha256": "231fcae47ee950621374725b5fc3b5441d2fbda2955ac45dd7dc816d8876cfe7",
+          "only-arches": ["x86_64"]
+        }
+      ]
+    },
+    {
+      "name": "node",
+      "buildsystem": "simple",
+      "cleanup": ["*"],
+      "build-commands": [
+        "mkdir -p /app/node",
+        "cp -a bin include lib share /app/node/"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.xz",
+          "sha256": "cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8",
+          "only-arches": ["x86_64"]
+        }
+      ]
+    },
+    {
+      "name": "intltool",
+      "cleanup": ["*"],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz",
+          "sha256": "67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd"
+        },
+        {
+          "type": "patch",
+          "path": "patches/intltool-perl-regex-fixes.patch"
+        }
+      ]
+    },
+    {
+      "name": "libdbusmenu-gtk3",
+      "buildsystem": "autotools",
+      "build-options": {
+        "cflags": "-Wno-error"
+      },
+      "config-opts": [
+        "--with-gtk=3",
+        "--disable-dumper",
+        "--disable-static",
+        "--disable-tests",
+        "--disable-gtk-doc",
+        "--enable-introspection=no",
+        "--disable-vala"
+      ],
+      "cleanup": ["/libexec"],
+      "post-install": [
+        "install -Dm644 -t /app/share/licenses/libdbusmenu COPYING COPYING.2.1 COPYING-GPL3"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz",
+          "sha256": "b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a"
+        },
+        {
+          "type": "patch",
+          "path": "patches/libdbusmenu-fix-have-valgrind-conditional.patch"
+        }
+      ]
+    },
+    {
+      "name": "ayatana-ido",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DENABLE_INTROSPECTION=OFF"
+      ],
+      "post-install": [
+        "install -Dm644 -t /app/share/licenses/ayatana-ido COPYING COPYING.GPL-3 COPYING.LGPL-2 COPYING.LGPL-2.1 COPYING.LGPL-3"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/AyatanaIndicators/ayatana-ido/archive/refs/tags/0.10.4.tar.gz",
+          "sha256": "bd59abd5f1314e411d0d55ce3643e91cef633271f58126be529de5fb71c5ab38"
+        },
+        {
+          "type": "patch",
+          "path": "patches/ayatana-ido-make-introspection-configurable.patch"
+        }
+      ]
+    },
+    {
+      "name": "libayatana-indicator",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release"
+      ],
+      "cleanup": ["/libexec", "/share/libayatana-indicator"],
+      "post-install": [
+        "install -Dm644 -t /app/share/licenses/libayatana-indicator COPYING"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/AyatanaIndicators/libayatana-indicator/archive/refs/tags/0.9.5.tar.gz",
+          "sha256": "73d71c908b803f12e4a5ecd8392511b58afbdd0c82ad7909611a17bb7847c5c8"
+        }
+      ]
+    },
+    {
+      "name": "libayatana-appindicator",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DENABLE_BINDINGS_MONO=NO",
+        "-DENABLE_BINDINGS_VALA=NO",
+        "-DENABLE_GTKDOC=NO"
+      ],
+      "post-install": [
+        "install -Dm644 -t /app/share/licenses/libayatana-appindicator COPYING COPYING.GPL.3 COPYING.LGPL.2.1"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/AyatanaIndicators/libayatana-appindicator/archive/refs/tags/0.6.1.tar.gz",
+          "sha256": "56c0b938ffaa3e17b10c38d3e54c16d316f41f0da61949eda028adbf19ee767f"
+        }
+      ]
+    },
+    {
+      "name": "redactor",
+      "buildsystem": "simple",
+      "build-options": {
+        "append-path": "/app/rust/bin:/app/node/bin",
+        "env": {
+          "CARGO_HOME": "/run/build/redactor/cargo",
+          "CARGO_NET_OFFLINE": "true",
+          "CARGO_TERM_COLOR": "never",
+          "RUSTFLAGS": "--remap-path-prefix=/run/build/redactor=/build --remap-path-prefix=/run/build/redactor/cargo=/cargo",
+          "XDG_CACHE_HOME": "/run/build/redactor/flatpak-node/cache",
+          "npm_config_cache": "/run/build/redactor/flatpak-node/npm-cache",
+          "npm_config_offline": "true",
+          "npm_config_audit": "false",
+          "npm_config_fund": "false",
+          "npm_config_update_notifier": "false"
+        }
+      },
+      "build-commands": [
+        "cd app/ui && npm ci --offline",
+        "cd app/ui && npm run build",
+        "cargo build --release --locked --offline -p redactor-app --features tauri/custom-protocol",
+        "install -Dm755 target/release/redactor-app /app/bin/Redactor",
+        "install -Dm644 -t /app/share/licenses/io.github.its30na.redactor LICENSE THIRD_PARTY_NOTICES.md",
+        "install -Dm644 app/src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.its30na.redactor.png",
+        "install -Dm644 app/src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.its30na.redactor.png",
+        "install -Dm644 app/src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/io.github.its30na.redactor.png",
+        "install -Dm644 packaging/flatpak/io.github.its30na.redactor.desktop /app/share/applications/io.github.its30na.redactor.desktop",
+        "install -Dm644 packaging/flatpak/io.github.its30na.redactor.metainfo.xml /app/share/metainfo/io.github.its30na.redactor.metainfo.xml"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../..",
+          "skip": [
+            ".git",
+            ".flatpak-builder",
+            "build-dir",
+            "target",
+            "dist",
+            "smoke-out",
+            "app/ui/node_modules",
+            "app/ui/dist",
+            "app/ui/playwright-report",
+            "app/ui/test-results"
+          ]
+        },
+        "cargo-sources.json",
+        "node-sources.json"
+      ]
+    }
+  ]
+}

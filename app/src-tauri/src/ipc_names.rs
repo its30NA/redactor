@@ -19,4 +19,5 @@ pub const COMMANDS: &[&str] = &[
     "get_settings",
     "set_settings",
     "app_info",
+    "scrub_clipboard",
 ];

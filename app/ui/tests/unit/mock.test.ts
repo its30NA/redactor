@@ -2,10 +2,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import * as api from '../../src/lib/api';
-import { demoInput, demoSecrets, tiledDemo } from '../../src/lib/mock/demo';
+import { HIDDEN_INPUTS, demoInput, demoSecrets, tiledDemo } from '../../src/lib/mock/demo';
 import { installMockBackend, type MockBackend } from '../../src/lib/mock/ipc';
 import * as schema from '../../src/lib/schema';
-import type { ScanRequest } from '../../src/lib/types';
+import type { ScanRequest, ScrubResult } from '../../src/lib/types';
 
 let backend: MockBackend;
 
@@ -142,4 +142,49 @@ describe('mock backend', () => {
     await backend.emit('wipe', { reason: 'tray' });
     expect(got).toEqual(['tray']);
   });
+});
+
+describe('mock clipboard scrub', () => {
+  const scrubbed = async (): Promise<ScrubResult[]> => {
+    const got: ScrubResult[] = [];
+    await api.onEvent('clipboard-scrubbed', (r) => got.push(r));
+    await api.scrubClipboard();
+    return got;
+  };
+
+  test('hidden characters and no secret: stripped and written back, like the shell', async () => {
+    backend.uninstall();
+    backend = installMockBackend({ scanLatencyMs: 0, clipboard: 'hidden' });
+    const raw = HIDDEN_INPUTS.hidden?.() ?? '';
+    expect(raw).toMatch(/[\u200B\u202E\u{E0041}]/u);
+    const got = await scrubbed();
+    expect(got.map((r) => r.status)).toEqual(['stripped']);
+    expect(schema.scrubResult(got[0], 'r')).toEqual([]);
+    expect(await api.readClipboard()).toBe('lunch at noon on friday');
+  });
+
+  test('with strip invisible off the hidden characters stay', async () => {
+    backend.uninstall();
+    backend = installMockBackend({ scanLatencyMs: 0, clipboard: 'hidden' });
+    await api.setSettings({ ...(await api.getSettings()), stripInvisible: false });
+    const got = await scrubbed();
+    expect(got.map((r) => r.status)).toEqual(['clean']);
+    expect(await api.readClipboard()).toBe(HIDDEN_INPUTS.hidden?.());
+  });
+});
+
+describe('mock app_info per OS', () => {
+  test('no os keeps the Windows fixture', async () => {
+    const i = await api.appInfo();
+    expect([i.platform, i.shield, i.tray]).toEqual(['windows-x86_64', true, true]);
+  });
+
+  for (const os of ['macos', 'linux'] as const) {
+    test(`os ${os} names the platform and has no shield`, async () => {
+      backend.uninstall();
+      backend = installMockBackend({ scanLatencyMs: 0, os });
+      const i = await api.appInfo();
+      expect([i.platform, i.shield, i.tray]).toEqual([os, false, true]);
+    });
+  }
 });

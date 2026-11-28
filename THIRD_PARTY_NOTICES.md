@@ -3226,7 +3226,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Applies to:
 
-- `cookie` 0.18.2 (MIT OR Apache-2.0) - https://github.com/SergioBenitez/cookie-rs
+- `cookie` 0.18.3 (MIT OR Apache-2.0) - https://github.com/SergioBenitez/cookie-rs
 
 ~~~text
                               Apache License
@@ -3437,7 +3437,7 @@ limitations under the License.
 
 Applies to:
 
-- `cookie` 0.18.2 (MIT OR Apache-2.0) - https://github.com/SergioBenitez/cookie-rs
+- `cookie` 0.18.3 (MIT OR Apache-2.0) - https://github.com/SergioBenitez/cookie-rs
 
 ~~~text
 Copyright (c) 2017 Sergio Benitez

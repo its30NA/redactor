@@ -28,6 +28,13 @@ export default defineConfig({
     { name: 'chromium', use: { browserName: 'chromium' }, testIgnore: /perf\.spec\.ts/ },
     // Timing checks run alone, after everything else, so parallel workers do not skew them.
     { name: 'perf', use: { browserName: 'chromium' }, testMatch: /perf\.spec\.ts/, dependencies: ['chromium'] },
+    // The same tests in WebKit, the engine of the macOS app (CI, on a Mac runner:
+    // `PW_WEBKIT=1 npx playwright test --project=webkit`). Only there: an ordinary run never
+    // needs WebKit installed. The snapshots were made in Chromium, so pictures are not compared,
+    // and timings are Chromium's budget.
+    ...(process.env.PW_WEBKIT
+      ? [{ name: 'webkit', use: { browserName: 'webkit' as const }, testIgnore: /perf\.spec\.ts/, ignoreSnapshots: true }]
+      : []),
   ],
   webServer: {
     command: 'npm run build:mock && npm run preview:mock',

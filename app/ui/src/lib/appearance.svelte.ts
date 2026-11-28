@@ -27,8 +27,11 @@ export const appearance = {
 /** Mirror the settings onto the root element. Call from an $effect. */
 export function applyAppearance(root: HTMLElement = document.documentElement): void {
   const { theme, reducedMotion } = settings.value;
-  if (theme === 'system') delete root.dataset.theme;
-  else root.dataset.theme = theme;
+  // Until the settings load, the theme the shell set before the first paint stays (first_frame.rs).
+  if (settings.loaded) {
+    if (theme === 'system') delete root.dataset.theme;
+    else root.dataset.theme = theme;
+  }
   if (reducedMotion === 'system') delete root.dataset.motion;
   else root.dataset.motion = reducedMotion === 'on' ? 'reduce' : 'full';
 }

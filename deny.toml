@@ -2,11 +2,10 @@
 # Run with `cargo deny check` (CI does, on every push and pull request).
 
 [graph]
-# The default run checks the Windows graph, the only one that contains the Tauri shell
-# (app/src-tauri depends on Tauri for Windows only). Tauri's Linux runtime pulls in the
-# unmaintained GTK3 bindings, which this project never builds. CI runs a second pass for the
-# other platforms without the app crate (see .github/workflows/ci.yml), so scrub is checked
-# on Linux and macOS too.
+# The default run checks the Windows graph, the one that ships today. CI (and the release
+# preflight) run the same policy for the macOS and Linux graphs with `--target`, Tauri shell
+# included (see .github/workflows/ci.yml). The Linux graph needs the ISC licence and the
+# advisory exceptions below, all inside Tauri's GTK3/D-Bus stack.
 targets = ["x86_64-pc-windows-msvc"]
 
 [advisories]
@@ -16,7 +15,15 @@ targets = ["x86_64-pc-windows-msvc"]
 yanked = "deny"
 unmaintained = "all"
 unsound = "all"
-ignore = []
+# Linux only, all inside Tauri's GTK3/D-Bus stack; accepted 2026-11-12 and named in the
+# THREAT_MODEL at the first macOS/Linux release.
+ignore = [
+    { id = "RUSTSEC-2024-0429", reason = "glib 0.18 VariantStrIter unsound, fixed in 0.20; Tauri's GTK3 stack pins 0.18 and Redactor never calls it. Re-check at every Tauri update and before every release." },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained, a build-time macro of glib 0.18 (GTK3 stack), no runtime code. Re-check at every Tauri update and before every release." },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6); the Tauri notification and single-instance plugins still use zbus 5. Re-check at every Tauri update and before every release." },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6); the Tauri notification and single-instance plugins still use zbus 5. Re-check at every Tauri update and before every release." },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6); the Tauri notification and single-instance plugins still use zbus 5. Re-check at every Tauri update and before every release." },
+]
 
 [licenses]
 # Permissive licenses only. Anything not listed here (including every copyleft license) fails.
@@ -32,6 +39,8 @@ allow = [
     "Unlicense",
     "0BSD",
     "MIT-0",
+    # Linux only: libloading 0.7.4, via the tray (tray-icon -> libappindicator). Permissive.
+    "ISC",
 ]
 confidence-threshold = 0.9
 

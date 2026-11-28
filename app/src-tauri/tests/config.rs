@@ -69,7 +69,7 @@ fn capabilities_only_whitelisted_commands() {
             assert!(!p.contains(banned), "{p} must not be granted");
         }
     }
-    assert_eq!(COMMANDS.len(), 13, "the IPC contract has 13 commands");
+    assert_eq!(COMMANDS.len(), 14, "the IPC contract has 14 commands");
 }
 
 #[test]
@@ -149,6 +149,16 @@ fn hardening_flags_are_set() {
         conf["bundle"]["windows"]["nsis"]["installMode"],
         "currentUser"
     );
+    // macOS: signed ad hoc (no Apple Developer ID), for macOS 13 and later.
+    assert_eq!(conf["bundle"]["macOS"]["signingIdentity"], "-");
+    assert_eq!(conf["bundle"]["macOS"]["minimumSystemVersion"], "13.0");
+}
+
+/// The shell finds the single-instance socket by this identifier (`platform::IDENTIFIER`).
+#[test]
+fn the_identifier_in_the_code_is_the_config_s() {
+    let conf = read_json("tauri.conf.json");
+    assert_eq!(conf["identifier"], redactor_app::platform::IDENTIFIER);
 }
 
 #[test]
@@ -175,4 +185,93 @@ fn webview2_browser_args_are_pinned() {
     );
     // The wry version whose defaults the list repeats; a bump means checking them again.
     assert!(src("../../Cargo.lock").contains("name = \"wry\"\nversion = \"0.57.1\""));
+}
+
+/// The per-OS overlays Tauri merges over `tauri.conf.json` (`tauri.<os>.conf.json`), or None.
+fn overlay(os: &str) -> Option<Value> {
+    let rel = format!("tauri.{os}.conf.json");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(&rel);
+    path.exists().then(|| read_json(&rel))
+}
+
+/// The dotted key paths of every leaf in a JSON object, objects walked, arrays kept whole.
+fn leaf_paths(v: &Value, prefix: &str, out: &mut Vec<String>) {
+    match v.as_object() {
+        Some(map) if !map.is_empty() => {
+            for (k, child) in map {
+                let p = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                leaf_paths(child, &p, out);
+            }
+        }
+        _ => out.push(prefix.to_string()),
+    }
+}
+
+/// Windows builds from the base config alone: the NSIS installer, nothing else.
+#[test]
+fn windows_keeps_nsis_only() {
+    let conf = read_json("tauri.conf.json");
+    assert_eq!(conf["bundle"]["targets"], serde_json::json!(["nsis"]));
+    assert!(overlay("windows").is_none(), "Windows has no overlay");
+}
+
+#[test]
+fn linux_overlay_bundles_appimage_deb_rpm() {
+    let conf = overlay("linux").expect("tauri.linux.conf.json");
+    let bundle = &conf["bundle"];
+    assert_eq!(
+        bundle["targets"],
+        serde_json::json!(["appimage", "deb", "rpm"])
+    );
+    let linux = &bundle["linux"];
+    // GStreamer is not used (no audio or video in the page), so the AppImage does not carry it.
+    assert_eq!(linux["appimage"]["bundleMediaFramework"], false);
+    assert_eq!(linux["deb"]["section"], "utils");
+    // The CLI adds the package dependencies itself (WebKitGTK, GTK and, for the tray feature,
+    // libayatana-appindicator3-1 / libayatana-appindicator3.so.1()(64bit)); a list here would
+    // only repeat them in the package's Depends line.
+    assert!(linux["deb"].get("depends").is_none());
+    assert!(linux["rpm"].get("depends").is_none());
+}
+
+#[test]
+fn macos_overlay_bundles_dmg() {
+    let conf = overlay("macos").expect("tauri.macos.conf.json");
+    assert_eq!(conf["bundle"]["targets"], serde_json::json!(["dmg"]));
+}
+
+/// The overlays only pick the bundle formats and their packaging; identity, security, the
+/// resources and the signing settings come from the base config for every OS.
+#[test]
+fn overlays_change_nothing_else() {
+    for os in ["linux", "macos"] {
+        let conf = overlay(os).unwrap_or_else(|| panic!("tauri.{os}.conf.json"));
+        let mut paths = Vec::new();
+        leaf_paths(&conf, "", &mut paths);
+        assert!(!paths.is_empty());
+        for p in &paths {
+            let allowed = p == "$schema"
+                || p == "bundle.targets"
+                || p.starts_with("bundle.linux.")
+                || p.starts_with("bundle.macOS.dmg.");
+            assert!(allowed, "tauri.{os}.conf.json sets {p}");
+        }
+    }
+}
+
+/// Every bundle carries the license and the third-party notices, at its root of resources.
+#[test]
+fn resources_ship_license_and_notices() {
+    let conf = read_json("tauri.conf.json");
+    assert_eq!(
+        conf["bundle"]["resources"],
+        serde_json::json!({
+            "../../LICENSE": "LICENSE",
+            "../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+        })
+    );
 }

@@ -1,16 +1,20 @@
 <!--
   Custom title bar for the frameless window. The bar and its non-interactive parts carry
   data-tauri-drag-region (drag to move, double-click to maximize); buttons do not.
+  On macOS the window keeps the system's own buttons (the traffic lights) over the left end of
+  this bar: no caption buttons here, and 78 px of free space on the left for them.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Mark from './Mark.svelte';
   import WindowControls from './WindowControls.svelte';
+  import type { KeyOs } from '../lib/keys';
 
-  let { status, actions }: { status: Snippet; actions?: Snippet } = $props();
+  let { status, actions, os = 'windows' }: { status: Snippet; actions?: Snippet; os?: KeyOs } = $props();
+  const mac = $derived(os === 'macos');
 </script>
 
-<header class="titlebar" data-tauri-drag-region>
+<header class="titlebar" class:mac data-tauri-drag-region>
   <div class="brand" data-tauri-drag-region>
     <Mark size={20} />
     <span class="name" data-tauri-drag-region>Redactor</span>
@@ -23,9 +27,9 @@
   <div class="right">
     {#if actions}
       <div class="actions">{@render actions()}</div>
-      <span class="divider" aria-hidden="true"></span>
+      {#if !mac}<span class="divider" aria-hidden="true"></span>{/if}
     {/if}
-    <WindowControls />
+    {#if !mac}<WindowControls />{/if}
   </div>
 </header>
 
@@ -37,6 +41,11 @@
     align-items: center;
     height: var(--titlebar-h);
     padding-left: 16px;
+  }
+  /* The traffic lights sit in the first 78 px; the right end keeps the bar's own margin. */
+  .titlebar.mac {
+    padding-left: 78px;
+    padding-right: 10px;
   }
   .brand {
     display: flex;

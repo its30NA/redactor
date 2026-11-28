@@ -32,6 +32,7 @@
     ],
     "category": "Utility",
     "shortDescription": "Strips secrets out of text before you paste it anywhere.",
+    "longDescription": "Paste a log, a config file or a terminal session. Redactor finds the passwords, API keys, tokens and private keys in it and swaps each one for a placeholder like [REDACTED: Password]. What is left is safe to send to a chat assistant, a ticket or a colleague.\n\nNothing leaves your machine: there is no network code, no account and no telemetry.",
     "copyright": "Copyright (c) 2026 Sina Kashani. MIT License.",
     "resources": {
       "../../LICENSE": "LICENSE",
@@ -49,6 +50,10 @@
         "installMode": "currentUser",
         "startMenuFolder": "Redactor"
       }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "13.0"
     }
   }
 }
